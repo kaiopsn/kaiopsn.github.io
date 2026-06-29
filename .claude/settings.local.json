@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cp inter-400-normal.woff2 inter.woff2)",
+      "Bash(cp fraunces-400-normal.woff2 fraunces.woff2)",
+      "Bash(cp fraunces-400-italic.woff2 fraunces-italic.woff2)",
+      "Bash(rm -f inter-*-normal.woff2 fraunces-*-normal.woff2 fraunces-*-italic.woff2)",
+      "Bash(python -c ' *)",
+      "mcp__Claude_Preview__preview_start"
+    ]
+  }
+}
