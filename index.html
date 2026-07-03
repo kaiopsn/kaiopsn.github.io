@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
-<title>FinanceApp</title>
+<meta name="description" content="FinanceApp — controle financeiro pessoal: gastos, orçamentos, metas, investimentos e relatórios. 100% offline, seus dados ficam só no seu aparelho.">
+<title>FinanceApp — Controle financeiro pessoal</title>
   <!-- ══ PWA ══ -->
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj4KICA8cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgcng9IjkwIiBmaWxsPSIjYTg1NWY3Ii8+CiAgPHJlY3QgeD0iOCIgeT0iOCIgd2lkdGg9IjQ5NiIgaGVpZ2h0PSI0OTYiIHJ4PSI4NCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmJiZjI0IiBzdHJva2Utd2lkdGg9IjEyIi8+CiAgPHRleHQgeD0iMjU2IiB5PSIzNjAiIHRleHQtYW5jaG9yPSJtaWRkbGUiCiAgICBmb250LWZhbWlseT0iR2VvcmdpYSwgc2VyaWYiIGZvbnQtc2l6ZT0iMjgwIiBmb250LXdlaWdodD0iNzAwIgogICAgZm9udC1zdHlsZT0iaXRhbGljIiBmaWxsPSIjZmJiZjI0Ij5GQTwvdGV4dD4KPC9zdmc+" type="image/svg+xml">
@@ -3374,22 +3375,17 @@ function cleanOrphanedData() {
   } catch(e) { console.warn('cleanOrphanedData falhou:', e); }
 }
 
-// ── Inicializar usuário padrão (kaiop) na primeira vez ──────────────────────
+// ── Usuários ─────────────────────────────────────────────────────────────
+// SEGURANÇA (release): removida a conta semeada com senha fixa no código —
+// num app publicado, qualquer pessoa lendo o fonte teria o login do dono.
+// Contas já criadas neste dispositivo permanecem intactas no localStorage;
+// em dispositivos novos, crie a conta pela aba "Criar conta" (o usuário
+// "kaiop" continua herdando os dados da planilha ao entrar pela 1ª vez).
 function initDefaultUsers() {
   let users = {};
   try {
     users = JSON.parse(localStorage.getItem(AUTH_USERS_KEY) || '{}');
   } catch (e) { users = {}; }
-
-  if (!users['kaiop']) {
-    users['kaiop'] = {
-      passwordHash: hashPassword('myfinancepessoal26'),
-      displayName: 'Kaio P.',
-      role: 'owner',
-      createdAt: '2026-01-01',
-    };
-    localStorage.setItem(AUTH_USERS_KEY, JSON.stringify(users));
-  }
   return users;
 }
 
@@ -5887,8 +5883,10 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v48';
-const APP_BUILD_DATE = new Date().toISOString().substring(0, 10);
+const APP_VERSION = 'v49';
+// Data fixa do release (antes era new Date() — mostrava sempre "hoje",
+// o que não informa nada). Atualize junto com APP_VERSION a cada release.
+const APP_BUILD_DATE = '2026-07-03';
 
 function injectVersionLabel() {
   // Adicionar em Configurações (rodapé)
@@ -6667,8 +6665,11 @@ let db = (typeof DEFAULT_DB !== 'undefined') ? {
   recurringExpenses: [], recurringIncome: [],
   installments: [], categories: [], goals: [], chatHistory: [], paidStatus: {}
 } : {};
-let currentYear = db.years && db.years[db.years.length - 1] || 2026;
-let currentMonth = 4;
+let currentYear = db.years && db.years[db.years.length - 1] || new Date().getFullYear();
+// Default = mês REAL do calendário (antes era 4/Maio fixo, causando o bug de
+// sempre abrir em Maio). A escolha manual é persistida por usuário — ver
+// restorePeriod()/persistPeriod() no fim do arquivo.
+let currentMonth = new Date().getMonth();
 let activeFilter = 'tudo';
 let activeMethodFilter = 'all';
 let activeSearch = '';
@@ -9560,7 +9561,9 @@ window.renderDashboard = function() {
       <div class="card">
         <div class="label">Gastos</div>
         <div class="value neg anim-num" data-value="${cur.gastos}">${fmt(cur.gastos)}</div>
-        <div class="sub ${varCls}">${varTxt || cur.items.length + ' lançamentos'}</div>
+        <!-- Comparação vs mês anterior fica só na badge (.kpi-comp), que nomeia
+             o mês — antes a mesma info aparecia duplicada aqui e na badge. -->
+        <div class="sub">${cur.items.length} lançamento${cur.items.length === 1 ? '' : 's'}</div>
       </div>
       <div class="card">
         <div class="label">Investido</div>
@@ -10304,6 +10307,78 @@ function renderProfitability() {
       try { renderFutureCommitment(); } catch (e) { console.warn('[future-commit]', e); }
     };
   }
+})();
+</script>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     FIX: persistência do mês/ano selecionado (bug "sempre abre em Maio")
+     ════════════════════════════════════════════════════════════════════ -->
+<script>
+(function periodPersistence() {
+  const keyFor = u => 'financeapp_period_' + u;
+
+  // 1. RESTAURAR no boot (roda no parse, ANTES dos handlers de DOMContentLoaded
+  //    que fazem o primeiro render — assim o app já nasce no período salvo).
+  try {
+    const s = (typeof getSession === 'function') ? getSession() : null;
+    if (s && s.username) {
+      const raw = localStorage.getItem(keyFor(s.username));
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (Number.isInteger(p.m) && p.m >= 0 && p.m <= 11) currentMonth = p.m;
+        if (Number.isInteger(p.y) && p.y >= 2000 && p.y <= 2100) currentYear = p.y;
+      }
+    }
+  } catch (e) { /* período padrão */ }
+
+  // 2. PERSISTIR a cada render (todo caminho que troca mês/ano — selects,
+  //    setas ‹›, busca, atalhos — termina em renderAll). Também RESTAURA na
+  //    primeira renderização de cada usuário (cobre login manual e troca de
+  //    usuário, não só a sessão restaurada no boot).
+  let _periodUser = null;
+  function applySaved(user) {
+    const raw = localStorage.getItem(keyFor(user));
+    if (!raw) return;
+    const p = JSON.parse(raw);
+    if (Number.isInteger(p.m) && p.m >= 0 && p.m <= 11) currentMonth = p.m;
+    if (Number.isInteger(p.y) && p.y >= 2000 && p.y <= 2100 &&
+        (!db || !Array.isArray(db.years) || !db.years.length || db.years.includes(p.y))) {
+      currentYear = p.y;
+    }
+    // Sincroniza os selects já construídos com o período restaurado
+    [['monthSelect', currentMonth], ['contextMonthSelect', currentMonth], ['yearSelect', currentYear]]
+      .forEach(([id, val]) => {
+        const el = document.getElementById(id);
+        if (el && el.options && el.options.length) el.value = String(val);
+      });
+  }
+  const orig = window.renderAll;
+  window.renderAll = function() {
+    try {
+      if (typeof currentUser !== 'undefined' && currentUser && currentUser !== _periodUser) {
+        _periodUser = currentUser;
+        applySaved(currentUser);
+      }
+    } catch (e) { /* segue com o período atual */ }
+    if (orig) orig.apply(this, arguments);
+    try {
+      if (typeof currentUser !== 'undefined' && currentUser) {
+        localStorage.setItem(keyFor(currentUser), JSON.stringify({ y: currentYear, m: currentMonth }));
+      }
+    } catch (e) { /* storage cheio/indisponível: segue sem persistir */ }
+  };
+
+  // 3. VALIDAR após o boot: se o ano salvo não existe mais no banco do
+  //    usuário (ex.: backup restaurado), volta para o último ano válido.
+  window.addEventListener('DOMContentLoaded', () => {
+    try {
+      if (db && Array.isArray(db.years) && db.years.length && !db.years.includes(currentYear)) {
+        currentYear = db.years[db.years.length - 1];
+        if (typeof rebuildYearSelectors === 'function') rebuildYearSelectors();
+        renderAll();
+      }
+    } catch (e) { /* mantém como está */ }
+  });
 })();
 </script>
 </body>
