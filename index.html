@@ -1586,8 +1586,10 @@
     }
     /* Esconder "Maio de 2026 · atualizado ao vivo" em mobile — já está no header */
     #dashSub { display: none; }
-    /* Compactar h1 do Dashboard */
-    #dashboard > h1 { display: none; }
+    /* [v50] O h1 do Início agora é a saudação ("Boa noite, Kaio") — assinatura
+       do rebrand. Aparece no mobile em tamanho compacto (antes: display:none,
+       quando o h1 era só o rótulo "Dashboard"). */
+    #dashboard > h1 { display: block; font-size: 1.3rem; margin: 4px 0 14px; }
 
     .page-wrap { padding: 12px 14px 80px; }
   }
@@ -1617,9 +1619,10 @@
     .dash-hero {
       gap: 8px !important;
     }
+    /* [v50] Sem card "destaque": o momento-hero saiu dos cards (é o número
+       gigante em .home-hero). Os 4 KPIs ficam iguais, em grade 2×2. */
     .dash-hero > .kpi:first-child,
     .dash-hero > div:first-child {
-      grid-column: 1 / -1;
       padding: 14px 16px !important;
     }
     .dash-hero > .kpi:first-child .kpi-value,
@@ -2430,8 +2433,8 @@
     <div class="nav-group-label">Operação</div>
     <nav class="nav">
       <button class="tabBtn" data-tab="gastos"><span class="icon" aria-hidden="true">💸</span> Gastos no mês</button>
-      <button class="tabBtn" data-tab="registro"><span class="icon" aria-hidden="true">➕</span> Registrar</button>
-      <button class="tabBtn" data-tab="referencia"><span class="icon" aria-hidden="true">⚖️</span> Mês de referência</button>
+      <button class="tabBtn" data-tab="registro"><span class="icon" aria-hidden="true">➕</span> Adicionar</button>
+      <button class="tabBtn" data-tab="referencia"><span class="icon" aria-hidden="true">⚖️</span> Comparar meses</button>
     </nav>
   </div>
 
@@ -2542,8 +2545,8 @@
 
   <!-- ============== REFERÊNCIA ============== -->
   <div id="referencia" class="content">
-    <h1>Dashboard Comparativo</h1>
-    <p class="page-sub">Compare o mês atual com um mês de referência.</p>
+    <h1>Comparar <em>meses</em></h1>
+    <p class="page-sub">Veja o que mudou entre o mês atual e outro mês do ano.</p>
     <div class="panel" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:14px 18px">
       <label style="margin:0">Comparar mês atual com</label>
       <select id="refCompareSelect" onchange="renderComparison()" style="max-width:220px"></select>
@@ -2563,8 +2566,8 @@
 
   <!-- ============== REGISTRAR ============== -->
   <div id="registro" class="content">
-    <h1>Registrar</h1>
-    <p class="page-sub">Adicione novas saídas, entradas ou aportes.</p>
+    <h1>Adicionar</h1>
+    <p class="page-sub">Registre um gasto, uma entrada ou um aporte.</p>
     <div class="form-container">
       <div class="panel">
         <h2>Nova Saída (Gasto)</h2>
@@ -5883,7 +5886,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v49';
+const APP_VERSION = 'v50';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-07-03';
@@ -7280,24 +7283,34 @@ function renderBudgetTracking(cur) {
   const el = document.getElementById('budgetTracking');
   const withBudget = db.categories.filter(c => c.budget > 0);
   if (withBudget.length === 0) {
-    el.innerHTML = '<p class="muted">Nenhum orçamento definido. Vá em "Categorias" para definir.</p>';
+    // Empty state acionável: o que é + por que está vazio + como começar
+    el.innerHTML = `
+      <p class="muted" style="margin:0 0 10px">
+        Defina um limite mensal por categoria e acompanhe aqui quanto ainda pode gastar.
+      </p>
+      <button class="btn" onclick="document.querySelector('.tabBtn[data-tab=&quot;categorias&quot;]')?.click()">Definir orçamentos</button>`;
     return;
   }
   const byCat = groupByCat(cur.items);
+  // Enquadramento "quanto resta" (acionável) em vez de "gasto/limite" (contábil)
   el.innerHTML = withBudget.map(c => {
     const used = byCat[c.name] || 0;
+    const left = c.budget - used;
     const pct = c.budget ? Math.min(100, (used / c.budget * 100)) : 0;
     const realPct = c.budget ? (used / c.budget * 100) : 0;
     const overBudget = realPct > 100;
     const cls = overBudget ? 'over' : (realPct > 80 ? 'warn' : '');
+    const rightTxt = overBudget
+      ? `<span class="neg" style="font-weight:600">${fmt(Math.abs(left))} acima</span>`
+      : `<span style="font-weight:600">${fmt(left)}</span> <span class="muted" style="font-size:0.75rem">restante</span>`;
     return `
-      <div style="padding:10px 0; border-bottom: 1px solid var(--border)">
-        <div style="display:flex; justify-content:space-between; font-size:0.88rem; margin-bottom:4px">
+      <div style="padding:10px 0; border-bottom: 1px solid var(--border-soft)">
+        <div style="display:flex; justify-content:space-between; align-items:baseline; font-size:0.88rem; margin-bottom:4px">
           <span><span style="width:8px; height:8px; border-radius:2px; background:${c.color}; display:inline-block; margin-right:6px"></span>${escapeHtml(c.name)}</span>
-          <span style="font-weight:600" class="${overBudget ? 'neg' : ''}">${fmt(used)} / ${fmt(c.budget)}</span>
+          <span>${rightTxt}</span>
         </div>
         <div class="cat-budget-bar"><div class="cat-budget-fill ${cls}" style="width:${pct}%"></div></div>
-        <div class="muted" style="font-size:0.72rem; margin-top:2px">${realPct.toFixed(0)}% usado${overBudget ? ' (estourou!)' : ''}</div>
+        <div class="muted" style="font-size:0.72rem; margin-top:2px">${fmt(used)} de ${fmt(c.budget)} · ${realPct.toFixed(0)}%</div>
       </div>`;
   }).join('');
 }
@@ -9547,11 +9560,13 @@ window.renderDashboard = function() {
     const varTxt = variacao == null ? '' : `${variacao >= 0 ? '↑' : '↓'} ${Math.abs(variacao).toFixed(1)}% vs mês ant.`;
     const varCls = variacao == null ? 'muted' : (variacao > 0 ? 'neg' : 'pos');
 
+    // REBRAND: o "momento hero" (número gigante) vive fora dos cards — ver
+    // renderHomeHero(). Aqui ficam os 4 indicadores de apoio, em cards iguais.
     dashKPIs.innerHTML = `
-      <div class="card featured">
+      <div class="card">
         <div class="label">Saldo do mês</div>
-        <div class="value anim-num" data-value="${cur.saldo}">${fmt(cur.saldo)}</div>
-        <div class="sub">Entradas − Gastos − Investido</div>
+        <div class="value ${cls} anim-num" data-value="${cur.saldo}">${fmt(cur.saldo)}</div>
+        <div class="sub">Entradas − gastos − investido</div>
       </div>
       <div class="card">
         <div class="label">Entradas</div>
@@ -9561,8 +9576,6 @@ window.renderDashboard = function() {
       <div class="card">
         <div class="label">Gastos</div>
         <div class="value neg anim-num" data-value="${cur.gastos}">${fmt(cur.gastos)}</div>
-        <!-- Comparação vs mês anterior fica só na badge (.kpi-comp), que nomeia
-             o mês — antes a mesma info aparecia duplicada aqui e na badge. -->
         <div class="sub">${cur.items.length} lançamento${cur.items.length === 1 ? '' : 's'}</div>
       </div>
       <div class="card">
@@ -10057,6 +10070,10 @@ html { overflow-x: clip; }
   .dash-hero { grid-template-columns: 1fr 1fr !important; }
   .dash-hero .card.featured { grid-column: 1 / -1 !important; }
   .grid-4 { grid-template-columns: 1fr 1fr !important; }
+  /* Valores dos KPIs nunca quebram entre "R$" e o número */
+  .dash-hero .card .value, .grid-4 .card .value {
+    font-size: 1.12rem !important; white-space: nowrap;
+  }
 }
 </style>
 
@@ -10379,6 +10396,217 @@ function renderProfitability() {
       }
     } catch (e) { /* mantém como está */ }
   });
+})();
+</script>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     REBRAND v50 — Início editorial: saudação, "livre para gastar",
+     medidor de orçamento e atividade recente.
+     Assinatura visual: o dinheiro como manchete (Fraunces, sem card).
+     ════════════════════════════════════════════════════════════════════ -->
+<style id="rebrand-home">
+  .home-hero { margin: 2px 0 24px; }
+  .home-hero .hh-question {
+    font-size: 0.85rem; color: var(--text-muted); margin-bottom: 2px;
+  }
+  .home-hero .hh-amount {
+    font-family: var(--font-display); font-weight: 500;
+    font-size: clamp(2.3rem, 8vw, 3.4rem); line-height: 1.05;
+    letter-spacing: -0.03em; color: var(--text);
+  }
+  .home-hero .hh-amount.neg { color: var(--neg); }
+  .home-hero .hh-amount .hh-cents { font-size: 0.55em; color: var(--text-muted); font-weight: 400; }
+  .home-hero .hh-context {
+    font-family: var(--font-display); font-style: italic;
+    font-size: 1rem; color: var(--accent); margin-top: 2px;
+  }
+  .hh-meter { max-width: 460px; margin-top: 14px; }
+  .hh-meter-bar {
+    height: 8px; border-radius: 4px; background: var(--bg-soft);
+    overflow: hidden; border: 1px solid var(--border-soft);
+  }
+  .hh-meter-fill {
+    height: 100%; border-radius: 4px;
+    background: linear-gradient(90deg, var(--primary), var(--accent));
+    transition: width .6s cubic-bezier(.16,1,.3,1);
+  }
+  .hh-meter-fill.over { background: var(--neg); }
+  .hh-meter-legend {
+    display: flex; justify-content: space-between; gap: 10px;
+    font-size: 0.75rem; color: var(--text-muted); margin-top: 6px;
+  }
+
+  /* Atividade recente */
+  .recent-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 11px 2px; border-bottom: 1px solid var(--border-soft);
+  }
+  .recent-item:last-child { border-bottom: none; }
+  .recent-dot {
+    width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.08);
+  }
+  .recent-main { flex: 1; min-width: 0; }
+  .recent-desc {
+    font-weight: 500; font-size: 0.9rem; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .recent-meta { font-size: 0.75rem; color: var(--text-muted); margin-top: 1px; }
+  .recent-value {
+    font-family: var(--font-display); font-variant-numeric: tabular-nums;
+    font-weight: 500; font-size: 0.95rem; white-space: nowrap;
+  }
+  .panel-head-row {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 10px; margin-bottom: 10px;
+  }
+  .panel-head-row h2 { margin: 0; }
+  .link-btn {
+    background: none; border: none; cursor: pointer; padding: 4px 2px;
+    color: var(--primary); font-size: 0.82rem; font-weight: 600; font-family: inherit;
+  }
+  .link-btn:hover { text-decoration: underline; }
+  :root[data-theme="light"] .home-hero .hh-amount { color: #15092e; }
+</style>
+<script>
+// Saudação conforme a hora + nome de exibição do usuário
+function greetingLine() {
+  const h = new Date().getHours();
+  const p = h < 6 ? 'Boa madrugada' : h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';
+  let name = '';
+  try {
+    const u = getUsers()[currentUser] || {};
+    name = (u.displayName || currentUser || '').split(' ')[0];
+    if (name) name = name.charAt(0).toUpperCase() + name.slice(1);
+  } catch (e) { /* sem nome */ }
+  return name ? `${p}, <em>${escapeHtml(name)}</em>` : p;
+}
+
+// Data por extenso do mês selecionado (ou de hoje, quando é o mês corrente)
+function periodLine() {
+  const now = new Date();
+  const isCurrent = now.getFullYear() === currentYear && now.getMonth() === currentMonth;
+  if (isCurrent) {
+    return now.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+  }
+  return `${monthsFull[currentMonth]} de ${currentYear}`;
+}
+
+// Datas relativas para a atividade recente
+function relativeDay(iso) {
+  if (!iso) return '';
+  const d = new Date(iso); const now = new Date();
+  const midnight = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((midnight(now) - midnight(d)) / 86400000);
+  if (days === 0) return 'Hoje';
+  if (days === 1) return 'Ontem';
+  if (days > 1 && days < 7) return `Há ${days} dias`;
+  return d.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' });
+}
+
+function renderHomeHero() {
+  const dash = document.getElementById('dashboard');
+  const kpis = document.getElementById('dashKPIs');
+  if (!dash || !kpis) return;
+
+  // Saudação no lugar do título "Dashboard"
+  const h1 = dash.querySelector('h1');
+  if (h1) h1.innerHTML = greetingLine();
+  const sub = document.getElementById('dashSub');
+  if (sub) sub.textContent = periodLine();
+
+  const cur = getMonthData(currentYear, currentMonth);
+  const withBudget = (db.categories || []).filter(c => c.budget > 0);
+  const byCat = groupByCat(cur.items);
+
+  // O número-manchete: com orçamentos definidos, mostra o que resta deles;
+  // sem orçamentos, mostra o saldo do mês (entradas − gastos − investido).
+  let amount, question, context, pctUsed = null;
+  if (withBudget.length) {
+    const totalBudget = withBudget.reduce((a, c) => a + c.budget, 0);
+    const spentInBudgets = withBudget.reduce((a, c) => a + (byCat[c.name] || 0), 0);
+    amount = totalBudget - spentInBudgets;
+    pctUsed = totalBudget > 0 ? (spentInBudgets / totalBudget * 100) : null;
+    question = 'Livre para gastar';
+    context = amount >= 0
+      ? `dentro do orçamento de ${monthsFull[currentMonth].toLowerCase()}`
+      : `acima do orçamento de ${monthsFull[currentMonth].toLowerCase()}`;
+  } else {
+    amount = cur.saldo;
+    question = 'Saldo do mês';
+    context = amount >= 0
+      ? `sobrando em ${monthsFull[currentMonth].toLowerCase()}`
+      : `no vermelho em ${monthsFull[currentMonth].toLowerCase()}`;
+  }
+
+  const abs = Math.abs(amount);
+  const inteiro = Math.floor(abs).toLocaleString('pt-BR');
+  const cents = Math.round((abs - Math.floor(abs)) * 100).toString().padStart(2, '0');
+  const signal = amount < 0 ? '−' : '';
+
+  let hero = document.getElementById('homeHero');
+  if (!hero) {
+    hero = document.createElement('section');
+    hero.id = 'homeHero';
+    hero.className = 'home-hero';
+    kpis.insertAdjacentElement('beforebegin', hero);
+  }
+  hero.innerHTML = `
+    <div class="hh-question">${question}</div>
+    <div class="hh-amount ${amount < 0 ? 'neg' : ''}">${signal}R$ ${inteiro}<span class="hh-cents">,${cents}</span></div>
+    <div class="hh-context">${context}</div>
+    ${pctUsed != null ? `
+      <div class="hh-meter">
+        <div class="hh-meter-bar"><div class="hh-meter-fill ${pctUsed > 100 ? 'over' : ''}" style="width:${Math.min(100, pctUsed)}%"></div></div>
+        <div class="hh-meter-legend">
+          <span>${pctUsed.toFixed(0)}% do orçamento usado</span>
+          <span>${withBudget.length} categoria${withBudget.length === 1 ? '' : 's'} com orçamento</span>
+        </div>
+      </div>` : ''}
+  `;
+}
+
+function renderRecentActivity() {
+  const dash = document.getElementById('dashboard');
+  if (!dash) return;
+  const cur = getMonthData(currentYear, currentMonth);
+  const dated = (cur.items || []).filter(i => i.date)
+    .sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
+
+  let panel = document.getElementById('recentActivity');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'recentActivity';
+    panel.className = 'panel';
+    const anchor = document.getElementById('incomePanelDash');
+    if (anchor) anchor.insertAdjacentElement('beforebegin', panel);
+    else dash.appendChild(panel);
+  }
+  const rows = dated.map(i => `
+    <div class="recent-item">
+      <span class="recent-dot" style="background:${getCategoryColor(i.cat)}"></span>
+      <div class="recent-main">
+        <div class="recent-desc">${escapeHtml(i.desc)}</div>
+        <div class="recent-meta">${relativeDay(i.date)} · ${escapeHtml(i.cat || '')}</div>
+      </div>
+      <span class="recent-value neg">− ${fmt(i.value).replace('R$ ', 'R$ ')}</span>
+    </div>`).join('');
+  panel.innerHTML = `
+    <div class="panel-head-row">
+      <h2>Atividade recente</h2>
+      <button class="link-btn" onclick="document.querySelector('.tabBtn[data-tab=&quot;gastos&quot;]')?.click()">Ver tudo</button>
+    </div>
+    ${rows || `<p class="muted" style="margin:4px 0">Nada lançado com data em ${monthsFull[currentMonth].toLowerCase()}. Toque em <strong>+</strong> para adicionar o primeiro gasto.</p>`}
+  `;
+}
+
+(function chainRebrandHome() {
+  const orig = window.renderDashboard;
+  window.renderDashboard = function() {
+    if (orig) orig.apply(this, arguments);
+    try { renderHomeHero(); } catch (e) { console.warn('[hero]', e); }
+    try { renderRecentActivity(); } catch (e) { console.warn('[recent]', e); }
+  };
 })();
 </script>
 </body>
