@@ -5919,7 +5919,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v53';
+const APP_VERSION = 'v54';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-07-22';
@@ -7156,26 +7156,38 @@ function getCategoryColor(name) {
   return c ? c.color : '#94a3b8';
 }
 
-// ============== SALDO ACUMULADO ("dinheiro em conta") ==============
-// A conta corrente não zera na virada do mês: o que sobra é carregado adiante
-// (e o que falta é descontado), somando mês a mês, inclusive de dez → jan.
+// ============== DINHEIRO EM CONTA (ponto de partida + soma pra frente) ==========
+// A conta reseta num "ponto de partida" (por padrão o mês atual, começando em
+// R$ 0) e soma SÓ dali pra frente. Meses anteriores ao ponto de partida são
+// ignorados de propósito — evita o descompasso de dados antigos incompletos.
+// Ao informar o saldo real em Configurações, o ponto de partida passa a ser o
+// mês atual com aquele valor.
 
-// Primeira competência (ano, mês) com dados reais registrados.
-function getFirstDataMonth() {
-  let best = null;
-  const scan = obj => Object.keys(obj || {}).forEach(k => {
-    const [y, m] = k.split('-').map(Number);
-    if (Number.isFinite(y) && Number.isFinite(m) &&
-        (best === null || y < best.y || (y === best.y && m < best.m))) best = { y, m };
-  });
-  scan(db.events); scan(db.income); scan(db.investments);
-  return best || { y: currentYear, m: currentMonth };
+// Config efetiva do ponto de partida: explícita (db.saldoConfig) ou padrão.
+// openingValue = dinheiro em conta no INÍCIO do mês-âncora (antes dos lançamentos).
+function getSaldoAnchor() {
+  const cfg = db.saldoConfig;
+  if (cfg && cfg.anchorKey && typeof cfg.openingValue === 'number') return cfg;
+  // Compatibilidade com o formato antigo (targetValue = saldo no FIM da âncora).
+  if (cfg && cfg.anchorKey && typeof cfg.targetValue === 'number') {
+    const [ay, am] = cfg.anchorKey.split('-').map(Number);
+    return { anchorKey: cfg.anchorKey, openingValue: cfg.targetValue - getMonthData(ay, am).saldo };
+  }
+  // Padrão: mês real atual começa em R$ 0 (o saldo do próprio mês é neutralizado).
+  const now = new Date();
+  const ay = now.getFullYear(), am = now.getMonth();
+  return { anchorKey: getKey(ay, am), openingValue: -getMonthData(ay, am).saldo, _default: true };
 }
 
-// Soma dos saldos mensais do primeiro mês com dados até (y, m) inclusive.
-function sumSaldoAte(y, m) {
-  const first = getFirstDataMonth();
-  let sum = 0, yy = first.y, mm = first.m, guard = 0;
+// Posição de (y, m) vs. ponto de partida: <0 antes, 0 na âncora, >0 depois.
+function saldoAnchorCmp(y, m) {
+  const [ay, am] = getSaldoAnchor().anchorKey.split('-').map(Number);
+  return (y - ay) * 12 + (m - am);
+}
+
+// Soma dos saldos mensais de (ay, am) até (y, m), ambos inclusive.
+function sumSaldoRange(ay, am, y, m) {
+  let sum = 0, yy = ay, mm = am, guard = 0;
   while ((yy < y || (yy === y && mm <= m)) && guard++ < 1200) {
     sum += getMonthData(yy, mm).saldo;
     if (++mm > 11) { mm = 0; yy++; }
@@ -7183,16 +7195,13 @@ function sumSaldoAte(y, m) {
   return sum;
 }
 
-// "Dinheiro em conta" ao fim de (y, m). Se houver âncora de reconciliação
-// (db.saldoConfig), calibra a base pra bater com o saldo real informado.
+// "Dinheiro em conta" ao fim de (y, m). Antes do ponto de partida devolve o
+// próprio ponto de partida (o passado é ignorado); dali pra frente acumula.
 function getSaldoAcumulado(y, m) {
-  const cfg = db.saldoConfig;
-  let base = 0;
-  if (cfg && cfg.anchorKey && typeof cfg.targetValue === 'number') {
-    const [ay, am] = cfg.anchorKey.split('-').map(Number);
-    base = cfg.targetValue - sumSaldoAte(ay, am);
-  }
-  return base + sumSaldoAte(y, m);
+  const cfg = getSaldoAnchor();
+  const [ay, am] = cfg.anchorKey.split('-').map(Number);
+  if ((y - ay) * 12 + (m - am) < 0) return cfg.openingValue;
+  return cfg.openingValue + sumSaldoRange(ay, am, y, m);
 }
 
 // Total ainda investido (aportes − retiradas, por classe), somando todos os meses.
@@ -7226,25 +7235,32 @@ function setContaHoje() {
   const el = document.getElementById('contaHoje');
   const v = parseMoneyBR(el.value);
   if (!Number.isFinite(v)) { toast('Digite um valor válido, ex.: 1500,00', 'warn'); return; }
-  db.saldoConfig = { anchorKey: getKey(currentYear, currentMonth), targetValue: v };
+  // Ancora no mês REAL de hoje. openingValue = saldo no início do mês, pra que a
+  // conta mostre exatamente o valor informado agora e reflita edições do mês.
+  const now = new Date();
+  const ay = now.getFullYear(), am = now.getMonth();
+  db.saldoConfig = { anchorKey: getKey(ay, am), openingValue: v - getMonthData(ay, am).saldo };
   saveDB();
   updateContaHojeHint();
   if (typeof renderDashboard === 'function' &&
       document.getElementById('dashboard')?.classList.contains('active')) renderDashboard();
-  toast('Saldo salvo — a Início já reflete o novo valor', 'success');
+  toast('Saldo salvo — a conta soma a partir de agora', 'success');
 }
 
-// Mostra o estado atual da calibração no painel de Configurações.
+// Mostra o estado atual do ponto de partida no painel de Configurações.
 function updateContaHojeHint() {
   const hint = document.getElementById('contaHojeHint');
   const inp = document.getElementById('contaHoje');
   const cfg = db.saldoConfig;
-  if (cfg && cfg.anchorKey && typeof cfg.targetValue === 'number') {
+  const calibrado = cfg && cfg.anchorKey &&
+    (typeof cfg.openingValue === 'number' || typeof cfg.targetValue === 'number');
+  if (calibrado) {
     const [ay, am] = cfg.anchorKey.split('-').map(Number);
-    if (hint) hint.textContent = `Calibrado em ${monthsFull[am]} de ${ay}: ${fmt(cfg.targetValue)}. Salve de novo sempre que quiser reconciliar com o extrato.`;
-    if (inp && !inp.value) inp.value = cfg.targetValue.toFixed(2).replace('.', ',');
+    const atual = getSaldoAcumulado(ay, am);   // valor reconciliado no mês do ponto de partida
+    if (hint) hint.textContent = `Ponto de partida em ${monthsFull[am]} de ${ay}: ${fmt(atual)}. Salve de novo quando quiser reconciliar com o extrato.`;
+    if (inp && !inp.value) inp.value = atual.toFixed(2).replace('.', ',');
   } else if (hint) {
-    hint.textContent = 'Ainda não calibrado — a conta começa em R$ 0,00 no primeiro mês com dados.';
+    hint.textContent = 'A conta começa em R$ 0,00 neste mês. Informe seu saldo real para reconciliar e somar a partir daqui.';
   }
 }
 
@@ -7600,21 +7616,26 @@ function renderAnual() {
     const d = getMonthData(currentYear, i);
     totG += d.gastos; totE += d.entradas; totI += d.investido;
     const cls = d.saldo >= 0 ? 'pos' : 'neg';
-    const conta = getSaldoAcumulado(currentYear, i);        // saldo acumulado até este mês
+    // "Em conta" só a partir do ponto de partida; antes disso mostra "—".
+    const contaCell = saldoAnchorCmp(currentYear, i) < 0
+      ? `<td class="muted">—</td>`
+      : (c => `<td class="${c >= 0 ? 'pos' : 'neg'}" style="font-weight:600">${fmt(c)}</td>`)(getSaldoAcumulado(currentYear, i));
     return `<tr>
       <td>${monthsFull[i]}</td>
       <td class="neg">${fmt(d.gastos)}</td>
       <td class="pos">${fmt(d.entradas)}</td>
       <td class="invest">${fmt(d.investido)}</td>
       <td class="${cls}" style="font-weight:600">${fmt(d.saldo)}</td>
-      <td class="${conta >= 0 ? 'pos' : 'neg'}" style="font-weight:600">${fmt(conta)}</td>
+      ${contaCell}
     </tr>`;
   }).join('');
   document.getElementById('anualTbody').innerHTML = linhas;
   const totSaldo = totE - totG - totI;
-  const contaFimAno = getSaldoAcumulado(currentYear, 11);   // dinheiro em conta no fim do ano
+  const contaFimCell = saldoAnchorCmp(currentYear, 11) < 0
+    ? `<td class="muted">—</td>`
+    : (c => `<td class="${c >= 0 ? 'pos' : 'neg'}" style="font-weight:600">${fmt(c)}</td>`)(getSaldoAcumulado(currentYear, 11));
   document.getElementById('anualTfoot').innerHTML = `
-    <tr><td>Total ${currentYear}</td><td class="neg">${fmt(totG)}</td><td class="pos">${fmt(totE)}</td><td class="invest">${fmt(totI)}</td><td class="${totSaldo >= 0 ? 'pos' : 'neg'}">${fmt(totSaldo)}</td><td class="${contaFimAno >= 0 ? 'pos' : 'neg'}" style="font-weight:600">${fmt(contaFimAno)}</td></tr>`;
+    <tr><td>Total ${currentYear}</td><td class="neg">${fmt(totG)}</td><td class="pos">${fmt(totE)}</td><td class="invest">${fmt(totI)}</td><td class="${totSaldo >= 0 ? 'pos' : 'neg'}">${fmt(totSaldo)}</td>${contaFimCell}</tr>`;
 
   document.getElementById('anualStats').innerHTML = `
     <div class="card"><div class="label">Entradas</div><div class="value pos">${fmt(totE)}</div></div>
@@ -10659,20 +10680,33 @@ function renderHomeHero() {
   const withBudget = (db.categories || []).filter(c => c.budget > 0);
   const byCat = groupByCat(cur.items);
 
-  // A manchete é o DINHEIRO EM CONTA: saldo acumulado que atravessa os meses.
-  // O que sobra é carregado adiante; o que falta é descontado. Nunca zera.
-  const amount     = getSaldoAcumulado(currentYear, currentMonth);
-  const saldoMes   = cur.saldo;
-  const vindoAntes = amount - saldoMes;
-  const mes        = monthsFull[currentMonth].toLowerCase();
-  const question   = 'Dinheiro em conta';
-  const parteAntes = vindoAntes >= 0
-    ? `${fmt(vindoAntes)} de meses anteriores`
-    : `${fmt(Math.abs(vindoAntes))} devidos de antes`;
-  const parteMes = saldoMes >= 0
-    ? `+ ${fmt(saldoMes)} que sobraram em ${mes}`
-    : `− ${fmt(Math.abs(saldoMes))} que faltaram em ${mes}`;
-  const context = `${parteAntes} ${parteMes}`;
+  // A manchete é o DINHEIRO EM CONTA: reseta no ponto de partida e soma daí pra
+  // frente. Antes do ponto de partida os meses são ignorados (dados antigos
+  // incompletos causavam descompasso).
+  const amount   = getSaldoAcumulado(currentYear, currentMonth);
+  const saldoMes = cur.saldo;
+  const mes      = monthsFull[currentMonth].toLowerCase();
+  const question = 'Dinheiro em conta';
+  const anchor   = getSaldoAnchor();
+  const cmp      = saldoAnchorCmp(currentYear, currentMonth);
+  let context;
+  if (cmp < 0) {
+    const [ay, am] = anchor.anchorKey.split('-').map(Number);
+    context = `Antes do seu ponto de partida (${monthsFull[am].toLowerCase()} de ${ay})`;
+  } else if (cmp === 0) {
+    context = anchor._default
+      ? 'Comece definindo seu saldo real em Configurações → Dinheiro em conta'
+      : 'Seu ponto de partida — a conta soma a partir daqui';
+  } else {
+    const vindoAntes = amount - saldoMes;
+    const parteAntes = vindoAntes >= 0
+      ? `${fmt(vindoAntes)} acumulado`
+      : `${fmt(Math.abs(vindoAntes))} no vermelho`;
+    const parteMes = saldoMes >= 0
+      ? `+ ${fmt(saldoMes)} que sobraram em ${mes}`
+      : `− ${fmt(Math.abs(saldoMes))} que faltaram em ${mes}`;
+    context = `${parteAntes} ${parteMes}`;
+  }
 
   // Medidor de orçamento (secundário), só quando há orçamentos definidos.
   let pctUsed = null;
