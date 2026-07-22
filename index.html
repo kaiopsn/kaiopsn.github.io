@@ -2793,12 +2793,12 @@
         Seus dados são salvos automaticamente neste navegador. Faça backups periódicos pra não perder se trocar de máquina ou limpar o cache.
       </p>
       <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-        <button class="btn primary" onclick="exportData()">⬇ Exportar dados (JSON)</button>
-        <button class="btn" onclick="exportTransactionsCSV()" style="margin-left:8px">📊 Exportar CSV (Excel)</button>
-        <button class="btn" onclick="restoreDeletedItems()" style="margin-left:8px">♻️ Restaurar excluídos</button>
-        <button class="btn" onclick="document.getElementById('importFile').click()">⬆ Importar backup</button>
+        <button class="btn primary" onclick="exportData()"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v10"/><path d="M8 11l4 4 4-4"/><path d="M5 19h14"/></svg>Exportar dados (JSON)</button>
+        <button class="btn" onclick="exportTransactionsCSV()" style="margin-left:8px"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 10h16"/><path d="M10 10v9"/></svg>Exportar CSV (Excel)</button>
+        <button class="btn" onclick="restoreDeletedItems()" style="margin-left:8px"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v3.6h3.6"/></svg>Restaurar excluídos</button>
+        <button class="btn" onclick="document.getElementById('importFile').click()"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10"/><path d="M8 13l4-4 4 4"/><path d="M5 5h14"/></svg>Importar backup</button>
         <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(this)">
-        <button class="btn" onclick="document.getElementById('importOfxFile').click()" title="Importe o extrato do banco (.ofx)">🏦 Importar extrato (OFX)</button>
+        <button class="btn" onclick="document.getElementById('importOfxFile').click()" title="Importe o extrato do banco (.ofx)"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4.5H4z"/><path d="M5 8.5v8"/><path d="M9.5 8.5v8"/><path d="M14.5 8.5v8"/><path d="M19 8.5v8"/><path d="M3.5 19.5h17"/></svg>Importar extrato (OFX)</button>
         <input type="file" id="importOfxFile" accept=".ofx,.qfx,text/plain" style="display:none" onchange="importOFX(this)">
       </div>
     </div>
@@ -2844,7 +2844,7 @@
     </div>
     
     <div class="panel" id="usersPanel">
-      <h2>👥 Gerenciar usuários</h2>
+      <h2>Gerenciar usuários</h2>
       <p class="muted" style="font-size:0.88rem; margin-bottom:14px">
         Usuários cadastrados neste dispositivo. Cada um tem seus próprios dados financeiros isolados.
       </p>
@@ -2853,17 +2853,17 @@
 
     
     <div class="panel">
-      <h2>🎨 Aparência</h2>
+      <h2>Aparência</h2>
       <p class="muted" style="font-size:0.88rem;margin-bottom:14px">
-        Alterne entre tema escuro (padrão) e claro.
+        Alterne entre tema claro (padrão) e escuro.
       </p>
-      <button class="btn" id="themeToggle" onclick="toggleTheme()" style="padding:11px 18px">
-        ☀️ Modo claro
+      <button class="btn" id="themeToggle" onclick="toggleTheme()" style="padding:11px 18px; display:inline-flex; align-items:center;">
+        <svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>Modo escuro
       </button>
     </div>
 
     <div class="panel">
-      <h2>📲 Instalar app</h2>
+      <h2>Instalar app</h2>
       <p class="muted" style="font-size:0.88rem;margin-bottom:14px">
         Instale o FinanceApp na tela inicial do seu dispositivo para acesso rápido, igual ao Todoist.
       </p>
@@ -4427,7 +4427,7 @@ function fillMethodPanels() {
     const pct = totalGeral > 0 ? ((stat.total / totalGeral) * 100).toFixed(0) : 0;
     return `
       <div class="method-card" style="--method-color:${meta.color}">
-        <div class="m-label"><span class="m-icon"></span>${meta.icon} ${meta.label}</div>
+        <div class="m-label"><span class="m-icon" style="display:inline-block;width:9px;height:9px;border-radius:3px;background:${meta.color};margin-right:8px;vertical-align:0"></span>${meta.label}</div>
         <div class="m-value">${fmt(stat.total)}</div>
         <div class="m-count">${stat.count} lançamento${stat.count === 1 ? '' : 's'}</div>
         ${totalGeral > 0 ? `<div class="m-pct">${pct}% do total</div>` : ''}
@@ -4848,7 +4848,7 @@ function renderSmartInsights() {
   if (!insights.length) { container.innerHTML = ''; return; }
   container.innerHTML = insights.map(i => `
     <div class="insight-card insight-${i.type}">
-      <span class="insight-icon">${i.icon}</span>
+      ${iconChip(i.icon)}
       <span class="insight-text">${i.text}</span>
     </div>`).join('');
 }
@@ -5024,7 +5024,11 @@ function setTheme(theme) {
   if (meta) meta.content = theme === 'light' ? '#F4F4F9' : '#0E0E14';
   // Update toggle button text
   const btn = document.getElementById('themeToggle');
-  if (btn) btn.textContent = theme === 'light' ? '🌙 Modo escuro' : '☀️ Modo claro';
+  if (btn) {
+    const moon = '<svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+    const sun = '<svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.5M12 19v2.5M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M2.5 12H5M19 12h2.5M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8"/></svg>';
+    btn.innerHTML = (theme === 'light' ? moon + 'Modo escuro' : sun + 'Modo claro');
+  }
 }
 function toggleTheme() {
   const cur = getTheme();
@@ -5726,7 +5730,7 @@ function enhanceCategoriesView() {
     const top = sortedCats.slice(0, 3);
     header.innerHTML = `
       <div class="cat-month-summary">
-        <div class="cat-summary-title">📊 Gastos por categoria em ${monthsFull[currentMonth]}/${currentYear}</div>
+        <div class="cat-summary-title">Gastos por categoria em ${monthsFull[currentMonth]}/${currentYear}</div>
         <div class="cat-summary-total">Total: <strong>${fmt(totalGeral)}</strong></div>
         ${top.length ? `
           <div class="cat-top">
@@ -5919,7 +5923,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v54';
+const APP_VERSION = 'v55';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-07-22';
@@ -7156,6 +7160,28 @@ function getCategoryColor(name) {
   return c ? c.color : '#94a3b8';
 }
 
+// Iconografia coesa: mapeia emojis legados → chips de linha tintados (mesmo
+// idioma dos ícones da navegação). [cor do traço, fundo translúcido, paths SVG].
+window.ICON_CHIP = {
+  '📈': ['#E5A13A','rgba(229,161,58,.15)','<path d="M3 17l6-6 4 4 7-7"/><path d="M17 7h4v4"/>'],
+  '📉': ['#12B76A','rgba(18,183,106,.15)','<path d="M3 7l6 6 4-4 7 7"/><path d="M17 17h4v-4"/>'],
+  '🔥': ['#F04438','rgba(240,68,56,.15)','<path d="M12 3c1 3 4 4 4 8a4 4 0 1 1-8 0c0-2 1-3 1.5-4 .5 2 2.5 2 2.5-4z"/>'],
+  '⚠️': ['#E5A13A','rgba(229,161,58,.15)','<path d="M12 4l9 15H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/>'],
+  '🚨': ['#F04438','rgba(240,68,56,.15)','<circle cx="12" cy="12" r="8.5"/><path d="M12 8v4.5"/><path d="M12 16h.01"/>'],
+  '✅': ['#12B76A','rgba(18,183,106,.15)','<circle cx="12" cy="12" r="8.5"/><path d="M8.3 12.4l2.6 2.6 4.8-5.2"/>'],
+  '👍': ['#12B76A','rgba(18,183,106,.15)','<circle cx="12" cy="12" r="8.5"/><path d="M8.3 12.4l2.6 2.6 4.8-5.2"/>'],
+  '🎯': ['#6D5EF6','rgba(109,94,246,.15)','<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1.1" fill="#6D5EF6" stroke="none"/>'],
+  '💡': ['#E5A13A','rgba(229,161,58,.15)','<path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.2 1 2.5h6c0-1.3.3-1.8 1-2.5A6 6 0 0 0 12 3z"/>'],
+  '💰': ['#12B76A','rgba(18,183,106,.15)','<circle cx="12" cy="12" r="8.5"/><path d="M14.6 9.4a2.6 2 0 0 0-2.6-1.4c-1.5 0-2.6.8-2.6 2s1 1.7 2.6 2 2.6.9 2.6 2-1.1 2-2.6 2a2.6 2 0 0 1-2.6-1.4"/><path d="M12 6.4v11"/>'],
+  '💸': ['#F04438','rgba(240,68,56,.15)','<rect x="3" y="7" width="18" height="10" rx="2"/><circle cx="12" cy="12" r="2.2"/>'],
+  '📊': ['#6D5EF6','rgba(109,94,246,.15)','<path d="M6 20v-6"/><path d="M12 20V8"/><path d="M18 20v-9"/><path d="M4 20h16"/>'],
+};
+window.iconChip = function(emoji) {
+  const e = window.ICON_CHIP[emoji];
+  if (!e) return `<span class="insight-icon">${emoji || ''}</span>`;
+  return `<span class="ic-chip" style="background:${e[1]}"><svg viewBox="0 0 24 24" fill="none" stroke="${e[0]}" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">${e[2]}</svg></span>`;
+};
+
 // ============== DINHEIRO EM CONTA (ponto de partida + soma pra frente) ==========
 // A conta reseta num "ponto de partida" (por padrão o mês atual, começando em
 // R$ 0) e soma SÓ dali pra frente. Meses anteriores ao ponto de partida são
@@ -7423,7 +7449,7 @@ function renderInsights(cur, prev) {
 
   el.innerHTML = insights.slice(0, 5).map(ins => `
     <div class="insight">
-      <div class="insight-icon">${ins.icon}</div>
+      ${iconChip(ins.icon)}
       <div class="insight-text">
         <div class="insight-title">${escapeHtml(ins.title)}</div>
         <div class="insight-desc">${escapeHtml(ins.desc)}</div>
@@ -7578,8 +7604,8 @@ function renderComparison() {
   let highlights = '';
   if (up || down) {
     highlights = `<div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px">
-      ${up ? `<div class="insight" style="flex:1; min-width:170px; margin:0"><span class="insight-icon">📈</span><div class="insight-text"><div class="insight-title">Maior aumento</div><div class="insight-desc">${escapeHtml(up.c)} · <span class="neg">+${fmt(up.d)}</span></div></div></div>` : ''}
-      ${down ? `<div class="insight" style="flex:1; min-width:170px; margin:0"><span class="insight-icon">📉</span><div class="insight-text"><div class="insight-title">Maior redução</div><div class="insight-desc">${escapeHtml(down.c)} · <span class="pos">${fmt(down.d)}</span></div></div></div>` : ''}
+      ${up ? `<div class="insight" style="flex:1; min-width:170px; margin:0">${iconChip('📈')}<div class="insight-text"><div class="insight-title">Maior aumento</div><div class="insight-desc">${escapeHtml(up.c)} · <span class="neg">+${fmt(up.d)}</span></div></div></div>` : ''}
+      ${down ? `<div class="insight" style="flex:1; min-width:170px; margin:0">${iconChip('📉')}<div class="insight-text"><div class="insight-title">Maior redução</div><div class="insight-desc">${escapeHtml(down.c)} · <span class="pos">${fmt(down.d)}</span></div></div></div>` : ''}
     </div>`;
   }
 
@@ -11058,6 +11084,56 @@ function renderRecentActivity() {
   #topCats .cat-bar-fill { height: 100%; border-radius: 999px; transition: width .55s cubic-bezier(.4,0,.2,1); }
   #topCats .cat-seeall { display: block; width: 100%; text-align: center; margin-top: 14px; padding: 10px; background: transparent; border: 0; color: var(--primary); font-weight: 600; font-size: 0.85rem; font-family: inherit; cursor: pointer; border-radius: var(--radius); transition: background .15s; }
   #topCats .cat-seeall:hover { background: var(--primary-tint); }
+
+  /* ── REFINO PREMIUM (v55) ────────────────────────────────────────── */
+  /* Números tabulares: alinham e transmitem precisão (financeiro). */
+  .home-hero .hh-amount, .card .value, .num, #topCats .cat-line-val,
+  #topCats .cat-line-pct, #catTotalDash, table td, table th, input,
+  .kpi-value, .badge, .hh-meter-legend { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+
+  /* Chip de ícone tintado (substitui emojis em insights/listas). */
+  .ic-chip { width: 34px; height: 34px; border-radius: 10px; display: inline-flex;
+    align-items: center; justify-content: center; flex-shrink: 0; }
+  .ic-chip svg { width: 19px; height: 19px; display: block; }
+  .insight-card .ic-chip, .insight .ic-chip { margin-right: 2px; }
+  /* Ícone inline em botões (substitui emoji-prefixo). */
+  .btn-ic { width: 17px; height: 17px; vertical-align: -3px; margin-right: 7px; }
+  h2 .h2-ic { width: 19px; height: 19px; vertical-align: -3px; margin-right: 8px; color: var(--primary); }
+
+  /* Feedback de toque estilo iOS. */
+  .btn, .tabBtn, .bnav-btn, .cat-seeall, .btn-icon, .filterBtn, .link-btn,
+  #quickAddCard .qa-submit, .qa-suggestion-chip, #fab, .bnav-add {
+    transition: transform .13s cubic-bezier(.4,0,.2,1), background .15s ease, color .15s ease, box-shadow .18s ease;
+  }
+  .btn:active, .tabBtn:active, .bnav-btn:active, .cat-seeall:active,
+  .filterBtn:active, .link-btn:active, #quickAddCard .qa-submit:active,
+  .qa-suggestion-chip:active { transform: scale(.97); }
+  .btn-icon:active, #fab:active, .bnav-add:active { transform: scale(.92); }
+
+  /* Transição suave ao trocar de aba. */
+  .content.active { animation: contentIn .34s cubic-bezier(.22,.61,.36,1); }
+  @keyframes contentIn { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+
+  /* Card "Saldo do mês" mais sóbrio: valor branco (o violeta já é o destaque). */
+  .card.featured .value, :root[data-theme="light"] .card.featured .value { color: #fff !important; text-shadow: none !important; }
+  .card.featured { border-color: rgba(255,255,255,.14); }
+
+  /* Rótulos de card mais suaves (sentence case, sem caixa-alta). */
+  .card .label { text-transform: none; letter-spacing: 0.005em; font-weight: 600; }
+
+  /* Bottom sheet do quick-add: alça de arrasto + cantos maiores (mobile). */
+  @media (max-width: 767px) {
+    #quickAddCard { position: relative; border-radius: 26px 26px 0 0; padding-top: 26px; }
+    #quickAddCard::before { content: ''; position: absolute; top: 10px; left: 50%;
+      transform: translateX(-50%); width: 40px; height: 5px; border-radius: 3px; background: var(--border); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .content.active { animation: none; }
+    .btn:active, .tabBtn:active, .bnav-btn:active, .cat-seeall:active,
+    .filterBtn:active, .link-btn:active, .btn-icon:active, #fab:active,
+    .bnav-add:active, #quickAddCard .qa-submit:active, .qa-suggestion-chip:active { transform: none; }
+  }
 </style>
 </body>
 </html>
