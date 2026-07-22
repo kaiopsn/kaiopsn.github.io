@@ -2479,31 +2479,32 @@
 
   <!-- ============== DASHBOARD ============== -->
   <div id="dashboard" class="content active">
-    <h1>Dashboard</h1>
-    <p class="page-sub" id="dashSub">Visão geral do mês atual.</p>
+    <h1>Início</h1>
+    <p class="page-sub" id="dashSub">Visão geral do mês.</p>
     <div class="dash-hero" id="dashKPIs"></div>
-    <div id="incomePanelDash"></div>
-    <div id="methodPanelDash"></div>
-    <div id="invoicePanelDash"></div>
+    <div class="panel">
+      <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:4px">
+        <h2 style="margin:0">Gastos por categoria</h2>
+        <span id="catTotalDash" class="muted" style="font-size:0.82rem; font-weight:600; white-space:nowrap"></span>
+      </div>
+      <div id="topCats"></div>
+    </div>
     <div class="grid grid-2">
       <div class="panel">
         <h2>Insights do mês</h2>
         <div id="insightsList"></div>
       </div>
       <div class="panel">
-        <h2>Top 5 categorias</h2>
-        <div id="topCats"></div>
-      </div>
-    </div>
-    <div class="grid grid-2">
-      <div class="panel">
         <h2>Orçamentos por categoria</h2>
         <div id="budgetTracking"></div>
       </div>
-      <div class="panel">
-        <h2>Próximas parcelas</h2>
-        <div id="upcomingInst"></div>
-      </div>
+    </div>
+    <div id="incomePanelDash"></div>
+    <div id="methodPanelDash"></div>
+    <div id="invoicePanelDash"></div>
+    <div class="panel">
+      <h2>Próximas parcelas</h2>
+      <div id="upcomingInst"></div>
     </div>
   </div>
 
@@ -2805,7 +2806,19 @@
         <button class="btn primary" onclick="addYear()">Adicionar ano</button>
       </div>
     </div>
-    
+
+    <div class="panel">
+      <h2>Dinheiro em conta</h2>
+      <p class="muted" style="font-size: 0.88rem; margin-bottom: 14px;">
+        Diga quanto você tem em conta hoje para calibrar a tela Início. A partir daqui o app soma o que sobra e desconta o que falta a cada mês — o saldo nunca zera na virada.
+      </p>
+      <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+        <input id="contaHoje" type="text" inputmode="decimal" placeholder="1500,00" style="max-width: 200px;">
+        <button class="btn primary" onclick="setContaHoje()">Salvar saldo de hoje</button>
+      </div>
+      <p class="muted" id="contaHojeHint" style="font-size: 0.8rem; margin-top: 10px;"></p>
+    </div>
+
     <div class="panel">
       <h2>Backups automáticos</h2>
       <p class="muted" style="font-size: 0.88rem; margin-bottom: 14px;">
@@ -3342,7 +3355,8 @@ function defaultEmptyDb() {
     categories: typeof DEFAULT_CATEGORIES !== 'undefined' ? JSON.parse(JSON.stringify(DEFAULT_CATEGORIES)) : [],
     goals: [],
     chatHistory: [],
-    paidStatus: {}
+    paidStatus: {},
+    saldoConfig: null
   };
 }
 
@@ -5899,10 +5913,10 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v50';
+const APP_VERSION = 'v52';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
-const APP_BUILD_DATE = '2026-07-03';
+const APP_BUILD_DATE = '2026-07-22';
 
 function injectVersionLabel() {
   // Adicionar em Configurações (rodapé)
@@ -6671,7 +6685,10 @@ const DEFAULT_DB = {
   goals: [
     { id: 1001, name: 'Viagem Internacional', total: 20000, deadline: '2026-12-02', contributions: {} },
     { id: 1002, name: 'Cadeira de Escritório', total: 1655.99, deadline: '2026-01-10', contributions: {} }
-  ]
+  ],
+  // Âncora opcional de reconciliação do "dinheiro em conta". Fica null: o dono
+  // calibra em Configurações → o saldo real nunca vai pro repositório público.
+  saldoConfig: null
 };
 
 // db inicializa VAZIO. O auth carrega dados do usuário correto após login.
@@ -6730,7 +6747,7 @@ function _emptyDb() {
     installments: [],
     categories: typeof DEFAULT_CATEGORIES !== 'undefined'
       ? JSON.parse(JSON.stringify(DEFAULT_CATEGORIES)) : [],
-    goals: [], chatHistory: [], paidStatus: {}
+    goals: [], chatHistory: [], paidStatus: {}, saldoConfig: null
   };
 }
 
@@ -6747,6 +6764,10 @@ function migrate(data) {
   data.installments  = data.installments || [];
   data.categories    = (data.categories && data.categories.length) ? data.categories : DEFAULT_CATEGORIES.slice();
   data.goals         = data.goals || [];
+
+  // v52: "dinheiro em conta" (saldo acumulado). Âncora opcional de reconciliação,
+  // calibrada pelo usuário em Configurações. O valor real nunca fica no código.
+  if (data.saldoConfig === undefined) data.saldoConfig = null;
 
   // Tombstones — IDs que o usuário explicitamente deletou, NUNCA reinjetar
   data.deletedIds = data.deletedIds || [];
@@ -7129,6 +7150,82 @@ function getCategoryColor(name) {
   return c ? c.color : '#94a3b8';
 }
 
+// ============== SALDO ACUMULADO ("dinheiro em conta") ==============
+// A conta corrente não zera na virada do mês: o que sobra é carregado adiante
+// (e o que falta é descontado), somando mês a mês, inclusive de dez → jan.
+
+// Primeira competência (ano, mês) com dados reais registrados.
+function getFirstDataMonth() {
+  let best = null;
+  const scan = obj => Object.keys(obj || {}).forEach(k => {
+    const [y, m] = k.split('-').map(Number);
+    if (Number.isFinite(y) && Number.isFinite(m) &&
+        (best === null || y < best.y || (y === best.y && m < best.m))) best = { y, m };
+  });
+  scan(db.events); scan(db.income); scan(db.investments);
+  return best || { y: currentYear, m: currentMonth };
+}
+
+// Soma dos saldos mensais do primeiro mês com dados até (y, m) inclusive.
+function sumSaldoAte(y, m) {
+  const first = getFirstDataMonth();
+  let sum = 0, yy = first.y, mm = first.m, guard = 0;
+  while ((yy < y || (yy === y && mm <= m)) && guard++ < 1200) {
+    sum += getMonthData(yy, mm).saldo;
+    if (++mm > 11) { mm = 0; yy++; }
+  }
+  return sum;
+}
+
+// "Dinheiro em conta" ao fim de (y, m). Se houver âncora de reconciliação
+// (db.saldoConfig), calibra a base pra bater com o saldo real informado.
+function getSaldoAcumulado(y, m) {
+  const cfg = db.saldoConfig;
+  let base = 0;
+  if (cfg && cfg.anchorKey && typeof cfg.targetValue === 'number') {
+    const [ay, am] = cfg.anchorKey.split('-').map(Number);
+    base = cfg.targetValue - sumSaldoAte(ay, am);
+  }
+  return base + sumSaldoAte(y, m);
+}
+
+// Calibra o "dinheiro em conta" com o saldo real de hoje, ancorado no mês atual.
+// Aceita "1500,00", "1.500,00" e "1500.00" — o último separador é o decimal.
+function parseMoneyBR(str) {
+  let s = String(str).trim().replace(/\s|R\$/gi, '');
+  if (!s) return NaN;
+  const c = s.lastIndexOf(','), d = s.lastIndexOf('.');
+  if (c > -1 && d > -1) s = c > d ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '');
+  else if (c > -1) s = s.replace(',', '.');
+  return parseFloat(s);
+}
+
+function setContaHoje() {
+  const el = document.getElementById('contaHoje');
+  const v = parseMoneyBR(el.value);
+  if (!Number.isFinite(v)) { toast('Digite um valor válido, ex.: 1500,00', 'warn'); return; }
+  db.saldoConfig = { anchorKey: getKey(currentYear, currentMonth), targetValue: v };
+  saveDB();
+  updateContaHojeHint();
+  if (typeof renderDashboard === 'function' &&
+      document.getElementById('dashboard')?.classList.contains('active')) renderDashboard();
+  toast('Saldo salvo — a Início já reflete o novo valor', 'success');
+}
+
+// Mostra o estado atual da calibração no painel de Configurações.
+function updateContaHojeHint() {
+  const hint = document.getElementById('contaHojeHint');
+  const inp = document.getElementById('contaHoje');
+  const cfg = db.saldoConfig;
+  if (cfg && cfg.anchorKey && typeof cfg.targetValue === 'number') {
+    const [ay, am] = cfg.anchorKey.split('-').map(Number);
+    if (hint) hint.textContent = `Calibrado em ${monthsFull[am]} de ${ay}: ${fmt(cfg.targetValue)}. Salve de novo sempre que quiser reconciliar com o extrato.`;
+    if (inp && !inp.value) inp.value = cfg.targetValue.toFixed(2).replace('.', ',');
+  } else if (hint) {
+    hint.textContent = 'Ainda não calibrado — a conta começa em R$ 0,00 no primeiro mês com dados.';
+  }
+}
+
 // ============== DASHBOARD ==============
 function renderDashboard() {
   const cur = getMonthData(currentYear, currentMonth);
@@ -7144,6 +7241,8 @@ function renderDashboard() {
   const variacao = prev && prev.gastos > 0 ? ((cur.gastos - prev.gastos) / prev.gastos * 100) : null;
   const varTxt = variacao == null ? '' : `${variacao >= 0 ? '↑' : '↓'} ${Math.abs(variacao).toFixed(1)}% vs mês ant.`;
   const varCls = variacao == null ? 'muted' : (variacao > 0 ? 'neg' : 'pos');
+  // Usado pela seção "Gastos por categoria" e pelos estados vazios abaixo.
+  const mesNome = monthsFull[currentMonth].toLowerCase();
 
   document.getElementById('dashKPIs').innerHTML = `
     <div class="card featured">
@@ -7171,25 +7270,27 @@ function renderDashboard() {
   // Insights
   renderInsights(cur, prev);
 
-  // Top 5 categorias
-  const byCat = Object.entries(groupByCat(cur.items)).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  // Gastos por categoria — priorizado e legível (top 6 + ver todas)
+  const catsAll = Object.entries(groupByCat(cur.items)).sort((a, b) => b[1] - a[1]);
   const totalGastos = cur.gastos || 1;
-  document.getElementById('topCats').innerHTML = byCat.length ? byCat.map(([cat, val]) => {
+  const catTotEl = document.getElementById('catTotalDash');
+  if (catTotEl) catTotEl.textContent = cur.gastos > 0 ? `${fmt(cur.gastos)} em ${mesNome}` : '';
+  const topN = catsAll.slice(0, 6);
+  document.getElementById('topCats').innerHTML = topN.length ? (topN.map(([cat, val]) => {
     const pct = (val / totalGastos * 100);
     const color = getCategoryColor(cat);
     return `
-      <div style="padding: 10px 0; border-bottom: 1px solid var(--border)">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 4px">
-          <span style="display:flex; align-items:center; gap:8px; font-size:0.9rem">
-            <span style="width:10px; height:10px; border-radius:3px; background:${color}; display:inline-block"></span>
-            ${escapeHtml(cat)}
-          </span>
-          <span style="font-weight:600; font-size:0.9rem">${fmt(val)}</span>
+      <div class="cat-line">
+        <div class="cat-line-top">
+          <span class="cat-line-name"><span class="cat-dot" style="background:${color}"></span>${escapeHtml(cat)}</span>
+          <span class="cat-line-val">${fmt(val)}<span class="cat-line-pct">${pct.toFixed(0)}%</span></span>
         </div>
-        <div class="progress-bar" style="height:5px"><div class="progress-fill" style="width:${pct}%; background:${color}"></div></div>
-        <div class="muted" style="font-size:0.72rem; margin-top:2px">${pct.toFixed(1)}% do total</div>
+        <div class="cat-bar"><div class="cat-bar-fill" style="width:${Math.max(pct, 2)}%; background:${color}"></div></div>
       </div>`;
-  }).join('') : '<p class="muted">Sem gastos neste mês.</p>';
+  }).join('') + (catsAll.length > 6
+      ? `<button type="button" class="cat-seeall" onclick="navTo('gastos')">Ver todas as ${catsAll.length} categorias ›</button>`
+      : ''))
+    : `<p class="muted">Nenhum gasto em ${mesNome} ainda. Toque em <strong>+</strong> pra registrar o primeiro.</p>`;
 
   // Budgets
   renderBudgetTracking(cur);
@@ -8577,6 +8678,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if (tab === 'investimentos')  { renderInvest(); }
     if (tab === 'categorias')     renderCategories();
     if (tab === 'registro')       renderRecurringIncome();
+    if (tab === 'config')         updateContaHojeHint();
   });
 
   // Hamburger / scrim
@@ -10532,24 +10634,27 @@ function renderHomeHero() {
   const withBudget = (db.categories || []).filter(c => c.budget > 0);
   const byCat = groupByCat(cur.items);
 
-  // O número-manchete: com orçamentos definidos, mostra o que resta deles;
-  // sem orçamentos, mostra o saldo do mês (entradas − gastos − investido).
-  let amount, question, context, pctUsed = null;
+  // A manchete é o DINHEIRO EM CONTA: saldo acumulado que atravessa os meses.
+  // O que sobra é carregado adiante; o que falta é descontado. Nunca zera.
+  const amount     = getSaldoAcumulado(currentYear, currentMonth);
+  const saldoMes   = cur.saldo;
+  const vindoAntes = amount - saldoMes;
+  const mes        = monthsFull[currentMonth].toLowerCase();
+  const question   = 'Dinheiro em conta';
+  const parteAntes = vindoAntes >= 0
+    ? `${fmt(vindoAntes)} de meses anteriores`
+    : `${fmt(Math.abs(vindoAntes))} devidos de antes`;
+  const parteMes = saldoMes >= 0
+    ? `+ ${fmt(saldoMes)} que sobraram em ${mes}`
+    : `− ${fmt(Math.abs(saldoMes))} que faltaram em ${mes}`;
+  const context = `${parteAntes} ${parteMes}`;
+
+  // Medidor de orçamento (secundário), só quando há orçamentos definidos.
+  let pctUsed = null;
   if (withBudget.length) {
     const totalBudget = withBudget.reduce((a, c) => a + c.budget, 0);
     const spentInBudgets = withBudget.reduce((a, c) => a + (byCat[c.name] || 0), 0);
-    amount = totalBudget - spentInBudgets;
     pctUsed = totalBudget > 0 ? (spentInBudgets / totalBudget * 100) : null;
-    question = 'Livre para gastar';
-    context = amount >= 0
-      ? `dentro do orçamento de ${monthsFull[currentMonth].toLowerCase()}`
-      : `acima do orçamento de ${monthsFull[currentMonth].toLowerCase()}`;
-  } else {
-    amount = cur.saldo;
-    question = 'Saldo do mês';
-    context = amount >= 0
-      ? `sobrando em ${monthsFull[currentMonth].toLowerCase()}`
-      : `no vermelho em ${monthsFull[currentMonth].toLowerCase()}`;
   }
 
   const abs = Math.abs(amount);
@@ -10818,6 +10923,19 @@ function renderRecentActivity() {
   tbody tr:hover { background: var(--bg-soft); }
   tfoot td { background: transparent; color: var(--text); font-family: var(--font-body); }
   .table-wrap { border-radius: 16px; }
+
+  /* ── GASTOS POR CATEGORIA (Início) — legível e priorizado ────────── */
+  #topCats .cat-line { padding: 12px 0; border-bottom: 1px solid var(--border-soft); }
+  #topCats .cat-line:last-of-type { border-bottom: 0; padding-bottom: 4px; }
+  #topCats .cat-line-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 9px; }
+  #topCats .cat-line-name { display: flex; align-items: center; gap: 10px; font-size: 0.95rem; font-weight: 600; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #topCats .cat-dot { width: 11px; height: 11px; border-radius: 4px; flex-shrink: 0; }
+  #topCats .cat-line-val { font-size: 0.95rem; font-weight: 700; color: var(--text); white-space: nowrap; }
+  #topCats .cat-line-pct { font-size: 0.78rem; font-weight: 600; color: var(--text-soft); margin-left: 7px; }
+  #topCats .cat-bar { height: 9px; border-radius: 999px; background: var(--bg-soft); overflow: hidden; }
+  #topCats .cat-bar-fill { height: 100%; border-radius: 999px; transition: width .55s cubic-bezier(.4,0,.2,1); }
+  #topCats .cat-seeall { display: block; width: 100%; text-align: center; margin-top: 14px; padding: 10px; background: transparent; border: 0; color: var(--primary); font-weight: 600; font-size: 0.85rem; font-family: inherit; cursor: pointer; border-radius: var(--radius); transition: background .15s; }
+  #topCats .cat-seeall:hover { background: var(--primary-tint); }
 </style>
 </body>
 </html>
