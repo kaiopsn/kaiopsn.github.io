@@ -2870,7 +2870,7 @@
       <button id="installBtn" class="btn primary"
         onclick="triggerInstall()"
         style="display:none;align-items:center;gap:8px;padding:11px 18px">
-        📲 Adicionar à tela inicial
+        Adicionar à tela inicial
       </button>
       <p class="muted" style="font-size:0.82rem;margin-top:10px">
         Se o botão não aparecer, no <strong>Chrome</strong> use o menu ⋮ → "Adicionar à tela inicial".<br>
@@ -3107,7 +3107,7 @@ function ansGoal(t) {
   if (goal) {
     const total = Object.values(goal.contributions).reduce((a, b) => a + b, 0);
     const pct = goal.total ? (total / goal.total * 100) : 0;
-    const status = pct >= 100 ? '✅ Concluída!' : pct > 50 ? '🚀 Mais da metade!' : '📈 Em andamento';
+    const status = pct >= 100 ? 'Concluída' : pct > 50 ? 'Mais da metade' : 'Em andamento';
     const restante = Math.max(0, goal.total - total);
     return `<strong>${goal.name}</strong> ${status}<br>
       • Acumulado: <span class="num">${fmt(total)}</span> de <span class="num">${fmt(goal.total)}</span><br>
@@ -3928,7 +3928,7 @@ window.renderGastos = function() {
           <button class="btn-icon" data-action="del" data-id="${i.id}" data-type="${i.type}" title="Excluir lançamento" aria-label="Excluir ${escapeHtml(i.desc)}">✕</button>
         </td>
       </tr>`;
-  }).join('') : '<tr><td colspan="9" class="empty-state-v43"><span class="icon">📭</span>Nenhum lançamento encontrado neste mês.</td></tr>';
+  }).join('') : '<tr><td colspan="9" class="empty-state-v43">Nenhum lançamento encontrado neste mês.</td></tr>';
 
   // Re-aplicar seleções
   if (typeof updateBulkBar === 'function') updateBulkBar();
@@ -4268,11 +4268,11 @@ window.renderDashboard = function() {
     if (kpis) {
       kpis.innerHTML = `
         <div class="welcome-empty" style="grid-column: 1 / -1;">
-          <div class="we-icon">👋</div>
+          <div class="we-icon"><svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.7 4.4L18 9l-4.3 1.6L12 15l-1.7-4.4L6 9l4.3-1.6z"/><path d="M18 14l.7 1.8L20.5 16.5 18.7 17.2 18 19l-.7-1.8L15.5 16.5l1.8-.7z"/></svg></div>
           <div class="we-title">Bem-vindo, ${escapeHtml(currentUser)}!</div>
           <div class="we-sub">Sua conta está pronta. Comece registrando seus primeiros gastos e entradas para ver seu dashboard ganhar vida.</div>
           <button class="we-btn" onclick="document.querySelector('.tabBtn[data-tab=\\"registro\\"]').click()">
-            ➕ Registrar primeiro gasto
+            Registrar primeiro gasto
           </button>
         </div>`;
     }
@@ -4437,7 +4437,7 @@ function fillMethodPanels() {
   const html = `
     <div class="method-panel income-compact">
       <div class="method-panel-header">
-        <span class="method-panel-title">💳 Gastos por método</span>
+        <span class="method-panel-title">Gastos por método</span>
         <span class="method-panel-total">${fmt(totalGeral)}</span>
       </div>
       <div class="method-grid">${cards}</div>
@@ -4600,7 +4600,7 @@ function fillInvoicePanels() {
     return `
       <div class="card-invoice">
         <div class="card-invoice-header">
-          <span class="card-invoice-title">💳 Fatura ${escapeHtml(label)} — ${monthsFull[currentMonth]}</span>
+          <span class="card-invoice-title">Fatura ${escapeHtml(label)} — ${monthsFull[currentMonth]}</span>
           <span class="card-invoice-total">${fmt(total)}</span>
         </div>
         <div class="card-invoice-items">${rows}</div>
@@ -4978,7 +4978,7 @@ window.exportTransactionsCSV = exportTransactionsCSV;
 
 function showShortcutsHelp() {
   const help = `
-    <h3 style="margin-top:0">⌨️ Atalhos de teclado</h3>
+    <h3 style="margin-top:0">Atalhos de teclado</h3>
     <div style="display:grid; grid-template-columns: auto 1fr; gap:6px 16px; font-size:0.88rem">
       <kbd>/</kbd>          <span>Focar busca</span>
       <kbd>n</kbd>          <span>Novo lançamento</span>
@@ -5923,7 +5923,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v55';
+const APP_VERSION = 'v56';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-07-22';
@@ -7182,6 +7182,26 @@ window.iconChip = function(emoji) {
   return `<span class="ic-chip" style="background:${e[1]}"><svg viewBox="0 0 24 24" fill="none" stroke="${e[0]}" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">${e[2]}</svg></span>`;
 };
 
+// Estado vazio como convite: ícone + título + descrição + ação (não um aviso).
+window.EMPTY_ICONS = {
+  chart:    '<path d="M6 20v-6"/><path d="M12 20V8"/><path d="M18 20v-9"/><path d="M4 20h16"/>',
+  wallet:   '<path d="M3 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M16 12.5h3"/>',
+  target:   '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/>',
+  receipt:  '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9.5 8h5"/><path d="M9.5 12h5"/>',
+  calendar: '<rect x="4" y="5" width="16" height="16" rx="2"/><path d="M4 9.5h16"/><path d="M8 3v4"/><path d="M16 3v4"/>',
+  bulb:     '<path d="M9.5 18h5"/><path d="M10.5 21h3"/><path d="M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.2 1 2.5h6c0-1.3.3-1.8 1-2.5A6 6 0 0 0 12 3z"/>',
+  trend:    '<path d="M3 16.5 9.5 10l3.5 3.5L21 5.5"/><path d="M15 5.5h6v6"/>',
+};
+window.emptyState = function(icon, title, desc, ctaLabel, ctaOnclick) {
+  const p = window.EMPTY_ICONS[icon] || window.EMPTY_ICONS.chart;
+  const cta = ctaLabel ? `<button class="empty-cta" onclick="${ctaOnclick}">${ctaLabel}</button>` : '';
+  return `<div class="empty-state">
+      <span class="empty-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${p}</svg></span>
+      <div class="empty-state-title">${title}</div>
+      <div class="empty-state-desc">${desc}</div>${cta}
+    </div>`;
+};
+
 // ============== DINHEIRO EM CONTA (ponto de partida + soma pra frente) ==========
 // A conta reseta num "ponto de partida" (por padrão o mês atual, começando em
 // R$ 0) e soma SÓ dali pra frente. Meses anteriores ao ponto de partida são
@@ -7354,7 +7374,7 @@ function renderDashboard() {
   }).join('') + (catsAll.length > 6
       ? `<button type="button" class="cat-seeall" onclick="navTo('gastos')">Ver todas as ${catsAll.length} categorias ›</button>`
       : ''))
-    : `<p class="muted">Nenhum gasto em ${mesNome} ainda. Toque em <strong>+</strong> pra registrar o primeiro.</p>`;
+    : emptyState('chart', 'Nenhum gasto ainda', `Seus gastos por categoria aparecem aqui assim que você registrar o primeiro em ${mesNome}.`, 'Adicionar gasto', 'openQuickAdd()');
 
   // Budgets
   renderBudgetTracking(cur);
@@ -7443,7 +7463,7 @@ function renderInsights(cur, prev) {
   }
 
   if (insights.length === 0) {
-    el.innerHTML = '<p class="muted">Cadastre mais alguns lançamentos para gerar insights.</p>';
+    el.innerHTML = emptyState('bulb', 'Sem insights por enquanto', 'Registre alguns gastos e eu aponto tendências, picos e onde dá pra economizar.', 'Adicionar gasto', 'openQuickAdd()');
     return;
   }
 
@@ -7462,11 +7482,7 @@ function renderBudgetTracking(cur) {
   const withBudget = db.categories.filter(c => c.budget > 0);
   if (withBudget.length === 0) {
     // Empty state acionável: o que é + por que está vazio + como começar
-    el.innerHTML = `
-      <p class="muted" style="margin:0 0 10px">
-        Defina um limite mensal por categoria e acompanhe aqui quanto ainda pode gastar.
-      </p>
-      <button class="btn" onclick="document.querySelector('.tabBtn[data-tab=&quot;categorias&quot;]')?.click()">Definir orçamentos</button>`;
+    el.innerHTML = emptyState('target', 'Sem orçamentos definidos', 'Defina um limite mensal por categoria e acompanhe quanto ainda pode gastar.', 'Definir orçamentos', "navTo('categorias')");
     return;
   }
   const byCat = groupByCat(cur.items);
@@ -7514,7 +7530,7 @@ function renderUpcomingInstallments() {
     });
   }
   if (upcoming.length === 0) {
-    el.innerHTML = '<p class="muted">Nenhuma parcela nos próximos 6 meses.</p>';
+    el.innerHTML = emptyState('calendar', 'Nenhuma parcela à vista', 'Você não tem compras parceladas nos próximos 6 meses.', null);
     return;
   }
   // Agrupar por mês
@@ -7726,12 +7742,7 @@ function renderGoals() {
 
   const list = document.getElementById('goalsList');
   if (!db.goals.length) {
-    list.innerHTML = `
-      <div class="empty-goals">
-        <div style="font-size:2.4rem; margin-bottom:8px">🎯</div>
-        <div style="font-weight:600; color:var(--text); margin-bottom:4px">Nenhuma meta ainda</div>
-        <div style="font-size:0.88rem; color:var(--text-muted)">Crie sua primeira meta no formulário acima e comece a poupar com objetivo.</div>
-      </div>`;
+    list.innerHTML = emptyState('target', 'Nenhuma meta ainda', 'Crie sua primeira meta no formulário acima e comece a poupar com objetivo.', null);
     return;
   }
 
@@ -8351,7 +8362,7 @@ function saveIn() {
 function renderRecurringIncome() {
   const el = document.getElementById('recurringIncomeList');
   if (!db.recurringIncome.length) {
-    el.innerHTML = '<p class="muted">Nenhuma renda recorrente cadastrada ainda.</p>';
+    el.innerHTML = emptyState('wallet', 'Nenhuma renda recorrente', 'Cadastre salário, bolsa ou qualquer entrada que se repete todo mês no formulário acima.', null);
     return;
   }
   el.innerHTML = db.recurringIncome.map(r => {
@@ -9080,7 +9091,7 @@ function renderRecurringExpenses() {
   const el = document.getElementById('recurringExpensesList');
   if (!el) return;
   if (!db.recurringExpenses.length) {
-    el.innerHTML = '<p class="muted">Nenhum gasto fixo cadastrado.</p>';
+    el.innerHTML = emptyState('receipt', 'Nenhum gasto fixo', 'Cadastre aluguel, assinaturas e contas que se repetem todo mês no formulário acima.', null);
     return;
   }
   el.innerHTML = db.recurringExpenses.map(r => {
@@ -9181,7 +9192,7 @@ function renderSearchResults(q) {
     html += r.goals.map(g => `
       <div class="search-item" data-action="goto-tab" data-tab="metas">
         <div>
-          <div class="search-item-title">🎯 ${escapeHtml(g.name)}</div>
+          <div class="search-item-title">${escapeHtml(g.name)}</div>
           <div class="search-item-meta">Alvo ${fmt(g.total)}</div>
         </div>
       </div>`).join('');
@@ -9812,7 +9823,7 @@ window.renderDashboard = function() {
   let anHTML;
   if (anomalies.length) {
     anHTML = `<div class="panel">
-      <h2>⚠️ Anomalias detectadas</h2>
+      <h2>Anomalias detectadas</h2>
       <p class="muted" style="font-size:0.82rem; margin-top:-8px; margin-bottom:10px">Lançamentos bem acima da média da categoria.</p>
       ${anomalies.map(a => `
         <div class="anomaly-item">
@@ -9938,7 +9949,7 @@ window.renderGastos = function() {
       if (!filtered.length) {
         fullHtml = `<tr><td colspan="9" class="empty-state-row">
           <div class="empty-state-content">
-            <span class="empty-icon">📭</span>
+            <span class="empty-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9.5 8h5"/><path d="M9.5 12h5"/></svg></span>
             <div class="empty-title">Nenhum lançamento neste mês</div>
             <div class="empty-sub">Comece registrando seu primeiro gasto</div>
             <button class="btn primary empty-cta" onclick="if(typeof openQuickAdd==='function') openQuickAdd(); else document.querySelector('.tabBtn[data-tab=&quot;registro&quot;]')?.click()">
@@ -10316,10 +10327,10 @@ function renderYTDPanel() {
   const taxaTxt = y.taxa == null ? '—' : y.taxa.toFixed(0) + '%';
   const taxaW = y.taxa == null ? 0 : Math.max(0, Math.min(100, y.taxa));
   const taxaHint = y.taxa == null ? 'Cadastre entradas para calcular'
-    : (y.taxa >= 20 ? '🎯 Ótimo — acima de 20%' : y.taxa >= 10 ? 'Bom — meta ideal: 20%' : 'Abaixo do recomendado (20%)');
+    : (y.taxa >= 20 ? 'Ótimo — acima de 20%' : y.taxa >= 10 ? 'Bom — meta ideal: 20%' : 'Abaixo do recomendado (20%)');
   panel.innerHTML = `
     <div class="ytd-card">
-      <div class="ytd-label">📈 Saldo acumulado no ano</div>
+      <div class="ytd-label">Saldo acumulado no ano</div>
       <div class="ytd-value ${sCls}">${fmt(y.saldoAcum)}</div>
       <div class="ytd-sub">Soma dos saldos de janeiro a ${mesLabel} · ${currentYear}</div>
     </div>
@@ -10411,7 +10422,7 @@ function renderFutureCommitment() {
       <td class="table-num" style="font-weight:600; color:var(--neg)">${fmt(i.remValue)}</td>
     </tr>`).join('');
   panel.innerHTML = `
-    <h2>📌 Comprometido futuro <span class="muted" style="font-weight:400; font-size:0.82rem">— parcelas que ainda vão vencer</span></h2>
+    <h2>Comprometido futuro <span class="muted" style="font-weight:400; font-size:0.82rem">— parcelas que ainda vão vencer</span></h2>
     <div class="ytd-panel" style="margin-bottom:16px">
       <div class="ytd-card">
         <div class="ytd-label">💳 Parcelas em aberto</div>
@@ -10419,7 +10430,7 @@ function renderFutureCommitment() {
         <div class="ytd-sub">${fc.list.length} compromisso${fc.list.length===1?'':'s'} · soma das parcelas restantes</div>
       </div>
       <div class="ytd-card">
-        <div class="ytd-label">⚖️ Patrimônio líquido projetado</div>
+        <div class="ytd-label">Patrimônio líquido projetado</div>
         <div class="ytd-value ${lCls}">${fmt(liquido)}</div>
         <div class="ytd-sub">Patrimônio (${fmt(patrimonio)}) − comprometido</div>
       </div>
@@ -10490,12 +10501,12 @@ function renderProfitability() {
         <div class="ytd-sub">aportes − retiradas</div>
       </div>
       <div class="ytd-card">
-        <div class="ytd-label">💰 Valor atual</div>
+        <div class="ytd-label">Valor atual</div>
         <div class="ytd-value">${hasVal ? fmt(value) : '—'}</div>
         <div class="ytd-sub">${hasVal ? 'valor de mercado informado' : 'informe acima para calcular'}</div>
       </div>
       <div class="ytd-card">
-        <div class="ytd-label">📈 Rendimento</div>
+        <div class="ytd-label">Rendimento</div>
         <div class="ytd-value ${rCls}">${rend == null ? '—' : sign + fmt(rend)}</div>
         <div class="ytd-sub">${pct == null ? 'valor atual − investido' : 'rentabilidade ' + sign + pct.toFixed(1) + '%'}</div>
       </div>
@@ -10861,7 +10872,7 @@ function renderRecentActivity() {
       <h2>Atividade recente</h2>
       <button class="link-btn" onclick="document.querySelector('.tabBtn[data-tab=&quot;gastos&quot;]')?.click()">Ver tudo</button>
     </div>
-    ${rows || `<p class="muted" style="margin:4px 0">Nada lançado com data em ${monthsFull[currentMonth].toLowerCase()}. Toque em <strong>+</strong> para adicionar o primeiro gasto.</p>`}
+    ${rows || emptyState('receipt', 'Nada lançado ainda', `Os lançamentos com data em ${monthsFull[currentMonth].toLowerCase()} aparecem aqui.`, 'Adicionar gasto', 'openQuickAdd()')}
   `;
 }
 
@@ -11127,6 +11138,20 @@ function renderRecentActivity() {
     #quickAddCard::before { content: ''; position: absolute; top: 10px; left: 50%;
       transform: translateX(-50%); width: 40px; height: 5px; border-radius: 3px; background: var(--border); }
   }
+
+  /* Estados vazios como convite (ícone chip + título + ação). */
+  .empty-state { text-align: center; padding: 30px 18px; }
+  .empty-ic { width: 54px; height: 54px; border-radius: 17px; background: var(--primary-tint);
+    display: inline-flex; align-items: center; justify-content: center; margin-bottom: 14px; color: var(--primary); }
+  .empty-ic svg { width: 27px; height: 27px; display: block; }
+  .empty-state-title { font-weight: 700; color: var(--text); font-size: 1rem; letter-spacing: -.01em; margin: 0 0 5px; }
+  .empty-state-desc { font-size: .86rem; color: var(--text-muted); margin: 0 auto 16px; max-width: 300px; line-height: 1.45; }
+  .empty-cta { display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    padding: 11px 20px; border-radius: var(--radius); background: var(--primary); color: #fff;
+    font-weight: 600; font-size: .88rem; border: 0; cursor: pointer; font-family: inherit;
+    transition: transform .13s cubic-bezier(.4,0,.2,1), background .15s ease; }
+  .empty-cta:hover { background: var(--primary-dark); }
+  .empty-cta:active { transform: scale(.97); }
 
   @media (prefers-reduced-motion: reduce) {
     .content.active { animation: none; }
