@@ -1,7 +1,7 @@
 // FinanceApp — Service Worker (offline-first, caminhos relativos)
 // IMPORTANTE: a cada atualização, troque o número de VERSION abaixo.
 // Isso faz o app detectar a nova versão e mostrar "Atualização disponível".
-const VERSION = 'v54';
+const VERSION = 'v55';
 const CACHE = 'financeapp-' + VERSION;
 const PRECACHE = [
   './',
