@@ -2795,7 +2795,6 @@
       <div style="display: flex; gap: 10px; flex-wrap: wrap;">
         <button class="btn primary" onclick="exportData()"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v10"/><path d="M8 11l4 4 4-4"/><path d="M5 19h14"/></svg>Exportar dados (JSON)</button>
         <button class="btn" onclick="exportTransactionsCSV()" style="margin-left:8px"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 10h16"/><path d="M10 10v9"/></svg>Exportar CSV (Excel)</button>
-        <button class="btn" onclick="restoreDeletedItems()" style="margin-left:8px"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v3.6h3.6"/></svg>Restaurar excluídos</button>
         <button class="btn" onclick="document.getElementById('importFile').click()"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10"/><path d="M8 13l4-4 4 4"/><path d="M5 5h14"/></svg>Importar backup</button>
         <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(this)">
         <button class="btn" onclick="document.getElementById('importOfxFile').click()" title="Importe o extrato do banco (.ofx)"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4.5H4z"/><path d="M5 8.5v8"/><path d="M9.5 8.5v8"/><path d="M14.5 8.5v8"/><path d="M19 8.5v8"/><path d="M3.5 19.5h17"/></svg>Importar extrato (OFX)</button>
@@ -3345,9 +3344,8 @@ function hashPassword(pass) {
   return hashPasswordLegacy(pass);
 }
 
-// ── v44 FINAL: defaultEmptyDb (igual ao defaultState() do index.html) ──
-// Estado inicial 100% zerado pra QUALQUER novo usuário.
-// kaiop tem caso especial separado (carrega DEFAULT_DB com dados da planilha).
+// ── defaultEmptyDb (igual ao defaultState() do index.html) ──
+// Estado inicial 100% zerado pra QUALQUER novo usuário, sem exceção.
 function defaultEmptyDb() {
   return {
     schemaVersion: 1,
@@ -3414,8 +3412,8 @@ function cleanOrphanedData() {
 // SEGURANÇA (release): removida a conta semeada com senha fixa no código —
 // num app publicado, qualquer pessoa lendo o fonte teria o login do dono.
 // Contas já criadas neste dispositivo permanecem intactas no localStorage;
-// em dispositivos novos, crie a conta pela aba "Criar conta" (o usuário
-// "kaiop" continua herdando os dados da planilha ao entrar pela 1ª vez).
+// em dispositivos novos, crie a conta pela aba "Criar conta". Nenhuma conta
+// herda dados de outra: cada uma começa vazia.
 function initDefaultUsers() {
   let users = {};
   try {
@@ -5181,24 +5179,9 @@ window.toggleTheme = toggleTheme;
 
 
 <script>
-// ── Restaurar tombstones (desfazer exclusões) ───────────────────────────
-async function restoreDeletedItems() {
-  if (!db.deletedIds || !db.deletedIds.length) {
-    return toast('Não há lançamentos excluídos para restaurar.', 'info');
-  }
-  const count = db.deletedIds.length;
-  const ok = await confirmDialog(
-    `Restaurar ${count} lançamento${count === 1 ? '' : 's'} excluído${count === 1 ? '' : 's'}? ` +
-    `Os lançamentos históricos (Consórcio, Monitor G5) e gastos fixos serão reinseridos no próximo F5.`
-  );
-  if (!ok) return;
-  db.deletedIds = [];
-  saveDB();
-  // Forçar recarga pra migrate() reinjetar tombstones limpos
-  toast(`Restaurando ${count} item(s)…`, 'success');
-  setTimeout(() => window.location.reload(), 800);
-}
-window.restoreDeletedItems = restoreDeletedItems;
+// "Restaurar excluídos" existia só para desfazer a reinjeção de lançamentos
+// que o migrate() fazia. Sem essa reinjeção (v57), limpar os tombstones não
+// traz nada de volta — o botão foi removido em vez de prometer o que não faz.
 </script>
 
 
@@ -5923,10 +5906,10 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v56';
+const APP_VERSION = 'v57';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
-const APP_BUILD_DATE = '2026-07-22';
+const APP_BUILD_DATE = '2026-09-01';
 
 function injectVersionLabel() {
   // Adicionar em Configurações (rodapé)
@@ -6359,35 +6342,38 @@ const DEFAULT_CATEGORIES = [
   { name: 'IFood/restaurante', color: '#06b6d4', budget: 0 },
   { name: 'Aluguel', color: '#facc15', budget: 0 },
   { name: 'Contas', color: '#eab308', budget: 0 },
-  { name: 'Ônibus/Uber mestrado', color: '#0ea5e9', budget: 0 },
-  { name: 'Alimentação mestrado', color: '#ef4444', budget: 0 },
-  { name: 'Investimento mercado digital', color: '#dc2626', budget: 0 },
+  { name: 'Educação', color: '#0ea5e9', budget: 0 },
+  { name: 'Trabalho', color: '#ef4444', budget: 0 },
+  { name: 'Investimentos', color: '#dc2626', budget: 0 },
   { name: 'Gasolina', color: '#854d0e', budget: 0 }
 ];
 
-// Histórico financeiro pessoal do autor removido do histórico do git.
-const HIST_EVENTS = {};
-const HIST_INCOME = {};
-const HIST_INVEST = {};
-
+// O histórico financeiro pessoal que ficava aqui (lançamentos, rendas e
+// aportes reais, com nomes de pessoas) foi removido na v57: o repositório é
+// público. Cada usuário guarda os próprios dados no localStorage do aparelho.
 
 // ============== STATE ==============
 const SCHEMA_VERSION = 1;
 const STORAGE_KEY = 'financasApp_db';
 
+// Dono do app: única conta que pode administrar usuários. Os DADOS dele vivem
+// no localStorage do aparelho, nunca aqui.
+const OWNER_USER = 'kaiop';
+
+// Base de um usuário novo. Fica VAZIA de propósito: lançamentos, rendas,
+// aportes, metas e saldo são dados pessoais e pertencem ao aparelho de cada
+// pessoa — o código-fonte é público e não guarda nada disso.
 const DEFAULT_DB = {
   schemaVersion: SCHEMA_VERSION,
-  years: [2026],
-  events: HIST_EVENTS,
-  income: HIST_INCOME,
-  investments: HIST_INVEST,
+  years: [new Date().getFullYear()],
+  events: {},
+  income: {},
+  investments: {},
   recurringExpenses: [],
   recurringIncome: [],
   installments: [],
   categories: DEFAULT_CATEGORIES.slice(),
-  goals: [], // metas pessoais removidas do histórico do git
-  // Âncora opcional de reconciliação do "dinheiro em conta". Fica null: o dono
-  // calibra em Configurações → o saldo real nunca vai pro repositório público.
+  goals: [],
   saldoConfig: null
 };
 
@@ -6409,11 +6395,11 @@ let activeSearch = '';
 let editingGoalId = null;
 let compChart, anualChart, invChart, catEvolChart;
 
-// ============== STORAGE (v44 FINAL) ==============
-// loadDB e saveDB usam namespace por usuário (financasApp_db_<username>)
-// SEM contaminação do DEFAULT_DB pra usuários que não são o kaiop.
+// ============== STORAGE ==============
+// Cada usuário tem seu próprio namespace (financasApp_db_<username>) e ninguém
+// herda dados de ninguém: quem entra pela 1ª vez começa com a base vazia.
 function loadDB() {
-  // Sem usuário logado: SEMPRE retornar db vazio (NUNCA dados do kaiop)
+  // Sem usuário logado: base vazia, nunca dados de outra conta
   if (typeof currentUser === 'undefined' || !currentUser) {
     return _emptyDb();
   }
@@ -6425,13 +6411,7 @@ function loadDB() {
       return migrate(JSON.parse(raw));
     }
   } catch(e) { console.warn('Erro ao carregar db do usuário:', e); }
-  // Sem chave salva: SÓ kaiop herda DEFAULT_DB
-  if (currentUser === 'kaiop') {
-    const kaiopDb = JSON.parse(JSON.stringify(DEFAULT_DB));
-    try { localStorage.setItem('financasApp_db_kaiop', JSON.stringify(kaiopDb)); } catch (e) { console.warn('[silent]', e); }
-    return kaiopDb;
-  }
-  // QUALQUER OUTRO usuário começa zerado E persiste imediatamente
+  // Sem chave salva: começa zerado E persiste imediatamente
   const empty = _emptyDb();
   try { localStorage.setItem('financasApp_db_' + currentUser, JSON.stringify(empty)); } catch (e) { console.warn('[silent]', e); }
   return empty;
@@ -6472,17 +6452,18 @@ function migrate(data) {
   // Tombstones — IDs que o usuário explicitamente deletou, NUNCA reinjetar
   data.deletedIds = data.deletedIds || [];
 
-  // Migração: parcelas históricas incompletas → db.installments
-  // getMonthData calcula as parcelas futuras automaticamente
-  const HIST_INST = []; // parcelas pessoais removidas do histórico do git
-  const existingIds = new Set(data.installments.map(x => x.id));
-  const deletedSet = new Set(data.deletedIds);
-  HIST_INST.forEach(inst => {
-    // Não reinjetar se: já existe OU foi explicitamente deletado pelo usuário
-    if (!existingIds.has(inst.id) && !deletedSet.has(inst.id)) {
-      data.installments.push(inst);
-    }
-  });
+  // ── v57 · CORREÇÃO DE PRIVACIDADE ───────────────────────────────────────
+  // Até a v56 esta função injetava duas parcelas PESSOAIS do dono do app (ids
+  // 9901 e 9902) na base de TODOS os usuários — quem criava conta via gastos
+  // alheios como se fossem seus. A injeção foi removida; aqui só resta apagar,
+  // uma única vez, o que já vazou para as bases de terceiros.
+  // Para o dono esses lançamentos são reais, então a limpeza o ignora.
+  const LEAKED_SEED_IDS = [9901, 9902];
+  const isOwner = (typeof currentUser !== 'undefined' && currentUser === OWNER_USER);
+  if (!data._privacyPurgeV57 && !isOwner) {
+    data.installments = data.installments.filter(i => !LEAKED_SEED_IDS.includes(i.id));
+    data._privacyPurgeV57 = true;
+  }
 
   return data;
 }
@@ -6642,12 +6623,8 @@ async function resetAllData() {
     .filter(k => k.startsWith('financasApp_backup_' + currentUser + '_'))
     .forEach(k => localStorage.removeItem(k));
   localStorage.removeItem('financasApp_lastBackup_' + currentUser);
-  // Resetar db em memória — kaiop volta pra DEFAULT_DB, outros ficam vazios
-  if (currentUser === 'kaiop') {
-    db = JSON.parse(JSON.stringify(DEFAULT_DB));
-  } else {
-    db = _emptyDb();
-  }
+  // Resetar db em memória — base vazia para qualquer conta
+  db = _emptyDb();
   currentYear = db.years[db.years.length - 1] || new Date().getFullYear();
   saveDB();
   rebuildYearSelectors();
