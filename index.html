@@ -5909,7 +5909,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v59';
+const APP_VERSION = 'v60';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-01';
@@ -8610,8 +8610,17 @@ window.addEventListener('DOMContentLoaded', () => {
   const hb = document.getElementById('hamburger');
   const sb = document.getElementById('sidebar');
   const scrim = document.getElementById('scrim');
-  function openMobileMenu()  { sb.classList.add('open'); scrim.classList.add('show'); }
-  function closeMobileMenu() { sb.classList.remove('open'); scrim.classList.remove('show'); }
+  // A classe no <body> deixa o CSS recolher a barra inferior enquanto o menu
+  // está aberto — duas navegações ao mesmo tempo competem e a barra flutuante
+  // chegava a cobrir o último item do menu.
+  function openMobileMenu()  {
+    sb.classList.add('open'); scrim.classList.add('show');
+    document.body.classList.add('menu-open');
+  }
+  function closeMobileMenu() {
+    sb.classList.remove('open'); scrim.classList.remove('show');
+    document.body.classList.remove('menu-open');
+  }
   hb.addEventListener('click', () => sb.classList.contains('open') ? closeMobileMenu() : openMobileMenu());
   scrim.addEventListener('click', closeMobileMenu);
   window.closeMobileMenu = closeMobileMenu;
@@ -10905,6 +10914,48 @@ function renderRecentActivity() {
       box-shadow: var(--shadow-lg) !important;
     }
     :root[data-theme="dark"] .bottom-nav { background: rgba(22,22,30,.82) !important; }
+
+    /* ── Menu lateral aberto: a barra inferior sai de cena ──────────────
+       Duas navegações simultâneas competem entre si, e a barra flutuante
+       cobria o último item do menu ("Configurações"), deixando-o inalcançável. */
+    .bottom-nav { transition: transform .26s cubic-bezier(.22,.61,.36,1), opacity .2s ease; }
+    body.menu-open .bottom-nav {
+      transform: translateY(calc(100% + 18px + env(safe-area-inset-bottom, 0px)));
+      opacity: 0; pointer-events: none;
+    }
+    /* Nenhuma camada flutuante disputa espaço com o menu: o aviso de nova
+       versão (z-index 300) chegava a cobrir "Categorias" e "Configurações",
+       e os botões de ação ficavam acesos sobre o fundo escurecido. */
+    #updateBanner, .assistant-fab, #fab { transition: opacity .2s ease, transform .22s cubic-bezier(.22,.61,.36,1); }
+    body.menu-open #updateBanner,
+    body.menu-open .assistant-fab,
+    body.menu-open #fab {
+      opacity: 0; transform: scale(.9); pointer-events: none;
+    }
+    /* Camadas: barra (100) < scrim (105) < menu (110) — mesmo durante a animação
+       o menu fica por cima e o escurecido cobre tudo que está atrás. */
+    .scrim   { z-index: 105 !important; }
+    .sidebar { z-index: 110 !important; }
+    /* Altura real da janela (100vh estoura com a barra do navegador) e folga
+       no fim da lista para o último item nunca encostar na borda. */
+    .sidebar {
+      height: 100dvh;
+      padding-bottom: calc(26px + env(safe-area-inset-bottom)) !important;
+      overscroll-behavior: contain;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .bottom-nav { transition: none; }
+    }
+  }
+
+  /* O rótulo de versão era `position: absolute; bottom: 10px`: ficava preso ao
+     rodapé da barra e flutuava por cima do último item da lista. No fluxo
+     normal ele rola junto e passa a ser o fim natural do menu. */
+  .sidebar-version {
+    position: static !important; transform: none !important;
+    display: block; text-align: center; margin: 20px 0 4px;
+  }
+  @media (max-width: 768px) {
     .bnav-btn.active { color: var(--primary) !important; }
     .bnav-btn.active .bnav-icon { background: var(--primary-tint); border-radius: 999px; padding: 5px 16px; }
     .bnav-btn.active .bnav-icon svg { stroke: var(--primary) !important; }
