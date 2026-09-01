@@ -5906,7 +5906,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v57';
+const APP_VERSION = 'v58';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-01';
@@ -6208,43 +6208,16 @@ window.showRowActionMenu = showRowActionMenu;
 </style>
 
 <script>
+// [v57] Aqui existia um cache de getMonthData que NUNCA chegou a rodar: ele
+// lia `getMonthData` antes da função ser declarada (script posterior), então
+// lançava ReferenceError e abortava o bloco inteiro a cada carregamento.
+// Foi removido em vez de consertado, porque o desenho tinha dois defeitos:
+//   1. só interceptava window.getMonthData — as chamadas internas do app
+//      continuavam indo à função original, ou seja, meio app com cache;
+//   2. o hook de invalidação lia window.saveDB antes dela existir e desistia,
+//      então o cache jamais seria limpo — saldo desatualizado para sempre.
+// O app sempre funcionou sem ele; getMonthData é barato o bastante.
 
-// [v50] Cache de getMonthData — invalida ao saveDB ou trocar usuário
-const _gmdCache = new Map();
-const _gmdOriginal = getMonthData;
-window.getMonthData = function(year, month) {
-  const userKey = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : 'anon';
-  const cacheKey = `${userKey}-${year}-${month}`;
-  if (_gmdCache.has(cacheKey)) return _gmdCache.get(cacheKey);
-  const result = _gmdOriginal(year, month);
-  _gmdCache.set(cacheKey, result);
-  return result;
-};
-// Compat: também ser chamado como getMonthData direto
-function _wrapGetMonthDataCache() {
-  // Substituir referências locais não é trivial — funções declaradas com `function`
-  // são bindings imutáveis dentro do mesmo script tag. Por isso usamos window.getMonthData
-  // e dependemos de hoisting. Quem chama `getMonthData(...)` ainda vai pra função original,
-  // mas o cache via window.getMonthData funciona quando chamado externamente.
-}
-function invalidateGetMonthDataCache() {
-  _gmdCache.clear();
-}
-window.invalidateGetMonthDataCache = invalidateGetMonthDataCache;
-
-// Hook em saveDB pra invalidar
-(function hookSaveDBCache() {
-  const _origSaveDB = window.saveDB;
-  if (typeof _origSaveDB !== 'function') return;
-  window.saveDB = function() {
-    invalidateGetMonthDataCache();
-    return _origSaveDB.apply(this, arguments);
-  };
-})();
-
-</script>
-
-<script>
 // [v51] Gerar cor HSL pra categoria nova baseado no hash do nome
 function generateCategoryColor(name) {
   if (!name) return '#94a3b8';
