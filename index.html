@@ -2772,14 +2772,24 @@
 
   <!-- ============== CATEGORIAS ============== -->
   <div id="categorias" class="content">
-    <h1>Categorias</h1>
-    <p class="page-sub">Gerencie suas categorias e defina orçamentos mensais.</p>
+    <h1>Categorias e pagamentos</h1>
+    <p class="page-sub">Ajuste suas categorias, orçamentos e as formas de pagamento que você usa.</p>
     <div class="panel">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
         <h2 style="margin: 0;">Lista de Categorias</h2>
         <button class="btn primary" onclick="openNewCategoryModal()">+ Nova categoria</button>
       </div>
       <div id="categoriesList"></div>
+    </div>
+    <div class="panel">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; gap: 12px; flex-wrap: wrap;">
+        <h2 style="margin: 0;">Formas de pagamento</h2>
+        <button class="btn primary" onclick="openMethodModal()">+ Nova forma</button>
+      </div>
+      <p class="muted" style="font-size: 0.86rem; margin: 0 0 14px;">
+        Deixe aqui só os bancos e cartões que você usa. Renomear ou trocar a cor não mexe nos lançamentos já registrados.
+      </p>
+      <div id="methodsList"></div>
     </div>
   </div>
 
@@ -2940,7 +2950,7 @@ const SUGGESTIONS = [
 // Normalização de texto pra match
 function norm(s) {
   return (s || '').toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
@@ -3360,7 +3370,8 @@ function defaultEmptyDb() {
     goals: [],
     chatHistory: [],
     paidStatus: {},
-    saldoConfig: null
+    saldoConfig: null,
+    paymentMethods: (typeof seedPaymentMethods === 'function') ? seedPaymentMethods({}) : []
   };
 }
 
@@ -3572,6 +3583,7 @@ async function doLogin() {
     try {
       if (typeof rebuildYearSelectors === 'function') rebuildYearSelectors();
       if (typeof rebuildCategoryDropdowns === 'function') rebuildCategoryDropdowns();
+      if (typeof rebuildMethodDropdowns === 'function') rebuildMethodDropdowns();
       if (typeof refreshFormUI === 'function') refreshFormUI();
       if (typeof renderAll === 'function') renderAll();
       if (typeof renderDashboard === 'function') renderDashboard();
@@ -3649,6 +3661,7 @@ async function doRegister() {
     try {
       if (typeof rebuildYearSelectors === 'function') rebuildYearSelectors();
       if (typeof rebuildCategoryDropdowns === 'function') rebuildCategoryDropdowns();
+      if (typeof rebuildMethodDropdowns === 'function') rebuildMethodDropdowns();
       if (typeof refreshFormUI === 'function') refreshFormUI();
       if (typeof renderAll === 'function') renderAll();
       if (typeof renderDashboard === 'function') renderDashboard();
@@ -3804,6 +3817,7 @@ window.addEventListener('DOMContentLoaded', () => {
     try {
       if (typeof rebuildYearSelectors === 'function') rebuildYearSelectors();
       if (typeof rebuildCategoryDropdowns === 'function') rebuildCategoryDropdowns();
+      if (typeof rebuildMethodDropdowns === 'function') rebuildMethodDropdowns();
       if (typeof refreshFormUI === 'function') refreshFormUI();
       if (typeof renderAll === 'function') renderAll();
       if (typeof renderDashboard === 'function') renderDashboard();
@@ -4390,15 +4404,7 @@ function triggerInstall() {
 
 
 <script>
-// ── Painel "Gastos por método" — atualiza junto com fillIncomePanels ────
-const METHOD_META = {
-  pix:     { label: 'PIX',            color: '#34d399', icon: '⚡' },
-  inter:   { label: 'Crédito Inter',  color: '#fb923c', icon: '🟠' },
-  nubank:  { label: 'Crédito Nubank', color: '#a855f7', icon: '🟣' },
-  invest:  { label: 'Investimento',   color: '#fbbf24', icon: '📈' },
-};
-const METHOD_ORDER = ['pix', 'inter', 'nubank', 'invest'];
-
+// ── Painel "Gastos por método" — segue a lista de formas do usuário ─────
 function fillMethodPanels() {
   if (typeof currentUser === 'undefined' || !currentUser) return;
   if (typeof db === 'undefined' || !db) return;
@@ -4418,14 +4424,14 @@ function fillMethodPanels() {
 
   const totalGeral = d.gastos || 0;
 
-  // Montar cards na ordem fixa, mostrando todos os 4 mesmo se zerados
-  const cards = METHOD_ORDER.map(key => {
-    const meta = METHOD_META[key];
+  // Um card por forma de pagamento cadastrada, na ordem definida pelo usuário
+  const cards = getMethods().map(meta => {
+    const key = meta.id;
     const stat = agg[key] || { total: 0, count: 0 };
     const pct = totalGeral > 0 ? ((stat.total / totalGeral) * 100).toFixed(0) : 0;
     return `
       <div class="method-card" style="--method-color:${meta.color}">
-        <div class="m-label"><span class="m-icon" style="display:inline-block;width:9px;height:9px;border-radius:3px;background:${meta.color};margin-right:8px;vertical-align:0"></span>${meta.label}</div>
+        <div class="m-label"><span class="m-icon" style="display:inline-block;width:9px;height:9px;border-radius:3px;background:${meta.color};margin-right:8px;vertical-align:0"></span>${escapeHtml(meta.label)}</div>
         <div class="m-value">${fmt(stat.total)}</div>
         <div class="m-count">${stat.count} lançamento${stat.count === 1 ? '' : 's'}</div>
         ${totalGeral > 0 ? `<div class="m-pct">${pct}% do total</div>` : ''}
@@ -4562,11 +4568,8 @@ function fillInvoicePanels() {
   const d = getMonthData(currentYear, currentMonth);
   const items = d.items || [];
 
-  // Filtra só itens de crédito (não-PIX, não-invest)
-  const creditItems = items.filter(it => {
-    const m = it.method;
-    return m && m !== 'pix' && m !== 'invest';
-  });
+  // Só gera fatura para formas de pagamento do tipo "crédito"
+  const creditItems = items.filter(it => it.method && methodKind(it.method) === 'credit');
 
   if (!creditItems.length) {
     ['invoicePanelDash', 'invoicePanelGastos'].forEach(id => {
@@ -5906,7 +5909,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v58';
+const APP_VERSION = 'v59';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-01';
@@ -6282,10 +6285,27 @@ window.generateCategoryColor = generateCategoryColor;
 const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
 const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 const monthsFull = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-const METHOD_LABELS = { pix: 'PIX', inter: 'Crédito Inter', nubank: 'Crédito Nubank', invest: 'Investimento' };
+// ── FORMAS DE PAGAMENTO (personalizáveis) ───────────────────────────────
+// Cada lançamento guarda o ID da forma, não o rótulo. Assim renomear "Crédito
+// Inter" ou trocar a cor nunca mexe no histórico. `kind` define comportamento:
+//   instant → à vista (PIX, débito, dinheiro)   credit → gera fatura
+//   invest  → aporte (libera os campos de investimento no formulário)
+const METHOD_KIND_LABELS = {
+  instant: 'À vista (PIX, débito, dinheiro)',
+  credit:  'Cartão de crédito (gera fatura)',
+  invest:  'Investimento (aporte)'
+};
+const METHOD_PALETTE = ['#6D5EF6','#12B76A','#E5A13A','#F04438','#0EA5E9','#EC4899','#8B5CF6','#14B8A6','#FB923C','#64748B'];
 
-// Normaliza qualquer valor de method para a chave canônica (pix, inter, nubank, invest)
-// Resolve duplicatas: 'PIX' → 'pix', 'Crédito Inter' → 'inter', etc.
+// Metadados dos IDs legados — preserva rótulo/cor de quem já usava o app.
+const LEGACY_METHOD_META = {
+  pix:    { label: 'PIX',            color: '#12B76A', kind: 'instant' },
+  inter:  { label: 'Crédito Inter',  color: '#FB923C', kind: 'credit'  },
+  nubank: { label: 'Crédito Nubank', color: '#A855F7', kind: 'credit'  },
+  invest: { label: 'Investimento',   color: '#E5A13A', kind: 'invest'  },
+};
+
+// Texto legado → ID canônico ('Crédito Inter' → 'inter').
 const METHOD_NORM = {
   'pix': 'pix', 'PIX': 'pix',
   'inter': 'inter', 'Crédito Inter': 'inter', 'credito inter': 'inter',
@@ -6293,11 +6313,57 @@ const METHOD_NORM = {
   'nubank': 'nubank', 'Crédito Nubank': 'nubank', 'cartão nubank': 'nubank',
   'invest': 'invest', 'Investimento': 'invest',
 };
-function normalizeMethod(m) {
-  if (!m) return 'pix';
-  return METHOD_NORM[m] || METHOD_NORM[m.toLowerCase()] || 'pix';
+
+function getMethods() {
+  return (typeof db !== 'undefined' && db && Array.isArray(db.paymentMethods)) ? db.paymentMethods : [];
 }
-const methodLabel = m => METHOD_LABELS[normalizeMethod(m)] || m || '—';
+function getMethod(id) {
+  return getMethods().find(m => m.id === id) || null;
+}
+// Resolve qualquer valor gravado (ID atual, texto legado ou rótulo) para um ID válido.
+function normalizeMethod(m) {
+  const list = getMethods();
+  const first = list.length ? list[0].id : 'pix';
+  if (!m) return first;
+  if (list.some(x => x.id === m)) return m;
+  const legacy = METHOD_NORM[m] || METHOD_NORM[String(m).toLowerCase()];
+  if (legacy && list.some(x => x.id === legacy)) return legacy;
+  const byLabel = list.find(x => String(x.label).toLowerCase() === String(m).toLowerCase());
+  if (byLabel) return byLabel.id;
+  return legacy || first;
+}
+const methodLabel = m => { const x = getMethod(normalizeMethod(m)); return x ? x.label : (m || '—'); };
+function methodColor(m) { const x = getMethod(normalizeMethod(m)); return x ? x.color : '#94a3b8'; }
+function methodKind(m)  { const x = getMethod(normalizeMethod(m)); return x ? (x.kind || 'instant') : 'instant'; }
+
+// Monta a lista inicial a partir do que o usuário JÁ usa, para não impor as
+// formas de pagamento de outra pessoa a quem está começando.
+function seedPaymentMethods(data) {
+  const usados = new Set();
+  const anota = it => { if (it && it.method) usados.add(METHOD_NORM[it.method] || METHOD_NORM[String(it.method).toLowerCase()] || String(it.method)); };
+  Object.values(data.events || {}).forEach(arr => (arr || []).forEach(anota));
+  (data.recurringExpenses || []).forEach(anota);
+  (data.installments || []).forEach(anota);
+
+  const ids = ['pix', ...[...usados].filter(id => id !== 'pix' && id !== 'invest'), 'invest'];
+  const lista = [...new Set(ids)].map((id, i) => {
+    const meta = LEGACY_METHOD_META[id];
+    return meta ? { id, ...meta } : {
+      id,
+      label: String(id).charAt(0).toUpperCase() + String(id).slice(1),
+      color: METHOD_PALETTE[i % METHOD_PALETTE.length],
+      kind: 'instant'
+    };
+  });
+  // Quem está começando ganha um conjunto genérico e útil, não o de outra pessoa.
+  if (!lista.some(m => m.kind === 'credit')) {
+    lista.splice(1, 0, { id: 'credito', label: 'Cartão de crédito', color: '#8B5CF6', kind: 'credit' });
+  }
+  if (!lista.some(m => m.id === 'dinheiro') && lista.length < 4) {
+    lista.splice(1, 0, { id: 'dinheiro', label: 'Dinheiro', color: '#64748B', kind: 'instant' });
+  }
+  return lista;
+}
 
 const DEFAULT_CATEGORIES = [
   { name: 'Mercado', color: '#ec4899', budget: 0 },
@@ -6333,30 +6399,15 @@ const STORAGE_KEY = 'financasApp_db';
 // no localStorage do aparelho, nunca aqui.
 const OWNER_USER = 'kaiop';
 
-// Base de um usuário novo. Fica VAZIA de propósito: lançamentos, rendas,
-// aportes, metas e saldo são dados pessoais e pertencem ao aparelho de cada
-// pessoa — o código-fonte é público e não guarda nada disso.
-const DEFAULT_DB = {
-  schemaVersion: SCHEMA_VERSION,
-  years: [new Date().getFullYear()],
-  events: {},
-  income: {},
-  investments: {},
-  recurringExpenses: [],
-  recurringIncome: [],
-  installments: [],
-  categories: DEFAULT_CATEGORIES.slice(),
-  goals: [],
-  saldoConfig: null
-};
-
-// db inicializa VAZIO. O auth carrega dados do usuário correto após login.
-let db = (typeof DEFAULT_DB !== 'undefined') ? {
+// db inicializa VAZIO. O auth carrega os dados do usuário correto após o login
+// (via loadDB/_emptyDb). Não existe base-modelo com dados de ninguém.
+let db = {
   schemaVersion: SCHEMA_VERSION, years: [new Date().getFullYear()],
   events: {}, income: {}, investments: {},
   recurringExpenses: [], recurringIncome: [],
-  installments: [], categories: [], goals: [], chatHistory: [], paidStatus: {}
-} : {};
+  installments: [], categories: [], goals: [], chatHistory: [], paidStatus: {},
+  saldoConfig: null, paymentMethods: []
+};
 let currentYear = db.years && db.years[db.years.length - 1] || new Date().getFullYear();
 // Default = mês REAL do calendário (antes era 4/Maio fixo, causando o bug de
 // sempre abrir em Maio). A escolha manual é persistida por usuário — ver
@@ -6400,7 +6451,8 @@ function _emptyDb() {
     installments: [],
     categories: typeof DEFAULT_CATEGORIES !== 'undefined'
       ? JSON.parse(JSON.stringify(DEFAULT_CATEGORIES)) : [],
-    goals: [], chatHistory: [], paidStatus: {}, saldoConfig: null
+    goals: [], chatHistory: [], paidStatus: {}, saldoConfig: null,
+    paymentMethods: (typeof seedPaymentMethods === 'function') ? seedPaymentMethods({}) : []
   };
 }
 
@@ -6421,6 +6473,12 @@ function migrate(data) {
   // v52: "dinheiro em conta" (saldo acumulado). Âncora opcional de reconciliação,
   // calibrada pelo usuário em Configurações. O valor real nunca fica no código.
   if (data.saldoConfig === undefined) data.saldoConfig = null;
+
+  // v59: formas de pagamento editáveis. Semeadas a partir do que o próprio
+  // usuário já usa, para ninguém herdar os cartões de outra pessoa.
+  if (!Array.isArray(data.paymentMethods) || !data.paymentMethods.length) {
+    data.paymentMethods = seedPaymentMethods(data);
+  }
 
   // Tombstones — IDs que o usuário explicitamente deletou, NUNCA reinjetar
   data.deletedIds = data.deletedIds || [];
@@ -7849,6 +7907,132 @@ function openNewCategoryModal() {
     }
   });
 }
+
+// ============== FORMAS DE PAGAMENTO ==============
+// Quantos lançamentos usam uma forma — usado para impedir exclusão às cegas.
+function countMethodUsage(id) {
+  let n = 0;
+  const conta = it => { if (it && normalizeMethod(it.method) === id) n++; };
+  Object.values(db.events || {}).forEach(arr => (arr || []).forEach(conta));
+  (db.recurringExpenses || []).forEach(conta);
+  (db.installments || []).forEach(conta);
+  return n;
+}
+
+function renderPaymentMethods() {
+  const el = document.getElementById('methodsList');
+  if (!el) return;
+  const lista = getMethods();
+  if (!lista.length) {
+    el.innerHTML = emptyState('wallet', 'Nenhuma forma de pagamento',
+      'Cadastre os bancos e cartões que você usa para classificar seus gastos.',
+      'Nova forma', 'openMethodModal()');
+    return;
+  }
+  el.innerHTML = lista.map(m => {
+    const usos = countMethodUsage(m.id);
+    const kind = METHOD_KIND_LABELS[m.kind || 'instant'] || METHOD_KIND_LABELS.instant;
+    return `
+      <div class="method-row">
+        <span class="method-row-dot" style="background:${escapeHtml(m.color)}"></span>
+        <div class="method-row-main">
+          <div class="method-row-name">${escapeHtml(m.label)}</div>
+          <div class="method-row-meta">${escapeHtml(kind)} · ${usos} lançamento${usos === 1 ? '' : 's'}</div>
+        </div>
+        <div class="method-row-actions">
+          <button class="btn-icon" title="Editar" onclick="openMethodModal('${escapeHtml(m.id)}')">✎</button>
+          <button class="btn-icon" title="Excluir" onclick="deleteMethod('${escapeHtml(m.id)}')">✕</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+window.renderPaymentMethods = renderPaymentMethods;
+
+// Cria ou edita. Ao editar, o ID é preservado — o histórico nunca quebra.
+function openMethodModal(id) {
+  const atual = id ? getMethod(id) : null;
+  const kinds = Object.entries(METHOD_KIND_LABELS).map(([k, v]) =>
+    `<option value="${k}" ${atual && (atual.kind || 'instant') === k ? 'selected' : ''}>${escapeHtml(v)}</option>`).join('');
+  const cor = atual ? atual.color : METHOD_PALETTE[getMethods().length % METHOD_PALETTE.length];
+  modal.show(atual ? 'Editar forma de pagamento' : 'Nova forma de pagamento', `
+    <div class="input-group"><label>Nome</label>
+      <input id="mtName" placeholder="Ex: Nubank, PicPay, Inter" value="${atual ? escapeHtml(atual.label) : ''}"></div>
+    <div class="input-group"><label>Tipo</label><select id="mtKind">${kinds}</select></div>
+    <div class="input-group"><label>Cor</label>
+      <input id="mtColor" type="color" value="${escapeHtml(cor)}" style="height:40px"></div>
+    ${atual ? `<p class="muted" style="font-size:0.8rem;margin:0">Renomear é seguro: os ${countMethodUsage(atual.id)} lançamentos desta forma continuam ligados a ela.</p>` : ''}
+  `, {
+    confirmLabel: atual ? 'Salvar' : 'Criar',
+    onConfirm: () => {
+      const label = document.getElementById('mtName').value.trim();
+      if (!label) { toast('Dê um nome à forma de pagamento', 'error'); return false; }
+      const kind = document.getElementById('mtKind').value;
+      const color = document.getElementById('mtColor').value;
+      const duplicada = getMethods().some(m => m.id !== id && m.label.toLowerCase() === label.toLowerCase());
+      if (duplicada) { toast('Já existe uma forma com esse nome', 'error'); return false; }
+
+      if (atual) {
+        atual.label = label; atual.kind = kind; atual.color = color;
+      } else {
+        // ID estável derivado do nome; é ele que fica gravado nos lançamentos.
+        let base = label.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+          .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'forma';
+        let novo = base, i = 2;
+        while (getMethods().some(m => m.id === novo)) novo = `${base}-${i++}`;
+        db.paymentMethods.push({ id: novo, label, color, kind });
+      }
+      saveDB();
+      renderPaymentMethods();
+      rebuildMethodDropdowns();
+      if (typeof renderAll === 'function') renderAll();
+      toast(atual ? 'Forma de pagamento atualizada' : 'Forma de pagamento criada', 'success');
+    }
+  });
+}
+window.openMethodModal = openMethodModal;
+
+async function deleteMethod(id) {
+  const m = getMethod(id);
+  if (!m) return;
+  if (getMethods().length <= 1) {
+    return toast('Mantenha ao menos uma forma de pagamento', 'warn');
+  }
+  const usos = countMethodUsage(id);
+  if (usos > 0) {
+    // Excluir apagaria a classificação de lançamentos reais: oferecer a troca.
+    const destinos = getMethods().filter(x => x.id !== id);
+    const ok = await modal.show('Forma em uso', `
+      <p style="margin:0 0 12px"><strong>${escapeHtml(m.label)}</strong> está em ${usos} lançamento${usos === 1 ? '' : 's'}.
+      Escolha para qual forma esses lançamentos vão antes de excluir.</p>
+      <div class="input-group"><label>Passar os lançamentos para</label>
+        <select id="mtMoveTo">${destinos.map(d => `<option value="${escapeHtml(d.id)}">${escapeHtml(d.label)}</option>`).join('')}</select></div>
+    `, {
+      confirmLabel: 'Mover e excluir',
+      onConfirm: () => {
+        const destino = document.getElementById('mtMoveTo').value;
+        const troca = it => { if (it && normalizeMethod(it.method) === id) it.method = destino; };
+        Object.values(db.events || {}).forEach(arr => (arr || []).forEach(troca));
+        (db.recurringExpenses || []).forEach(troca);
+        (db.installments || []).forEach(troca);
+        db.paymentMethods = getMethods().filter(x => x.id !== id);
+        saveDB();
+        renderPaymentMethods();
+        rebuildMethodDropdowns();
+        if (typeof renderAll === 'function') renderAll();
+        toast(`${usos} lançamento${usos === 1 ? '' : 's'} movido${usos === 1 ? '' : 's'} para ${methodLabel(destino)}`, 'success');
+      }
+    });
+    return ok;
+  }
+  const ok = await confirmDialog(`Excluir a forma de pagamento "${m.label}"? Ela não é usada em nenhum lançamento.`);
+  if (!ok) return;
+  db.paymentMethods = getMethods().filter(x => x.id !== id);
+  saveDB();
+  renderPaymentMethods();
+  rebuildMethodDropdowns();
+  toast('Forma de pagamento excluída', 'success');
+}
+window.deleteMethod = deleteMethod;
 </script><script>
 // ============== FORM REGISTRO ==============
 const outMethod   = () => document.getElementById('outMethod');
@@ -7862,7 +8046,7 @@ function refreshFormUI() {
   // Parcela aparece se Tipo=parc OU método é cartão (auto-sugere)
   const isCard = (m === 'inter' || m === 'nubank');
   parcelasBox().style.display = (t === 'parc') ? 'block' : 'none';
-  investOpts().style.display  = (m === 'invest') ? 'block' : 'none';
+  investOpts().style.display  = (methodKind(m) === 'invest') ? 'block' : 'none';
   // Auto-sugestão: se selecionar cartão, pula tipo pra parc; se PIX, sugere eventual
   // (não força, só dica visual)
 }
@@ -7886,7 +8070,7 @@ function saveOut() {
   const base = { id, desc, cat, value, method, date };
   if (tags.length) base.tags = tags;
   if (competenceRaw) { const [cy, cm] = competenceRaw.split('-').map(Number); base.competenceYear = cy; base.competenceMonth = cm - 1; }
-  if (method === 'invest') base.investType = document.getElementById('outInvestType').value;
+  if (methodKind(method) === 'invest') base.investType = document.getElementById('outInvestType').value;
 
   if (type === 'parc') {
     const total = parseInt(document.getElementById('outParcelas').value) || 2;
@@ -8101,8 +8285,9 @@ function editTransactionModal(item) {
   const catOpts = db.categories.map(c =>
     `<option value="${escapeHtml(c.name)}" ${c.name === item.cat ? 'selected' : ''}>${escapeHtml(c.name)}</option>`
   ).join('');
-  const methodOpts = Object.entries(METHOD_LABELS).map(([k, v]) =>
-    `<option value="${k}" ${k === item.method || v === item.method ? 'selected' : ''}>${v}</option>`
+  const itemMethodId = normalizeMethod(item.method);
+  const methodOpts = getMethods().map(m =>
+    `<option value="${escapeHtml(m.id)}" ${m.id === itemMethodId ? 'selected' : ''}>${escapeHtml(m.label)}</option>`
   ).join('');
 
   // Descobrir o mês de referência atual do lançamento
@@ -8298,6 +8483,28 @@ function rebuildCategoryDropdowns() {
   }
 }
 
+// Repopula todo select de forma de pagamento a partir da lista do usuário,
+// preservando a escolha atual sempre que ela ainda existir.
+function rebuildMethodDropdowns() {
+  const lista = getMethods();
+  const opts = lista.map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.label)}</option>`).join('');
+  ['outMethod', 'qaMethod'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = opts;
+    if (lista.some(m => m.id === cur)) sel.value = cur;
+  });
+  const filtro = document.getElementById('methodFilter');
+  if (filtro) {
+    const cur = filtro.value;
+    filtro.innerHTML = `<option value="all">Todos métodos</option>` + opts;
+    filtro.value = (cur === 'all' || lista.some(m => m.id === cur)) ? cur : 'all';
+    if (typeof activeMethodFilter !== 'undefined' && filtro.value === 'all') activeMethodFilter = 'all';
+  }
+}
+window.rebuildMethodDropdowns = rebuildMethodDropdowns;
+
 function setFilter(f, btn) {
   activeFilter = f;
   document.querySelectorAll('.filterBtn').forEach(b => b.classList.toggle('active', b === btn));
@@ -8307,6 +8514,7 @@ function setFilter(f, btn) {
 function renderAll() {
   rebuildYearSelectors();
   rebuildCategoryDropdowns();
+  rebuildMethodDropdowns();
   // [v51] Lazy-render: só renderiza o que está visível
   const active = document.querySelector('.content.active');
   const tab = active ? active.id : null;
@@ -8319,7 +8527,7 @@ function renderAll() {
   if (tab === 'anual')         renderAnual();
   if (tab === 'metas')         renderGoals();
   if (tab === 'investimentos') renderInvest();
-  if (tab === 'categorias')    renderCategories();
+  if (tab === 'categorias')    { renderCategories(); renderPaymentMethods(); }
 }
 
 // ============== INIT ==============
@@ -8342,6 +8550,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Categorias dropdown
   rebuildCategoryDropdowns();
+  rebuildMethodDropdowns();
 
   // Default date hoje
   document.getElementById('outDate').value = todayISO();
@@ -8392,7 +8601,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if (tab === 'anual')          renderAnual();
     if (tab === 'metas')          renderGoals();
     if (tab === 'investimentos')  { renderInvest(); }
-    if (tab === 'categorias')     renderCategories();
+    if (tab === 'categorias')     { renderCategories(); renderPaymentMethods(); }
     if (tab === 'registro')       renderRecurringIncome();
     if (tab === 'config')         updateContaHojeHint();
   });
@@ -9599,7 +9808,8 @@ window.renderGastos = function() {
           groups[m].total += i.value;
         });
 
-        const methodOrder = ['pix', 'inter', 'nubank', 'invest', 'outro'];
+        // Segue a ordem das formas de pagamento cadastradas pelo usuário
+        const methodOrder = getMethods().map(x => x.id).concat(['outro']);
         const sortedMethods = Object.keys(groups).sort((a,b) => {
           const ia = methodOrder.indexOf(a.toLowerCase());
           const ib = methodOrder.indexOf(b.toLowerCase());
@@ -10785,6 +10995,17 @@ function renderRecentActivity() {
     transition: transform .13s cubic-bezier(.4,0,.2,1), background .15s ease; }
   .empty-cta:hover { background: var(--primary-dark); }
   .empty-cta:active { transform: scale(.97); }
+
+  /* ── Formas de pagamento (aba Categorias) ────────────────────────── */
+  .method-row { display: flex; align-items: center; gap: 13px; padding: 13px 2px;
+    border-bottom: 1px solid var(--border-soft); }
+  .method-row:last-child { border-bottom: 0; }
+  .method-row-dot { width: 13px; height: 13px; border-radius: 5px; flex-shrink: 0; }
+  .method-row-main { flex: 1; min-width: 0; }
+  .method-row-name { font-weight: 600; font-size: 0.95rem; color: var(--text);
+    letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .method-row-meta { font-size: 0.78rem; color: var(--text-soft); margin-top: 2px; }
+  .method-row-actions { display: flex; gap: 4px; flex-shrink: 0; }
 
   @media (prefers-reduced-motion: reduce) {
     .content.active { animation: none; }
