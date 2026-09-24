@@ -2528,11 +2528,7 @@
       <button class="filterBtn" data-filter="parc">Parcelas</button>
       <button class="filterBtn" data-filter="eventual">Eventuais</button>
       <select id="methodFilter" style="margin-left: auto; max-width: 180px;">
-        <option value="all">Todos métodos</option>
-        <option value="pix">PIX</option>
-        <option value="inter">Crédito Inter</option>
-        <option value="nubank">Crédito Nubank</option>
-        <option value="invest">Investimento</option>
+        <option value="all">Todos métodos</option><!-- formas do usuário: rebuildMethodDropdowns() -->
       </select>
       <select id="monthSelect" style="max-width: 140px;"></select>
       <input id="searchBox" placeholder="🔍 Buscar..." style="max-width: 200px;">
@@ -2604,23 +2600,16 @@
         </div>
         <div class="input-group">
           <label>Método de pagamento</label>
-          <select id="outMethod">
-            <option value="pix">Pix</option>
-            <option value="inter">Cartão Inter</option>
-            <option value="nubank">Cartão Nubank</option>
-            <option value="invest">Investimento</option>
-          </select>
+          <select id="outMethod"><!-- formas do usuário: rebuildMethodDropdowns() --></select>
         </div>
         <div class="input-group" id="parcelasBox" style="display:none">
           <label>Número de parcelas</label>
           <input id="outParcelas" type="number" min="2" max="60" value="2">
         </div>
         <div class="input-group" id="investOptions" style="display:none">
-          <label>Tipo de investimento</label>
-          <select id="outInvestType">
-            <option value="fixa">Renda Fixa</option>
-            <option value="variavel">Renda Variável</option>
-          </select>
+          <label>Onde você aplicou</label>
+          <select id="outInvestType"><!-- classes do usuário: rebuildInvestClassDropdowns() --></select>
+          <p class="muted" style="font-size:0.78rem;margin:6px 0 0">Aporte não conta como gasto: o valor sai da conta e entra no seu patrimônio.</p>
         </div>
 
         <details class="advanced-options" id="expenseAdvanced">
@@ -2684,7 +2673,7 @@
       <h2>Resumo mensal</h2>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Mês</th><th>Gastos</th><th>Entradas</th><th>Investido</th><th>Saldo</th><th>Em conta</th></tr></thead>
+          <thead><tr><th>Mês</th><th>Gastos</th><th>Entradas</th><th>Investido</th><th>Sobra</th><th>Em conta</th></tr></thead>
           <tbody id="anualTbody"></tbody>
           <tfoot id="anualTfoot"></tfoot>
         </table>
@@ -2743,19 +2732,8 @@
         </div>
         <div class="table-wrap">
           <table>
-            <thead>
-              <tr>
-                <th>Período</th>
-                <th class="table-num-header">Reserva</th>
-                <th class="table-num-header">Renda Fixa</th>
-                <th class="table-num-header">RV - Poly</th>
-                <th class="table-num-header">RV - Ações</th>
-                <th class="table-num-header">Aportes</th>
-                <th class="table-num-header" title="Resgates/retiradas no mês">Retiradas</th>
-                <th class="table-num-header">Líquido</th>
-                <th style="text-align:right">Editar</th>
-              </tr>
-            </thead>
+            <!-- colunas = classes de investimento do usuário (renderInvest) -->
+            <thead id="invThead"></thead>
             <tbody id="invTbody"></tbody>
             <tfoot id="invTfoot"></tfoot>
           </table>
@@ -2764,9 +2742,20 @@
       
       <!-- Gráfico de Distribuição -->
       <div class="panel">
-        <h2>Distribuição do Patrimônio</h2>
+        <h2>Distribuição do que está investido</h2>
         <canvas id="invChart"></canvas>
       </div>
+    </div>
+
+    <div class="panel">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; gap: 12px; flex-wrap: wrap;">
+        <h2 style="margin: 0;">Suas classes de investimento</h2>
+        <button class="btn primary" onclick="openInvestClassModal()">+ Nova classe</button>
+      </div>
+      <p class="muted" style="font-size: 0.86rem; margin: 0 0 14px;">
+        Deixe só onde você realmente aplica — CDB, Tesouro, ações, cripto… Marque a classe que funciona como reserva de emergência.
+      </p>
+      <div id="investClassesList"></div>
     </div>
   </div>
 
@@ -3371,7 +3360,8 @@ function defaultEmptyDb() {
     chatHistory: [],
     paidStatus: {},
     saldoConfig: null,
-    paymentMethods: (typeof seedPaymentMethods === 'function') ? seedPaymentMethods({}) : []
+    paymentMethods: (typeof seedPaymentMethods === 'function') ? seedPaymentMethods({}) : [],
+    investClasses: (typeof seedInvestClasses === 'function') ? seedInvestClasses({}) : []
   };
 }
 
@@ -3584,6 +3574,7 @@ async function doLogin() {
       if (typeof rebuildYearSelectors === 'function') rebuildYearSelectors();
       if (typeof rebuildCategoryDropdowns === 'function') rebuildCategoryDropdowns();
       if (typeof rebuildMethodDropdowns === 'function') rebuildMethodDropdowns();
+      if (typeof rebuildInvestClassDropdowns === 'function') rebuildInvestClassDropdowns();
       if (typeof refreshFormUI === 'function') refreshFormUI();
       if (typeof renderAll === 'function') renderAll();
       if (typeof renderDashboard === 'function') renderDashboard();
@@ -3662,6 +3653,7 @@ async function doRegister() {
       if (typeof rebuildYearSelectors === 'function') rebuildYearSelectors();
       if (typeof rebuildCategoryDropdowns === 'function') rebuildCategoryDropdowns();
       if (typeof rebuildMethodDropdowns === 'function') rebuildMethodDropdowns();
+      if (typeof rebuildInvestClassDropdowns === 'function') rebuildInvestClassDropdowns();
       if (typeof refreshFormUI === 'function') refreshFormUI();
       if (typeof renderAll === 'function') renderAll();
       if (typeof renderDashboard === 'function') renderDashboard();
@@ -3818,6 +3810,7 @@ window.addEventListener('DOMContentLoaded', () => {
       if (typeof rebuildYearSelectors === 'function') rebuildYearSelectors();
       if (typeof rebuildCategoryDropdowns === 'function') rebuildCategoryDropdowns();
       if (typeof rebuildMethodDropdowns === 'function') rebuildMethodDropdowns();
+      if (typeof rebuildInvestClassDropdowns === 'function') rebuildInvestClassDropdowns();
       if (typeof refreshFormUI === 'function') refreshFormUI();
       if (typeof renderAll === 'function') renderAll();
       if (typeof renderDashboard === 'function') renderDashboard();
@@ -4779,29 +4772,30 @@ function generateSmartInsights() {
     });
   }
 
-  // 5. Saldo negativo
-  if (d.saldo < 0) {
+  // 5. Gastos acima das entradas (pela SOBRA — investir não conta como gasto)
+  if (d.sobra < 0) {
     insights.push({
       icon: '🚨',
       type: 'danger',
-      text: `Saldo negativo de <strong>${fmt(Math.abs(d.saldo))}</strong>. Revise gastos ou aumente entradas.`
+      text: `Seus gastos passaram as entradas em <strong>${fmt(Math.abs(d.sobra))}</strong>. Revise gastos ou aumente entradas.`
     });
   }
 
-  // 6. Saldo positivo (insight neutro/positivo)
-  if (d.saldo > 0 && d.entradas > 0) {
-    const taxa = (d.saldo / d.entradas) * 100;
+  // 6. Taxa de economia: tudo que não foi gasto — inclusive o que foi investido
+  if (d.sobra > 0 && d.entradas > 0) {
+    const taxa = (d.sobra / d.entradas) * 100;
+    const inv = d.investido > 0 ? `, sendo ${fmt(d.investido)} investidos` : '';
     if (taxa >= 20) {
       insights.push({
         icon: '🎯',
         type: 'success',
-        text: `Você está economizando <strong>${taxa.toFixed(0)}%</strong> da renda este mês (${fmt(d.saldo)}).`
+        text: `Você está economizando <strong>${taxa.toFixed(0)}%</strong> da renda este mês (${fmt(d.sobra)}${inv}).`
       });
     } else if (taxa > 0) {
       insights.push({
         icon: '👍',
         type: 'info',
-        text: `Saldo positivo de <strong>${fmt(d.saldo)}</strong> — ${taxa.toFixed(0)}% da renda.`
+        text: `Sobraram <strong>${fmt(d.sobra)}</strong> — ${taxa.toFixed(0)}% da renda${inv}.`
       });
     }
   }
@@ -5248,14 +5242,11 @@ document.addEventListener('click', e => {
     <div id="qaSuggestions" style="margin-bottom: 8px; min-height: 26px"></div>
     <div class="qa-row">
       <input id="qaValue" type="number" step="0.01" placeholder="Valor (R$)" inputmode="decimal">
-      <select id="qaMethod">
-        <option value="pix">PIX</option>
-        <option value="inter">Crédito Inter</option>
-        <option value="nubank">Crédito Nubank</option>
-        <option value="invest">Investimento</option>
-      </select>
+      <select id="qaMethod" onchange="syncQaInvest()"><!-- formas do usuário: rebuildMethodDropdowns() --></select>
     </div>
+    <select id="qaInvestClass" aria-label="Onde você aplicou" style="display:none"></select>
     <select id="qaCat"></select>
+    <div id="qaInvestHint" class="qa-hint" style="display:none;margin:-4px 0 8px">Aporte: sai da conta e entra no seu patrimônio — não conta como gasto.</div>
     <button class="qa-submit" onclick="submitQuickAdd()">Salvar (Enter)</button>
     <div class="qa-hint">⏎ salva · Esc fecha · Tab navega</div>
   </div>
@@ -5279,6 +5270,8 @@ function openQuickAdd() {
   document.getElementById('qaDesc').value = '';
   document.getElementById('qaValue').value = '';
   document.getElementById('qaSuggestions').innerHTML = '';
+  if (typeof rebuildInvestClassDropdowns === 'function') rebuildInvestClassDropdowns();
+  syncQaInvest();
 
   overlay.classList.add('show');
   setTimeout(() => document.getElementById('qaDesc').focus(), 100);
@@ -5340,6 +5333,8 @@ async function submitQuickAdd() {
     type: 'eventual',
     date: new Date().toISOString()
   };
+  // Aporte: guarda onde foi aplicado (não conta como gasto)
+  if (methodKind(method) === 'invest') item.investClass = document.getElementById('qaInvestClass').value;
   db.events[key].push(item);
   saveDB();
 
@@ -5349,6 +5344,20 @@ async function submitQuickAdd() {
   if (document.getElementById('dashboard')?.classList.contains('active')) renderDashboard();
   toast(`Salvo: ${desc} — ${fmt(value)}`, 'success', 3500);
 }
+
+// Forma de pagamento do tipo investimento → pergunta ONDE aplicou (em vez da
+// categoria de gasto, que não se aplica a um aporte).
+function syncQaInvest() {
+  const m = document.getElementById('qaMethod');
+  const aporte = !!m && typeof methodKind === 'function' && methodKind(m.value) === 'invest';
+  const cls = document.getElementById('qaInvestClass');
+  const cat = document.getElementById('qaCat');
+  const hint = document.getElementById('qaInvestHint');
+  if (cls) cls.style.display = aporte ? '' : 'none';
+  if (cat) cat.style.display = aporte ? 'none' : '';
+  if (hint) hint.style.display = aporte ? '' : 'none';
+}
+window.syncQaInvest = syncQaInvest;
 
 // Reusar atalho 'n' para abrir Quick Add (em vez de mudar de aba)
 window.openQuickAdd = openQuickAdd;
@@ -5590,7 +5599,8 @@ function enhanceAnualTable() {
   const validIdx = monthly
     .map((d, i) => (d.gastos > 0 || d.entradas > 0) ? i : -1)
     .filter(i => i !== -1);
-  const saldosValidos = validIdx.map(i => ({ i, s: monthly[i].saldo }));
+  // melhor/pior mês pela SOBRA: um mês em que você investiu muito não é "pior"
+  const saldosValidos = validIdx.map(i => ({ i, s: monthly[i].sobra }));
   const melhor = saldosValidos.length ? saldosValidos.reduce((a, b) => b.s > a.s ? b : a) : null;
   const pior   = saldosValidos.length ? saldosValidos.reduce((a, b) => b.s < a.s ? b : a) : null;
 
@@ -5625,7 +5635,7 @@ function enhanceAnualTable() {
     let _s = Math.max(0, idx - 5);
     let _e = idx;
     if (_e - _s < 1) _e = Math.min(monthly.length - 1, _s + 1); // garante >=2 pontos (jan mostra jan–fev)
-    const sparkValues = monthly.slice(_s, _e + 1).map(x => x.saldo);
+    const sparkValues = monthly.slice(_s, _e + 1).map(x => x.sobra);
     // Destacar o ponto do próprio mês da linha dentro da janela
     const sparkCurrent = idx - _s;
 
@@ -5909,10 +5919,10 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v60';
+const APP_VERSION = 'v61';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
-const APP_BUILD_DATE = '2026-09-01';
+const APP_BUILD_DATE = '2026-09-24';
 
 function injectVersionLabel() {
   // Adicionar em Configurações (rodapé)
@@ -6282,7 +6292,8 @@ window.generateCategoryColor = generateCategoryColor;
 </body>
 <script>
 // ============== CONSTANTES ==============
-const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+// Moeda sempre com exatamente 2 casas (sem max, o toLocaleString ia até 3: "R$ 285,714").
+const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 const monthsFull = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 // ── FORMAS DE PAGAMENTO (personalizáveis) ───────────────────────────────
@@ -6365,6 +6376,79 @@ function seedPaymentMethods(data) {
   return lista;
 }
 
+// ── CLASSES DE INVESTIMENTO (personalizáveis) ────────────────────────────
+// Onde o dinheiro investido está: reserva de emergência, renda fixa, ações…
+// O ID de cada classe é a chave gravada em db.investments[mês] e no campo
+// `investClass` dos aportes lançados pelo Adicionar. `reserve` marca a(s)
+// classe(s) que contam como reserva de emergência.
+const LEGACY_INVEST_META = {
+  reserva:       { label: 'Reserva de emergência', color: '#12B76A', reserve: true },
+  rendaFixa:     { label: 'Renda fixa',            color: '#3B82F6' },
+  rendaVariavel: { label: 'Renda variável',        color: '#E5A13A' },
+  polyMarket:    { label: 'Poly Market',           color: '#F59E0B' },
+  acoes:         { label: 'Ações',                 color: '#8B5CF6' },
+};
+// O formulário antigo gravava investType 'fixa' | 'variavel'.
+const LEGACY_INVEST_TYPE = { fixa: 'rendaFixa', variavel: 'rendaVariavel' };
+
+function getInvestClasses() {
+  return (typeof db !== 'undefined' && db && Array.isArray(db.investClasses)) ? db.investClasses : [];
+}
+function getInvestClass(id) { return getInvestClasses().find(c => c.id === id) || null; }
+// Chaves de db.investments[mês] que são classes (tudo menos metadados).
+function investEntryClassIds(entry) {
+  return Object.keys(entry || {}).filter(k => k !== 'withdrawals' && typeof entry[k] === 'number');
+}
+// Classe de um aporte lançado pelo Adicionar (ou Adicionar rápido).
+function itemInvestClass(it) {
+  const lista = getInvestClasses();
+  if (it && it.investClass && lista.some(c => c.id === it.investClass)) return it.investClass;
+  // Lançamento antigo sem classe: o formulário só oferecia "Renda Fixa/Variável",
+  // então quem aplicou na reserva registrou como renda fixa. Se a descrição ou a
+  // categoria falam em reserva, respeita a intenção.
+  const reserva = lista.find(c => c.reserve);
+  if (reserva && it && /reserva|emerg[êe]ncia/i.test(`${it.desc || ''} ${it.cat || ''}`)) return reserva.id;
+  const legado = it && LEGACY_INVEST_TYPE[it.investType];
+  if (legado && lista.some(c => c.id === legado)) return legado;
+  const naoReserva = lista.find(c => !c.reserve);
+  return (naoReserva || lista[0] || { id: 'rendaFixa' }).id;
+}
+
+// Monta a lista a partir do que o usuário JÁ usa. Quem começa agora ganha
+// um conjunto genérico — nunca as aplicações de outra pessoa.
+function seedInvestClasses(data) {
+  const usados = new Set(['reserva', 'rendaFixa']);
+  Object.values(data.investments || {}).forEach(e => {
+    investEntryClassIds(e).forEach(k => { if (e[k]) usados.add(k); });
+    const w = e && e.withdrawals;
+    if (w && typeof w === 'object') Object.keys(w).forEach(k => { if (w[k]) usados.add(k); });
+  });
+  const idsInvest = new Set(['invest', ...(data.paymentMethods || []).filter(m => m.kind === 'invest').map(m => m.id)]);
+  const anotaItem = it => {
+    if (!it || !it.method) return;
+    const id = METHOD_NORM[it.method] || it.method;
+    if (!idsInvest.has(id)) return;
+    usados.add(it.investClass || LEGACY_INVEST_TYPE[it.investType] || 'rendaFixa');
+  };
+  Object.values(data.events || {}).forEach(arr => (arr || []).forEach(anotaItem));
+  (data.recurringExpenses || []).forEach(anotaItem);
+  (data.installments || []).forEach(anotaItem);
+  // Conta nova: oferece renda variável também, para ficar completo.
+  const semDados = !Object.keys(data.investments || {}).length;
+  if (semDados) usados.add('rendaVariavel');
+
+  const ordem = ['reserva', 'rendaFixa', 'rendaVariavel', 'polyMarket', 'acoes'];
+  return [...usados]
+    .sort((a, b) => (ordem.indexOf(a) + 1 || 99) - (ordem.indexOf(b) + 1 || 99))
+    .map((id, i) => {
+      const meta = LEGACY_INVEST_META[id];
+      return meta ? { id, reserve: false, ...meta } : {
+        id, label: String(id).charAt(0).toUpperCase() + String(id).slice(1),
+        color: METHOD_PALETTE[i % METHOD_PALETTE.length], reserve: false
+      };
+    });
+}
+
 const DEFAULT_CATEGORIES = [
   { name: 'Mercado', color: '#ec4899', budget: 0 },
   { name: 'Despesas eventuais', color: '#f43f5e', budget: 0 },
@@ -6406,7 +6490,7 @@ let db = {
   events: {}, income: {}, investments: {},
   recurringExpenses: [], recurringIncome: [],
   installments: [], categories: [], goals: [], chatHistory: [], paidStatus: {},
-  saldoConfig: null, paymentMethods: []
+  saldoConfig: null, paymentMethods: [], investClasses: []
 };
 let currentYear = db.years && db.years[db.years.length - 1] || new Date().getFullYear();
 // Default = mês REAL do calendário (antes era 4/Maio fixo, causando o bug de
@@ -6452,7 +6536,8 @@ function _emptyDb() {
     categories: typeof DEFAULT_CATEGORIES !== 'undefined'
       ? JSON.parse(JSON.stringify(DEFAULT_CATEGORIES)) : [],
     goals: [], chatHistory: [], paidStatus: {}, saldoConfig: null,
-    paymentMethods: (typeof seedPaymentMethods === 'function') ? seedPaymentMethods({}) : []
+    paymentMethods: (typeof seedPaymentMethods === 'function') ? seedPaymentMethods({}) : [],
+    investClasses: (typeof seedInvestClasses === 'function') ? seedInvestClasses({}) : []
   };
 }
 
@@ -6478,6 +6563,11 @@ function migrate(data) {
   // usuário já usa, para ninguém herdar os cartões de outra pessoa.
   if (!Array.isArray(data.paymentMethods) || !data.paymentMethods.length) {
     data.paymentMethods = seedPaymentMethods(data);
+  }
+
+  // v61: classes de investimento editáveis (antes fixas: Reserva/RF/Poly/Ações).
+  if (!Array.isArray(data.investClasses) || !data.investClasses.length) {
+    data.investClasses = seedInvestClasses(data);
   }
 
   // Tombstones — IDs que o usuário explicitamente deletou, NUNCA reinjetar
@@ -6816,7 +6906,23 @@ function getMonthData(year, month) {
     }
   });
 
-  const gastos = items.reduce((a, b) => a + b.value, 0);
+  // Normalizar method em TODOS os items (resolve duplicatas PIX/pix, inter/Crédito Inter)
+  items.forEach(it => { if (it.method) it._rawMethod = it.method; it.method = normalizeMethod(it.method); });
+
+  // APORTE NÃO É GASTO. Item pago com forma do tipo "investimento" é dinheiro
+  // que trocou de bolso (conta → reserva/investimentos): sai da lista de gastos
+  // e entra no investido do mês. Antes ele inflava os gastos e sumia do
+  // patrimônio — parecia dinheiro perdido.
+  const gastoItems = [], aporteItems = [];
+  items.forEach(it => {
+    if (methodKind(it.method) === 'invest') {
+      it._aporte = true;
+      it.investClass = itemInvestClass(it);
+      aporteItems.push(it);
+    } else gastoItems.push(it);
+  });
+  const gastos = gastoItems.reduce((a, b) => a + b.value, 0);
+  const aportesLancados = aporteItems.reduce((a, b) => a + b.value, 0);
 
   // Renda do mês + recorrente
   const monthInc = db.income[key] || [];
@@ -6826,20 +6932,31 @@ function getMonthData(year, month) {
   const incomeAll = [...monthInc, ...recInc];
   const entradas = incomeAll.reduce((a, b) => a + b.value, 0);
 
-  const inv = db.investments[key] || { reserva: 0, rendaFixa: 0, polyMarket: 0, acoes: 0 };
-  const aportes = (inv.reserva || 0) + (inv.rendaFixa || 0) + (inv.polyMarket || 0) + (inv.acoes || 0);
-  // Retiradas/resgates do mês (campo withdrawals — pode ser objeto por classe ou só número total)
+  // Fluxo líquido do mês por classe: aportes da aba Investimentos + aportes
+  // lançados pelo Adicionar − resgates. É a base da carteira acumulada.
+  const inv = db.investments[key] || {};
+  const porClasse = {};
+  const soma = (id, v) => { if (v) porClasse[id] = (porClasse[id] || 0) + v; };
+  investEntryClassIds(inv).forEach(id => soma(id, inv[id]));
   const w = inv.withdrawals;
-  let retiradas = 0;
-  if (typeof w === 'number') retiradas = w;
-  else if (w && typeof w === 'object') {
-    retiradas = (w.reserva || 0) + (w.rendaFixa || 0) + (w.polyMarket || 0) + (w.acoes || 0);
+  if (typeof w === 'number') {
+    // formato antigo: retirada sem classe, dividida entre as 4 classes originais
+    ['reserva', 'rendaFixa', 'polyMarket', 'acoes'].forEach(id => soma(id, -w / 4));
+  } else if (w && typeof w === 'object') {
+    Object.keys(w).forEach(id => soma(id, -(w[id] || 0)));
   }
-  const investido = aportes - retiradas; // pode ser negativo num mês com mais resgate que aporte
+  aporteItems.forEach(it => soma(it.investClass, it.value));
+  // pode ser negativo num mês com mais resgate que aporte
+  const investido = Object.values(porClasse).reduce((a, b) => a + b, 0);
 
-  // Normalizar method em TODOS os items (resolve duplicatas PIX/pix, inter/Crédito Inter)
-  items.forEach(it => { if (it.method) it._rawMethod = it.method; it.method = normalizeMethod(it.method); });
-  return { items, income: incomeAll, gastos, entradas, investido, saldo: entradas - gastos - investido };
+  return {
+    items: gastoItems,          // só consumo real — o que todas as análises de gasto usam
+    aportes: aporteItems,       // lançamentos que foram para investimento (listados à parte)
+    income: incomeAll, gastos, entradas,
+    aportesLancados, investido, porClasse,
+    sobra: entradas - gastos,               // resultado do mês: investir NÃO reduz
+    saldo: entradas - gastos - investido    // variação do dinheiro em conta
+  };
 }
 
 function groupByCat(items) {
@@ -6942,20 +7059,65 @@ function getSaldoAcumulado(y, m) {
 }
 
 // Total ainda investido (aportes − retiradas, por classe), somando todos os meses.
-function getInvestidoAcumulado() {
-  let R = 0, F = 0, P = 0, A = 0, wR = 0, wF = 0, wP = 0, wA = 0;
-  Object.values(db.investments || {}).forEach(r => {
-    R += r.reserva || 0; F += r.rendaFixa || 0; P += r.polyMarket || 0; A += r.acoes || 0;
-    const w = r.withdrawals;
-    if (typeof w === 'number') { wR += w/4; wF += w/4; wP += w/4; wA += w/4; }
-    else if (w && typeof w === 'object') { wR += w.reserva||0; wF += w.rendaFixa||0; wP += w.polyMarket||0; wA += w.acoes||0; }
-  });
-  return Math.max(0, R-wR) + Math.max(0, F-wF) + Math.max(0, P-wP) + Math.max(0, A-wA);
+// Primeiro mês (absoluto: ano*12+mês) com qualquer dado registrado.
+function firstDataMonth() {
+  let min = null;
+  const cand = (y, m) => {
+    if (!Number.isFinite(y) || !Number.isFinite(m)) return;
+    const t = y * 12 + m;
+    if (min === null || t < min) min = t;
+  };
+  [db.events, db.income, db.investments].forEach(o =>
+    Object.keys(o || {}).forEach(k => { const [y, m] = k.split('-').map(Number); cand(y, m); }));
+  (db.recurringExpenses || []).forEach(r => cand(r.startYear, r.startMonth));
+  (db.installments || []).forEach(r => cand(r.startYear, r.startMonth));
+  return min;
 }
 
-// Patrimônio total = dinheiro em conta (caixa) + total ainda investido.
+// CARTEIRA ao fim de (y, m) — FONTE ÚNICA do que está investido. Soma, mês a
+// mês, os aportes da aba Investimentos + os aportes lançados pelo Adicionar −
+// os resgates, por classe. Antes havia 4 cálculos diferentes e todos ignoravam
+// os aportes lançados pelo Adicionar (o dinheiro "sumia" do patrimônio).
+function getCarteira(y, m) {
+  const porClasse = {};
+  getInvestClasses().forEach(c => { porClasse[c.id] = 0; });
+  const ini = firstDataMonth();
+  const fim = y * 12 + m;
+  if (ini !== null) {
+    for (let t = ini; t <= fim && t - ini < 1200; t++) {
+      const d = getMonthData(Math.floor(t / 12), t % 12);
+      Object.entries(d.porClasse || {}).forEach(([id, v]) => { porClasse[id] = (porClasse[id] || 0) + v; });
+    }
+  }
+  // um resgate maior que o aplicado nunca deixa a classe negativa
+  Object.keys(porClasse).forEach(id => { if (porClasse[id] < 0) porClasse[id] = 0; });
+  const reservaIds = new Set(getInvestClasses().filter(c => c.reserve).map(c => c.id));
+  let reserva = 0, investimentos = 0;
+  Object.entries(porClasse).forEach(([id, v]) => { if (reservaIds.has(id)) reserva += v; else investimentos += v; });
+  return { porClasse, reserva, investimentos, total: reserva + investimentos };
+}
+
+// Mantido por compatibilidade: total investido até o mês em exibição.
+function getInvestidoAcumulado() {
+  return getCarteira(currentYear, currentMonth).total;
+}
+
+// Patrimônio total = dinheiro em conta + carteira (reserva + investimentos).
+// Investir não muda o patrimônio: o dinheiro só troca de bolso.
 function getPatrimonio(y, m) {
-  return getSaldoAcumulado(y, m) + getInvestidoAcumulado();
+  return getSaldoAcumulado(y, m) + getCarteira(y, m).total;
+}
+
+// Gasto médio mensal (últimos meses com gasto) — base para dizer quantos
+// meses a reserva de emergência cobre.
+function getGastoMedioMensal(y, m, janela = 6) {
+  const vals = [];
+  for (let i = 0; i < janela; i++) {
+    const t = y * 12 + m - i;
+    const g = getMonthData(Math.floor(t / 12), t % 12).gastos;
+    if (g > 0) vals.push(g);
+  }
+  return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
 }
 
 // Aceita "1500,00", "1.500,00" e "1500.00" — o último separador é o decimal.
@@ -7110,17 +7272,27 @@ function renderInsights(cur, prev) {
   }
 
   // Saldo
-  if (cur.saldo < 0) {
+  // Julga o mês pela SOBRA (entradas − gastos). Investir não é gastar: antes,
+  // aplicar dinheiro disparava "você gastou mais do que ganhou".
+  if (cur.sobra < 0) {
     insights.push({
       icon: '⚠️',
-      title: 'Saldo negativo no mês',
-      desc: `Você gastou ${fmt(Math.abs(cur.saldo))} a mais do que ganhou (incluindo investimentos).`
+      title: 'Gastos acima das entradas',
+      desc: `Você gastou ${fmt(Math.abs(cur.sobra))} a mais do que entrou neste mês.`
     });
-  } else if (cur.saldo > cur.entradas * 0.3) {
+  } else if (cur.entradas > 0 && cur.sobra > cur.entradas * 0.3) {
+    const guardado = cur.investido > 0 ? ` — ${fmt(cur.investido)} já foram investidos` : '';
     insights.push({
       icon: '✅',
       title: 'Mês saudável',
-      desc: `Saldo positivo de ${fmt(cur.saldo)} (${(cur.saldo/cur.entradas*100).toFixed(0)}% das entradas).`
+      desc: `Sobraram ${fmt(cur.sobra)} (${(cur.sobra / cur.entradas * 100).toFixed(0)}% das entradas)${guardado}.`
+    });
+  }
+  if (cur.sobra >= 0 && cur.saldo < 0 && cur.investido > 0) {
+    insights.push({
+      icon: '💰',
+      title: 'Você investiu além da sobra',
+      desc: `${fmt(Math.abs(cur.saldo))} vieram do que você já tinha em conta. Não é perda: o valor continua no seu patrimônio.`
     });
   }
 
@@ -7348,7 +7520,7 @@ function renderAnual() {
   const linhas = months.map((m, i) => {
     const d = getMonthData(currentYear, i);
     totG += d.gastos; totE += d.entradas; totI += d.investido;
-    const cls = d.saldo >= 0 ? 'pos' : 'neg';
+    const cls = d.sobra >= 0 ? 'pos' : 'neg';
     // "Em conta" só a partir do ponto de partida; antes disso mostra "—".
     const contaCell = saldoAnchorCmp(currentYear, i) < 0
       ? `<td class="muted">—</td>`
@@ -7358,12 +7530,13 @@ function renderAnual() {
       <td class="neg">${fmt(d.gastos)}</td>
       <td class="pos">${fmt(d.entradas)}</td>
       <td class="invest">${fmt(d.investido)}</td>
-      <td class="${cls}" style="font-weight:600">${fmt(d.saldo)}</td>
+      <td class="${cls}" style="font-weight:600">${fmt(d.sobra)}</td>
       ${contaCell}
     </tr>`;
   }).join('');
   document.getElementById('anualTbody').innerHTML = linhas;
-  const totSaldo = totE - totG - totI;
+  // Sobra do ano = entradas − gastos (investir não reduz o resultado)
+  const totSaldo = totE - totG;
   const contaFimCell = saldoAnchorCmp(currentYear, 11) < 0
     ? `<td class="muted">—</td>`
     : (c => `<td class="${c >= 0 ? 'pos' : 'neg'}" style="font-weight:600">${fmt(c)}</td>`)(getSaldoAcumulado(currentYear, 11));
@@ -7374,7 +7547,7 @@ function renderAnual() {
     <div class="card"><div class="label">Entradas</div><div class="value pos">${fmt(totE)}</div></div>
     <div class="card"><div class="label">Gastos</div><div class="value neg">${fmt(totG)}</div></div>
     <div class="card"><div class="label">Investido</div><div class="value invest">${fmt(totI)}</div></div>
-    <div class="card"><div class="label">Saldo</div><div class="value ${totSaldo >= 0 ? 'pos' : 'neg'}">${fmt(totSaldo)}</div></div>
+    <div class="card"><div class="label">Sobra</div><div class="value ${totSaldo >= 0 ? 'pos' : 'neg'}">${fmt(totSaldo)}</div></div>
   `;
 
   const ctx = document.getElementById('anualChart').getContext('2d');
@@ -7488,246 +7661,195 @@ function renderGoals() {
 }
 
 // ============== INVESTIMENTOS (v47 UX UPDATE) ==============
+// Mês final usado para "quanto está investido": o mais recente entre hoje e o
+// mês em exibição (a aba mostra a carteira, não um recorte do passado).
+function investFimAtual() {
+  const now = new Date();
+  const t = Math.max(now.getFullYear() * 12 + now.getMonth(), currentYear * 12 + currentMonth);
+  return { y: Math.floor(t / 12), m: t % 12 };
+}
+
+// Fluxos de investimento de um mês, por classe: aba Investimentos + aportes
+// lançados pelo Adicionar. Base da tabela de aportes.
+function investFlowsMonth(y, m) {
+  const inv = db.investments[getKey(y, m)] || {};
+  const aporte = {}, retirada = {};
+  const add = (o, id, v) => { if (v) o[id] = (o[id] || 0) + v; };
+  investEntryClassIds(inv).forEach(id => add(aporte, id, inv[id]));
+  const w = inv.withdrawals;
+  if (typeof w === 'number') ['reserva', 'rendaFixa', 'polyMarket', 'acoes'].forEach(id => add(retirada, id, w / 4));
+  else if (w && typeof w === 'object') Object.keys(w).forEach(id => add(retirada, id, w[id] || 0));
+  const lancados = getMonthData(y, m).aportes || [];
+  lancados.forEach(it => add(aporte, it.investClass, it.value));
+  const soma = o => Object.values(o).reduce((a, b) => a + b, 0);
+  const aportes = soma(aporte), retiradas = soma(retirada);
+  return { aporte, retirada, lancados, aportes, retiradas, liquido: aportes - retiradas,
+           lancadoTotal: lancados.reduce((a, b) => a + b.value, 0) };
+}
+
 function renderInvest() {
-  document.getElementById('invSub').textContent = `Acompanhe seu patrimônio acumulado e os aportes detalhados de ${currentYear}.`;
+  const classes = getInvestClasses();
+  const fim = investFimAtual();
+  const cart = getCarteira(fim.y, fim.m);
+  document.getElementById('invSub').textContent =
+    `Onde está seu dinheiro investido e o que você aplicou em ${currentYear}.`;
 
-  let globalR = 0, globalF = 0, globalP = 0, globalA = 0;
+  // 1. Cabeçalho: uma coluna por classe do usuário
+  const thead = document.getElementById('invThead');
+  if (thead) thead.innerHTML = `<tr>
+      <th>Período</th>
+      ${classes.map(c => `<th class="table-num-header">${escapeHtml(c.label)}</th>`).join('')}
+      <th class="table-num-header">Aportes</th>
+      <th class="table-num-header" title="Resgates/retiradas no mês">Retiradas</th>
+      <th class="table-num-header">Líquido</th>
+      <th style="text-align:right">Editar</th>
+    </tr>`;
 
-  // 1. Calcular o Patrimônio Global (Aportes - Retiradas)
-  let globalWR = 0, globalWF = 0, globalWP = 0, globalWA = 0;
-  Object.values(db.investments).forEach(r => {
-    globalR += r.reserva || 0;
-    globalF += r.rendaFixa || 0;
-    globalP += r.polyMarket || 0;
-    globalA += r.acoes || 0;
-    const w = r.withdrawals;
-    if (typeof w === 'number') {
-      // Formato antigo: distribuir igual (legacy)
-      globalWR += w / 4; globalWF += w / 4; globalWP += w / 4; globalWA += w / 4;
-    } else if (w && typeof w === 'object') {
-      globalWR += w.reserva || 0;
-      globalWF += w.rendaFixa || 0;
-      globalWP += w.polyMarket || 0;
-      globalWA += w.acoes || 0;
+  const cells = o => classes.map(c => `<td class="table-num">${fmt(o[c.id] || 0)}</td>`).join('');
+  const retCell = v => `<td class="table-num" style="color:${v > 0 ? 'var(--neg)' : 'var(--text-muted)'}">${v > 0 ? '−' + fmt(v) : '—'}</td>`;
+  const liqCell = (v, strong) => `<td class="table-num" style="font-weight:600; color:${v >= 0 ? 'var(--invest)' : 'var(--neg)'}">${strong ? '<strong>' : ''}${fmt(v)}${strong ? '</strong>' : ''}</td>`;
+  let linhas = '';
+
+  // 2. Anos anteriores, consolidados
+  db.years.filter(y => y < currentYear).sort((a, b) => a - b).forEach(y => {
+    const acc = {}; let ap = 0, rt = 0;
+    for (let m = 0; m < 12; m++) {
+      const f = investFlowsMonth(y, m);
+      Object.entries(f.aporte).forEach(([id, v]) => { acc[id] = (acc[id] || 0) + v; });
+      ap += f.aportes; rt += f.retiradas;
     }
-  });
-  // Patrimônio líquido por classe (aportes - retiradas)
-  globalR = Math.max(0, globalR - globalWR);
-  globalF = Math.max(0, globalF - globalWF);
-  globalP = Math.max(0, globalP - globalWP);
-  globalA = Math.max(0, globalA - globalWA);
-  const globalTotal = globalR + globalF + globalP + globalA;
-
-  let anoR = 0, anoF = 0, anoP = 0, anoA = 0;
-  let linhasHTML = '';
-
-  // 2. Linhas Históricas (Anos Anteriores Agrupados)
-  const pastYears = db.years.filter(y => y < currentYear).sort((a,b) => a - b);
-  pastYears.forEach(y => {
-    let yR = 0, yF = 0, yP = 0, yA = 0;
-    for(let m=0; m<12; m++) {
-      const r = db.investments[getKey(y, m)] || {};
-      yR += r.reserva || 0; yF += r.rendaFixa || 0;
-      yP += r.polyMarket || 0; yA += r.acoes || 0;
-    }
-    const yTotal = yR + yF + yP + yA;
-    if(yTotal > 0) {
-      // Somar retiradas do ano também
-      let yW = 0;
-      for(let m=0; m<12; m++) {
-        const r = db.investments[getKey(y, m)] || {};
-        const ww = r.withdrawals;
-        if (typeof ww === 'number') yW += ww;
-        else if (ww && typeof ww === 'object') {
-          yW += (ww.reserva||0) + (ww.rendaFixa||0) + (ww.polyMarket||0) + (ww.acoes||0);
-        }
-      }
-      const yNet = yTotal - yW;
-      linhasHTML += `<tr style="background: rgba(255,255,255,0.03); opacity: 0.85;">
-        <td><strong>Resumo ${y}</strong></td>
-        <td class="table-num">${fmt(yR)}</td><td class="table-num">${fmt(yF)}</td>
-        <td class="table-num">${fmt(yP)}</td><td class="table-num">${fmt(yA)}</td>
-        <td class="table-num" style="font-weight:600">${fmt(yTotal)}</td>
-        <td class="table-num" style="color:${yW > 0 ? 'var(--neg)' : 'var(--text-muted)'}">${yW > 0 ? '−' + fmt(yW).replace('R$ ','R$ ') : '—'}</td>
-        <td class="table-num" style="font-weight:600; color:${yNet >= 0 ? 'var(--invest)' : 'var(--neg)'}">${fmt(yNet)}</td>
-        <td style="text-align: right"><span class="muted" style="font-size:0.7rem">Consolidado</span></td>
+    if (ap > 0 || rt > 0) {
+      linhas += `<tr style="opacity:.85">
+        <td><strong>Resumo ${y}</strong></td>${cells(acc)}
+        <td class="table-num" style="font-weight:600">${fmt(ap)}</td>${retCell(rt)}${liqCell(ap - rt)}
+        <td style="text-align:right"><span class="muted" style="font-size:0.7rem">Consolidado</span></td>
       </tr>`;
     }
   });
 
-  // 3. Linhas do Ano Atual (Meses detalhados com edição)
-  months.forEach((m, i) => {
-    const r = db.investments[getKey(currentYear, i)] || { reserva: 0, rendaFixa: 0, polyMarket: 0, acoes: 0 };
-    const total = (r.reserva||0) + (r.rendaFixa||0) + (r.polyMarket||0) + (r.acoes||0);
-    anoR += r.reserva||0; anoF += r.rendaFixa||0; anoP += r.polyMarket||0; anoA += r.acoes||0;
-
-    // Calcular retiradas do mês
-    const ww = r.withdrawals;
-    let mWithdraw = 0;
-    if (typeof ww === 'number') mWithdraw = ww;
-    else if (ww && typeof ww === 'object') {
-      mWithdraw = (ww.reserva||0) + (ww.rendaFixa||0) + (ww.polyMarket||0) + (ww.acoes||0);
-    }
-    const liquido = total - mWithdraw;
-    linhasHTML += `<tr>
-      <td>${monthsFull[i]}</td>
-      <td class="table-num">${fmt(r.reserva)}</td><td class="table-num">${fmt(r.rendaFixa)}</td>
-      <td class="table-num">${fmt(r.polyMarket)}</td><td class="table-num">${fmt(r.acoes)}</td>
-      <td class="table-num" style="font-weight:600">${fmt(total)}</td>
-      <td class="table-num" style="color:${mWithdraw > 0 ? 'var(--neg)' : 'var(--text-muted)'}">${mWithdraw > 0 ? '−' + fmt(mWithdraw).replace('R$ ','R$ ') : '—'}</td>
-      <td class="table-num" style="font-weight:600; color:${liquido >= 0 ? 'var(--invest)' : 'var(--neg)'}">${fmt(liquido)}</td>
-      <td style="text-align: right">
-        <button class="btn-icon" onclick="editInvestModal(${currentYear}, ${i})" title="Editar mês">✎</button>
-      </td>
+  // 3. Meses do ano em exibição (editáveis)
+  const anoAcc = {}; let anoAp = 0, anoRt = 0;
+  months.forEach((_, i) => {
+    const f = investFlowsMonth(currentYear, i);
+    Object.entries(f.aporte).forEach(([id, v]) => { anoAcc[id] = (anoAcc[id] || 0) + v; });
+    anoAp += f.aportes; anoRt += f.retiradas;
+    const marca = f.lancadoTotal > 0
+      ? `<span class="aporte-tag" title="Inclui ${fmt(f.lancadoTotal)} lançados pelo Adicionar">+ lançados</span>` : '';
+    linhas += `<tr>
+      <td>${monthsFull[i]}${marca}</td>${cells(f.aporte)}
+      <td class="table-num" style="font-weight:600">${fmt(f.aportes)}</td>${retCell(f.retiradas)}${liqCell(f.liquido)}
+      <td style="text-align:right"><button class="btn-icon" onclick="editInvestModal(${currentYear}, ${i})" title="Editar mês">✎</button></td>
     </tr>`;
   });
-
-  document.getElementById('invTbody').innerHTML = linhasHTML;
-  const anoTotal = anoR + anoF + anoP + anoA;
-
-  // Rodapé com os totais apenas do ano corrente
-  // Somar retiradas do ano todo
-  let anoWithdraw = 0;
-  for (let i = 0; i < 12; i++) {
-    const r = db.investments[getKey(currentYear, i)] || {};
-    const ww = r.withdrawals;
-    if (typeof ww === 'number') anoWithdraw += ww;
-    else if (ww && typeof ww === 'object') {
-      anoWithdraw += (ww.reserva||0) + (ww.rendaFixa||0) + (ww.polyMarket||0) + (ww.acoes||0);
-    }
-  }
-  const anoLiquido = anoTotal - anoWithdraw;
-  document.getElementById('invTfoot').innerHTML = `
-    <tr>
+  document.getElementById('invTbody').innerHTML = linhas;
+  document.getElementById('invTfoot').innerHTML = `<tr>
       <td><strong>Total em ${currentYear}</strong></td>
-      <td class="table-num">${fmt(anoR)}</td><td class="table-num">${fmt(anoF)}</td>
-      <td class="table-num">${fmt(anoP)}</td><td class="table-num">${fmt(anoA)}</td>
-      <td class="table-num"><strong>${fmt(anoTotal)}</strong></td>
-      <td class="table-num" style="color:${anoWithdraw > 0 ? 'var(--neg)' : 'var(--text-muted)'}"><strong>${anoWithdraw > 0 ? '−' + fmt(anoWithdraw).replace('R$ ','R$ ') : '—'}</strong></td>
-      <td class="table-num" style="color:${anoLiquido >= 0 ? 'var(--invest)' : 'var(--neg)'}"><strong>${fmt(anoLiquido)}</strong></td>
-      <td></td>
+      ${classes.map(c => `<td class="table-num">${fmt(anoAcc[c.id] || 0)}</td>`).join('')}
+      <td class="table-num"><strong>${fmt(anoAp)}</strong></td>${retCell(anoRt)}${liqCell(anoAp - anoRt, true)}<td></td>
     </tr>`;
 
-  // 4. Atualizar os 4 Cards (Hero)
+  // 4. Cards: o que está investido hoje, separado em reserva × investimentos
+  const gastoMedio = getGastoMedioMensal(currentYear, currentMonth);
+  const mesesRes = gastoMedio > 0 ? cart.reserva / gastoMedio : null;
+  const temReserva = classes.some(c => c.reserve);
+  const topInv = classes.filter(c => !c.reserve && (cart.porClasse[c.id] || 0) > 0)
+    .map(c => escapeHtml(c.label)).slice(0, 3).join(' · ') || 'nada aplicado ainda';
   document.getElementById('invStats').innerHTML = `
     <div class="card featured" style="padding: 16px 20px;">
-      <div class="label" style="color: rgba(255,255,255,0.75)">Patrimônio Total</div>
-      <div class="value anim-num" data-value="${globalTotal}" style="font-size: 1.8rem; color: var(--accent); text-shadow: 0 2px 8px rgba(251,191,36,0.2)">${fmt(globalTotal)}</div>
-      <div class="sub" style="color: rgba(255,255,255,0.6)">Acumulado histórico</div>
+      <div class="label">Total investido</div>
+      <div class="value anim-num" data-value="${cart.total}" style="font-size: 1.8rem">${fmt(cart.total)}</div>
+      <div class="sub">${temReserva ? 'reserva de emergência + investimentos' : 'soma das suas classes'}</div>
     </div>
     <div class="card">
-      <div class="label">Aportes no Ano (${currentYear})</div>
-      <div class="value pos anim-num" data-value="${anoTotal}">${fmt(anoTotal)}</div>
-      ${(typeof anoWithdraw !== 'undefined' && anoWithdraw > 0) ? `
-        <div class="sub muted" style="font-size:0.78rem;margin-top:4px">
-          <span style="color:var(--neg)">−${fmt(anoWithdraw)}</span> em retiradas
-        </div>
-        <div class="sub" style="font-size:0.78rem;margin-top:2px">
-          Líquido: <strong style="color:${anoLiquido >= 0 ? 'var(--invest)' : 'var(--neg)'}">${fmt(anoLiquido)}</strong>
-        </div>
-      ` : ''}
+      <div class="label">Reserva de emergência</div>
+      <div class="value anim-num" data-value="${cart.reserva}">${fmt(cart.reserva)}</div>
+      <div class="sub">${!temReserva ? 'marque uma classe como reserva abaixo'
+        : (mesesRes == null ? 'registre gastos para ver a cobertura'
+        : `cobre ${mesesRes.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} ${mesesRes < 2 ? 'mês' : 'meses'} de gastos`)}</div>
     </div>
     <div class="card">
-      <div class="label">Total em Renda Fixa</div>
-      <div class="value anim-num" data-value="${globalF}">${fmt(globalF)}</div>
-      <div class="sub muted">Reserva + RF</div>
+      <div class="label">Investimentos</div>
+      <div class="value anim-num" data-value="${cart.investimentos}">${fmt(cart.investimentos)}</div>
+      <div class="sub">${topInv}</div>
     </div>
     <div class="card">
-      <div class="label">Total em Renda Variável</div>
-      <div class="value anim-num" data-value="${globalP + globalA}">${fmt(globalP + globalA)}</div>
-      <div class="sub muted">Poly + Ações</div>
+      <div class="label">Aportes em ${currentYear}</div>
+      <div class="value pos anim-num" data-value="${anoAp}">${fmt(anoAp)}</div>
+      <div class="sub">${anoRt > 0 ? `−${fmt(anoRt)} em retiradas · líquido ${fmt(anoAp - anoRt)}` : 'sem retiradas'}</div>
     </div>
   `;
   if (typeof animateNumbers === 'function') animateNumbers(document.getElementById('invStats'));
 
-  // 5. Gráfico Global
-  const ctx = document.getElementById('invChart').getContext('2d');
-  if (invChart) invChart.destroy();
-  invChart = new Chart(ctx, {
-    type: 'doughnut',
-    data: {
-      labels: ['Reserva', 'Renda Fixa', 'RV - Poly Market', 'RV - Ações'],
-      datasets: [{ 
-        data: [globalR, globalF, globalP, globalA], 
-        backgroundColor: ['#94a3b8', '#3b82f6', '#f59e0b', '#10b981'],
-        borderWidth: 0
-      }]
-    },
-    options: { 
-      responsive: true, 
-      cutout: '70%',
-      plugins: { legend: { position: 'bottom' } } 
-    }
-  });
+  // 5. Distribuição por classe
+  const comValor = classes.filter(c => (cart.porClasse[c.id] || 0) > 0);
+  const canvas = document.getElementById('invChart');
+  if (canvas && typeof Chart !== 'undefined') {
+    if (invChart) invChart.destroy();
+    invChart = new Chart(canvas.getContext('2d'), {
+      type: 'doughnut',
+      data: {
+        labels: comValor.map(c => c.label),
+        datasets: [{ data: comValor.map(c => cart.porClasse[c.id]), backgroundColor: comValor.map(c => c.color), borderWidth: 0 }]
+      },
+      options: { responsive: true, cutout: '70%', plugins: { legend: { position: 'bottom' } } }
+    });
+  }
+
+  renderInvestClasses(cart);
 }
 
-// Função para abrir o Modal de Edição Direta
+// Editar aportes/retiradas de um mês — um campo por classe do usuário.
 function editInvestModal(y, m) {
-  const r = db.investments[getKey(y, m)] || { reserva: 0, rendaFixa: 0, polyMarket: 0, acoes: 0 };
-  // Retiradas: se vier como número (formato antigo) ou objeto
+  const classes = getInvestClasses();
+  const r = db.investments[getKey(y, m)] || {};
   const wRaw = r.withdrawals;
-  const w = (wRaw && typeof wRaw === 'object')
-    ? wRaw
-    : { reserva: 0, rendaFixa: 0, polyMarket: 0, acoes: 0,
-        _legacyTotal: typeof wRaw === 'number' ? wRaw : 0 };
+  const w = (wRaw && typeof wRaw === 'object') ? wRaw : {};
+  const legacyW = typeof wRaw === 'number' ? wRaw : 0;
+  const lanc = getMonthData(y, m).aportes || [];
+  const lancTotal = lanc.reduce((a, b) => a + b.value, 0);
+  const campo = (pref, c, v) => `<div class="input-group"><label>${escapeHtml(c.label)} (R$)</label>
+    <input id="${pref}_${escapeHtml(c.id)}" type="number" step="0.01" inputmode="decimal" value="${v || 0}"></div>`;
 
-  modal.show(`Editar Investimentos — ${monthsFull[m]} de ${y}`, `
+  modal.show(`Investimentos — ${monthsFull[m]} de ${y}`, `
     <div class="invest-tabs" style="display:flex;gap:4px;margin:-4px 0 14px;border-bottom:1px solid var(--border-soft)">
-      <button type="button" class="invest-tab active" data-target="invAportesTab"
-        onclick="switchInvestTab('invAportesTab')"
-        style="flex:1;padding:10px;background:transparent;border:none;border-bottom:2px solid var(--primary);color:var(--text);font-weight:600;cursor:pointer;font-family:inherit">
-        ➕ Aportes
-      </button>
-      <button type="button" class="invest-tab" data-target="invSaidasTab"
-        onclick="switchInvestTab('invSaidasTab')"
-        style="flex:1;padding:10px;background:transparent;border:none;border-bottom:2px solid transparent;color:var(--text-muted);cursor:pointer;font-family:inherit">
-        ➖ Retiradas
-      </button>
+      <button type="button" class="invest-tab active" data-target="invAportesTab" onclick="switchInvestTab('invAportesTab')"
+        style="flex:1;padding:10px;background:transparent;border:none;border-bottom:2px solid var(--primary);color:var(--text);font-weight:600;cursor:pointer;font-family:inherit">Aportes</button>
+      <button type="button" class="invest-tab" data-target="invSaidasTab" onclick="switchInvestTab('invSaidasTab')"
+        style="flex:1;padding:10px;background:transparent;border:none;border-bottom:2px solid transparent;color:var(--text-muted);cursor:pointer;font-family:inherit">Retiradas</button>
     </div>
-
     <div id="invAportesTab" class="invest-tab-panel">
-      <p class="muted" style="font-size:0.82rem;margin:0 0 12px">Valores que você adicionou aos investimentos neste mês.</p>
-      <div class="input-group"><label>Reserva (R$)</label><input id="eiReserva" type="number" step="0.01" value="${r.reserva || 0}"></div>
-      <div class="input-group"><label>Renda Fixa (R$)</label><input id="eiFixa" type="number" step="0.01" value="${r.rendaFixa || 0}"></div>
-      <div class="input-group"><label>RV - Poly Market (R$)</label><input id="eiPoly" type="number" step="0.01" value="${r.polyMarket || 0}"></div>
-      <div class="input-group"><label>RV - Ações (R$)</label><input id="eiAcoes" type="number" step="0.01" value="${r.acoes || 0}"></div>
+      <p class="muted" style="font-size:0.82rem;margin:0 0 12px">Quanto você aplicou em cada classe neste mês. O valor sai da conta e entra no patrimônio — não é gasto.</p>
+      ${classes.map(c => campo('ei', c, r[c.id])).join('')}
+      ${lancTotal > 0 ? `<p class="muted" style="font-size:0.8rem;margin:4px 0 0">Além destes, ${fmt(lancTotal)} foram lançados pelo Adicionar
+        (${lanc.map(i => escapeHtml(i.desc)).join(', ')}). Para mudá-los, edite em <strong>Gastos no mês</strong>.</p>` : ''}
     </div>
-
     <div id="invSaidasTab" class="invest-tab-panel" style="display:none">
-      <p class="muted" style="font-size:0.82rem;margin:0 0 12px">Resgates ou retiradas feitas neste mês. Esses valores entram como <strong>positivos</strong> no saldo (saiu do investido, voltou pra você).</p>
-      <div class="input-group"><label>Resgatou da Reserva (R$)</label><input id="ewReserva" type="number" step="0.01" value="${w.reserva || 0}"></div>
-      <div class="input-group"><label>Resgatou de Renda Fixa (R$)</label><input id="ewFixa" type="number" step="0.01" value="${w.rendaFixa || 0}"></div>
-      <div class="input-group"><label>Vendeu Poly Market (R$)</label><input id="ewPoly" type="number" step="0.01" value="${w.polyMarket || 0}"></div>
-      <div class="input-group"><label>Vendeu Ações (R$)</label><input id="ewAcoes" type="number" step="0.01" value="${w.acoes || 0}"></div>
-      ${w._legacyTotal > 0 ? `<p class="muted" style="font-size:0.75rem">⚠️ Havia um registro antigo de R$ ${w._legacyTotal.toFixed(2)} em retiradas sem classe. Distribua nos campos acima.</p>` : ''}
+      <p class="muted" style="font-size:0.82rem;margin:0 0 12px">Resgates: o valor sai do investimento e volta para a conta.</p>
+      ${classes.map(c => campo('ew', c, w[c.id])).join('')}
+      ${legacyW > 0 ? `<p class="muted" style="font-size:0.75rem">Há um registro antigo de ${fmt(legacyW)} em retiradas sem classe. Ele é mantido até você distribuir o valor nos campos acima.</p>` : ''}
     </div>
   `, {
     confirmLabel: 'Salvar',
     onConfirm: () => {
       const key = getKey(y, m);
-      const aportes = {
-        reserva:    parseFloat(document.getElementById('eiReserva').value) || 0,
-        rendaFixa:  parseFloat(document.getElementById('eiFixa').value) || 0,
-        polyMarket: parseFloat(document.getElementById('eiPoly').value) || 0,
-        acoes:      parseFloat(document.getElementById('eiAcoes').value) || 0,
-      };
-      const withdrawals = {
-        reserva:    parseFloat(document.getElementById('ewReserva').value) || 0,
-        rendaFixa:  parseFloat(document.getElementById('ewFixa').value) || 0,
-        polyMarket: parseFloat(document.getElementById('ewPoly').value) || 0,
-        acoes:      parseFloat(document.getElementById('ewAcoes').value) || 0,
-      };
-      const totalW = withdrawals.reserva + withdrawals.rendaFixa + withdrawals.polyMarket + withdrawals.acoes;
+      const ler = id => parseFloat(document.getElementById(id).value) || 0;
+      const entry = {};
+      classes.forEach(c => { const v = ler('ei_' + c.id); if (v) entry[c.id] = v; });
+      // preserva valores de classes que não estão na lista (nada se perde)
+      investEntryClassIds(r).forEach(id => { if (!classes.some(c => c.id === id) && r[id]) entry[id] = r[id]; });
+      const wd = {};
+      classes.forEach(c => { const v = ler('ew_' + c.id); if (v) wd[c.id] = v; });
+      Object.keys(w).forEach(id => { if (!classes.some(c => c.id === id) && w[id]) wd[id] = w[id]; });
+      if (Object.keys(wd).length) entry.withdrawals = wd;
+      else if (legacyW > 0) entry.withdrawals = legacyW;   // antes esse valor se perdia ao salvar
+      if (Object.keys(entry).length) db.investments[key] = entry; else delete db.investments[key];
 
-      const entry = { ...aportes };
-      if (totalW > 0) entry.withdrawals = withdrawals;
-
-      db.investments[key] = entry;
       saveDB();
       renderInvest();
       if (document.getElementById('dashboard').classList.contains('active')) renderDashboard();
       if (typeof fillIncomePanels === 'function') fillIncomePanels();
-      const totalA = aportes.reserva + aportes.rendaFixa + aportes.polyMarket + aportes.acoes;
+      const totalA = classes.reduce((a, c) => a + (entry[c.id] || 0), 0);
+      const totalW = Object.values(wd).reduce((a, b) => a + b, 0);
       let msg = 'Salvo';
       if (totalA > 0 && totalW > 0) msg = `Aportes ${fmt(totalA)} · Retiradas ${fmt(totalW)}`;
       else if (totalW > 0) msg = `Retiradas: ${fmt(totalW)}`;
@@ -7736,6 +7858,153 @@ function editInvestModal(y, m) {
     }
   });
 }
+
+// ── Gerenciar classes de investimento ───────────────────────────────────
+// Onde uma classe aparece: registros da aba Investimentos + aportes lançados.
+function investClassUsage(id) {
+  let n = 0;
+  Object.values(db.investments || {}).forEach(e => {
+    if (e && e[id]) n++;
+    if (e && e.withdrawals && typeof e.withdrawals === 'object' && e.withdrawals[id]) n++;
+  });
+  const conta = it => { if (it && methodKind(it.method) === 'invest' && itemInvestClass(it) === id) n++; };
+  Object.values(db.events || {}).forEach(arr => (arr || []).forEach(conta));
+  (db.recurringExpenses || []).forEach(conta);
+  (db.installments || []).forEach(conta);
+  return n;
+}
+
+function renderInvestClasses(cart) {
+  const el = document.getElementById('investClassesList');
+  if (!el) return;
+  const lista = getInvestClasses();
+  if (!cart) { const f = investFimAtual(); cart = getCarteira(f.y, f.m); }
+  if (!lista.length) {
+    el.innerHTML = emptyState('trend', 'Nenhuma classe de investimento',
+      'Cadastre onde você aplica: reserva de emergência, renda fixa, ações…', 'Nova classe', 'openInvestClassModal()');
+    return;
+  }
+  el.innerHTML = lista.map(c => `
+    <div class="method-row">
+      <span class="method-row-dot" style="background:${escapeHtml(c.color)}"></span>
+      <div class="method-row-main">
+        <div class="method-row-name">${escapeHtml(c.label)}${c.reserve ? '<span class="aporte-tag">reserva de emergência</span>' : ''}</div>
+        <div class="method-row-meta">${fmt(cart.porClasse[c.id] || 0)} aplicados</div>
+      </div>
+      <div class="method-row-actions">
+        <button class="btn-icon" title="Editar" onclick="openInvestClassModal('${escapeHtml(c.id)}')">✎</button>
+        <button class="btn-icon" title="Excluir" onclick="deleteInvestClass('${escapeHtml(c.id)}')">✕</button>
+      </div>
+    </div>`).join('');
+}
+
+function openInvestClassModal(id) {
+  const atual = id ? getInvestClass(id) : null;
+  const cor = atual ? atual.color : METHOD_PALETTE[(getInvestClasses().length + 3) % METHOD_PALETTE.length];
+  modal.show(atual ? 'Editar classe de investimento' : 'Nova classe de investimento', `
+    <div class="input-group"><label>Nome</label>
+      <input id="icName" placeholder="Ex: Tesouro Selic, CDB, Ações, Cripto" value="${atual ? escapeHtml(atual.label) : ''}"></div>
+    <div class="input-group"><label>Cor</label>
+      <input id="icColor" type="color" value="${escapeHtml(cor)}" style="height:40px"></div>
+    <label style="display:flex;gap:10px;align-items:flex-start;font-size:0.9rem;cursor:pointer;margin-top:4px">
+      <input id="icReserve" type="checkbox" ${atual && atual.reserve ? 'checked' : ''} style="margin-top:3px">
+      <span>É minha <strong>reserva de emergência</strong><br><span class="muted" style="font-size:0.8rem">Dinheiro guardado para imprevistos. A Início mostra quantos meses de gastos ele cobre.</span></span>
+    </label>
+  `, {
+    confirmLabel: atual ? 'Salvar' : 'Criar',
+    onConfirm: () => {
+      const label = document.getElementById('icName').value.trim();
+      if (!label) { toast('Dê um nome à classe', 'error'); return false; }
+      const dup = getInvestClasses().some(c => c.id !== id && c.label.toLowerCase() === label.toLowerCase());
+      if (dup) { toast('Já existe uma classe com esse nome', 'error'); return false; }
+      const color = document.getElementById('icColor').value;
+      const reserve = document.getElementById('icReserve').checked;
+      if (atual) {
+        atual.label = label; atual.color = color; atual.reserve = reserve;
+      } else {
+        let base = label.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+          .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'classe';
+        let novo = base, i = 2;
+        while (getInvestClasses().some(c => c.id === novo) || novo === 'withdrawals') novo = `${base}-${i++}`;
+        db.investClasses.push({ id: novo, label, color, reserve });
+      }
+      saveDB();
+      rebuildInvestClassDropdowns();
+      renderInvest();
+      if (document.getElementById('dashboard').classList.contains('active')) renderDashboard();
+      toast(atual ? 'Classe atualizada' : 'Classe criada', 'success');
+    }
+  });
+}
+
+async function deleteInvestClass(id) {
+  const c = getInvestClass(id);
+  if (!c) return;
+  if (getInvestClasses().length <= 1) return toast('Mantenha ao menos uma classe de investimento', 'warn');
+  const usos = investClassUsage(id);
+  const remover = destino => {
+    if (destino) {
+      // Resolve a classe de cada aporte ANTES de remover (lançamentos antigos
+      // dependem de fallback) e grava o destino explicitamente.
+      const move = it => {
+        if (it && methodKind(it.method) === 'invest' && itemInvestClass(it) === id) it.investClass = destino;
+      };
+      Object.values(db.events || {}).forEach(arr => (arr || []).forEach(move));
+      (db.recurringExpenses || []).forEach(move);
+      (db.installments || []).forEach(move);
+      Object.values(db.investments || {}).forEach(e => {
+        if (!e) return;
+        if (e[id]) { e[destino] = (e[destino] || 0) + e[id]; }
+        delete e[id];
+        const w = e.withdrawals;
+        if (w && typeof w === 'object' && w[id]) { w[destino] = (w[destino] || 0) + w[id]; delete w[id]; }
+      });
+    }
+    db.investClasses = getInvestClasses().filter(x => x.id !== id);
+    saveDB();
+    rebuildInvestClassDropdowns();
+    renderInvest();
+    if (document.getElementById('dashboard').classList.contains('active')) renderDashboard();
+  };
+  if (usos > 0) {
+    const destinos = getInvestClasses().filter(x => x.id !== id);
+    return modal.show('Classe em uso', `
+      <p style="margin:0 0 12px"><strong>${escapeHtml(c.label)}</strong> tem valores em ${usos} registro${usos === 1 ? '' : 's'}.
+      Escolha para qual classe eles vão antes de excluir — nada é perdido.</p>
+      <div class="input-group"><label>Passar os valores para</label>
+        <select id="icMoveTo">${destinos.map(d => `<option value="${escapeHtml(d.id)}">${escapeHtml(d.label)}</option>`).join('')}</select></div>
+    `, {
+      confirmLabel: 'Mover e excluir',
+      onConfirm: () => {
+        const destino = document.getElementById('icMoveTo').value;
+        remover(destino);
+        toast(`Valores movidos para ${getInvestClass(destino).label}`, 'success');
+      }
+    });
+  }
+  const ok = await confirmDialog(`Excluir a classe "${c.label}"? Ela não tem valores registrados.`);
+  if (!ok) return;
+  remover(null);
+  toast('Classe excluída', 'success');
+}
+
+// Selects de classe (formulário Adicionar e Adicionar rápido).
+function rebuildInvestClassDropdowns() {
+  const lista = getInvestClasses();
+  const opts = lista.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.label)}</option>`).join('');
+  ['outInvestType', 'qaInvestClass'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = opts;
+    if (lista.some(c => c.id === cur)) sel.value = cur;
+  });
+}
+window.renderInvest = renderInvest;
+window.editInvestModal = editInvestModal;
+window.openInvestClassModal = openInvestClassModal;
+window.deleteInvestClass = deleteInvestClass;
+window.rebuildInvestClassDropdowns = rebuildInvestClassDropdowns;
 
 // Helper pra alternar entre Aportes/Retiradas no modal
 function switchInvestTab(targetId) {
@@ -8070,7 +8339,7 @@ function saveOut() {
   const base = { id, desc, cat, value, method, date };
   if (tags.length) base.tags = tags;
   if (competenceRaw) { const [cy, cm] = competenceRaw.split('-').map(Number); base.competenceYear = cy; base.competenceMonth = cm - 1; }
-  if (methodKind(method) === 'invest') base.investType = document.getElementById('outInvestType').value;
+  if (methodKind(method) === 'invest') base.investClass = document.getElementById('outInvestType').value;
 
   if (type === 'parc') {
     const total = parseInt(document.getElementById('outParcelas').value) || 2;
@@ -8318,7 +8587,13 @@ function editTransactionModal(item) {
     <div class="input-group"><label>Descrição</label><input id="editDesc" value="${escapeHtml(item.desc)}"></div>
     <div class="input-group"><label>Valor (R$)</label><input id="editVal" type="number" step="0.01" value="${item.value}"></div>
     <div class="input-group"><label>Categoria</label><select id="editCat">${catOpts}</select></div>
-    <div class="input-group"><label>Método</label><select id="editMethod">${methodOpts}</select></div>
+    <div class="input-group"><label>Método</label><select id="editMethod" onchange="document.getElementById('editInvestWrap').style.display = methodKind(this.value) === 'invest' ? '' : 'none'">${methodOpts}</select></div>
+    <div class="input-group" id="editInvestWrap" style="display:${methodKind(item.method) === 'invest' ? '' : 'none'}">
+      <label>Onde você aplicou</label>
+      <select id="editInvestClass">${(() => { const atual = itemInvestClass(item);
+        return getInvestClasses().map(c => `<option value="${escapeHtml(c.id)}" ${c.id === atual ? 'selected' : ''}>${escapeHtml(c.label)}</option>`).join(''); })()}</select>
+      <small class="muted" style="display:block;margin-top:4px;font-size:0.75rem">Aporte não conta como gasto — entra no seu patrimônio.</small>
+    </div>
     <div class="input-group"><label>Data exata</label><input id="editDate" type="date" value="${item.date || ''}"></div>
     <div class="input-group">
       <label>${refLabel}</label>
@@ -8348,6 +8623,8 @@ function editTransactionModal(item) {
       item.value = newVal;
       item.cat = document.getElementById('editCat').value;
       item.method = document.getElementById('editMethod').value;
+      if (methodKind(item.method) === 'invest') item.investClass = document.getElementById('editInvestClass').value;
+      else delete item.investClass;
       const newDate = document.getElementById('editDate').value;
       item.date = newDate || item.date;
 
@@ -8515,6 +8792,7 @@ function renderAll() {
   rebuildYearSelectors();
   rebuildCategoryDropdowns();
   rebuildMethodDropdowns();
+  if (typeof rebuildInvestClassDropdowns === 'function') rebuildInvestClassDropdowns();
   // [v51] Lazy-render: só renderiza o que está visível
   const active = document.querySelector('.content.active');
   const tab = active ? active.id : null;
@@ -8551,6 +8829,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // Categorias dropdown
   rebuildCategoryDropdowns();
   rebuildMethodDropdowns();
+  if (typeof rebuildInvestClassDropdowns === 'function') rebuildInvestClassDropdowns();
 
   // Default date hoje
   document.getElementById('outDate').value = todayISO();
@@ -9611,11 +9890,19 @@ window.renderDashboard = function() {
 
     // REBRAND: o "momento hero" (número gigante) vive fora dos cards — ver
     // renderHomeHero(). Aqui ficam os 4 indicadores de apoio, em cards iguais.
+    // O 1º card é a SOBRA (entradas − gastos): investir não a reduz. Antes era
+    // "entradas − gastos − investido", que ficava vermelho só porque você
+    // guardou dinheiro — parecia prejuízo.
+    const sobraCls = cur.sobra >= 0 ? 'pos' : 'neg';
+    const taxaSobra = cur.entradas > 0 ? Math.round(cur.sobra / cur.entradas * 100) : null;
+    const sobraSub = cur.sobra < 0
+      ? 'gastos passaram das entradas'
+      : (taxaSobra == null ? 'entradas − gastos' : `${taxaSobra}% das entradas`);
     dashKPIs.innerHTML = `
       <div class="card">
-        <div class="label">Saldo do mês</div>
-        <div class="value ${cls} anim-num" data-value="${cur.saldo}">${fmt(cur.saldo)}</div>
-        <div class="sub">Entradas − gastos − investido</div>
+        <div class="label">Sobra do mês</div>
+        <div class="value ${sobraCls} anim-num" data-value="${cur.sobra}">${fmt(cur.sobra)}</div>
+        <div class="sub">${sobraSub}</div>
       </div>
       <div class="card">
         <div class="label">Entradas</div>
@@ -9630,7 +9917,7 @@ window.renderDashboard = function() {
       <div class="card">
         <div class="label">Investido</div>
         <div class="value invest anim-num" data-value="${cur.investido}">${fmt(cur.investido)}</div>
-        <div class="sub">Reserva + RF + RV</div>
+        <div class="sub">${cur.investido < 0 ? 'resgatado para a conta' : 'foi para o patrimônio, não é gasto'}</div>
       </div>
     `;
     animateNumbers(dashKPIs);
@@ -9751,7 +10038,7 @@ window.renderGastos = function() {
           <div class="card"><div class="label">Entradas</div><div class="value pos anim-num" data-value="${d.entradas}">${fmt(d.entradas)}</div></div>
           <div class="card"><div class="label">Gastos</div><div class="value neg anim-num" data-value="${d.gastos}">${fmt(d.gastos)}</div></div>
           <div class="card"><div class="label">Investido</div><div class="value invest anim-num" data-value="${d.investido}">${fmt(d.investido)}</div></div>
-          <div class="card"><div class="label">Saldo</div><div class="value anim-num ${d.saldo >= 0 ? 'pos':'neg'}" data-value="${d.saldo}">${fmt(d.saldo)}</div></div>
+          <div class="card"><div class="label">Sobra do mês</div><div class="value anim-num ${d.sobra >= 0 ? 'pos':'neg'}" data-value="${d.sobra}">${fmt(d.sobra)}</div></div>
         `;
         if (typeof animateNumbers === 'function') animateNumbers(statsEl);
       }
@@ -9776,7 +10063,8 @@ window.renderGastos = function() {
       } catch(e) { console.error("Erro ao gerar tabela de tipos:", e); }
 
 
-      let filtered = d.items || [];
+      // Aportes saem dos GASTOS, mas continuam listados aqui para você ver/editar.
+      let filtered = [...(d.items || []), ...(d.aportes || [])];
       if (activeFilter !== 'tudo') filtered = filtered.filter(i => i.type === activeFilter);
       if (activeMethodFilter !== 'all') {
         filtered = filtered.filter(i => 
@@ -9834,7 +10122,7 @@ window.renderGastos = function() {
           try { label = methodLabel(m) || m; } catch (e) { console.warn('[silent]', e); }
           
           fullHtml += `<tr class="method-group-header">
-            <td colspan="7" data-total="${fmt(g.total)}"><strong>${escapeHtml(label)}</strong></td>
+            <td colspan="7" data-total="${fmt(g.total)}"><strong>${escapeHtml(label)}</strong>${methodKind(m) === 'invest' ? '<span class="aporte-tag">não conta como gasto</span>' : ''}</td>
             <td class="group-total table-num">${fmt(g.total)}</td>
             <td></td>
           </tr>`;
@@ -9880,11 +10168,13 @@ window.renderGastos = function() {
                 ${checkboxCol}
                 <td><span class="muted" style="font-size:0.78rem">${fmtDate(i.date)}</span></td>
                 <td>${escapeHtml(i.desc)}</td>
-                <td><span class="badge" style="background:${catColor}30; color:${catColor}; border-color:transparent">${escapeHtml(i.cat)}</span></td>
+                <td>${i._aporte
+                  ? (c => `<span class="badge" style="background:${c.color}30; color:${c.color}; border-color:transparent">${escapeHtml(c.label)}</span>`)(getInvestClass(i.investClass) || { color: '#7A5AF8', label: 'Investimento' })
+                  : `<span class="badge" style="background:${catColor}30; color:${catColor}; border-color:transparent">${escapeHtml(i.cat)}</span>`}</td>
                 <td>${detailBadge}</td>
                 <td><span class="method-tag">${escapeHtml(label)}</span></td>
                 ${payCell}
-                <td class="table-num" style="font-weight:600; color:var(--accent)">${fmt(i.value)}</td>
+                <td class="table-num" style="font-weight:600; color:${i._aporte ? 'var(--invest)' : 'var(--accent)'}">${fmt(i.value)}</td>
                 <td>
                   <button class="btn-icon" data-action="dup" data-id="${i.id}" title="Duplicar">⎘</button>
                   <button class="btn-icon" data-action="edit" data-id="${i.id}" data-type="${i.type}" title="Editar">✎</button>
@@ -10237,15 +10527,12 @@ function computeFutureCommitment() {
   return { list, total };
 }
 // Recalcula o patrimônio líquido atual (aportes − retiradas), igual ao renderInvest.
+// Total aplicado até hoje (mês real) — base da rentabilidade. Usa a mesma
+// fonte única da carteira, então inclui os aportes lançados pelo Adicionar.
 function computePatrimonioTotal() {
-  let R=0,F=0,P=0,A=0,WR=0,WF=0,WP=0,WA=0;
-  Object.values(db.investments || {}).forEach(r => {
-    R+=r.reserva||0; F+=r.rendaFixa||0; P+=r.polyMarket||0; A+=r.acoes||0;
-    const w=r.withdrawals;
-    if (typeof w==='number'){WR+=w/4;WF+=w/4;WP+=w/4;WA+=w/4;}
-    else if (w&&typeof w==='object'){WR+=w.reserva||0;WF+=w.rendaFixa||0;WP+=w.polyMarket||0;WA+=w.acoes||0;}
-  });
-  return Math.max(0,R-WR)+Math.max(0,F-WF)+Math.max(0,P-WP)+Math.max(0,A-WA);
+  const now = new Date();
+  const fim = Math.max(now.getFullYear() * 12 + now.getMonth(), currentYear * 12 + currentMonth);
+  return getCarteira(Math.floor(fim / 12), fim % 12).total;
 }
 function renderFutureCommitment() {
   const stats = document.getElementById('invStats');
@@ -10591,10 +10878,15 @@ function renderHomeHero() {
     const parteAntes = vindoAntes >= 0
       ? `${fmt(vindoAntes)} acumulado`
       : `${fmt(Math.abs(vindoAntes))} no vermelho`;
+    // saldoMes é a variação da CONTA (já descontado o que foi investido)
     const parteMes = saldoMes >= 0
-      ? `+ ${fmt(saldoMes)} que sobraram em ${mes}`
-      : `− ${fmt(Math.abs(saldoMes))} que faltaram em ${mes}`;
+      ? `+ ${fmt(saldoMes)} ficaram na conta em ${mes}`
+      : `− ${fmt(Math.abs(saldoMes))} saíram da conta em ${mes}`;
     context = `${parteAntes} ${parteMes}`;
+  }
+  // Investir reduz a conta, mas não é perda: deixa isso explícito.
+  if (cmp >= 0 && cur.investido > 0) {
+    context += ` · ${fmt(cur.investido)} foram investidos e seguem no seu patrimônio`;
   }
 
   // Medidor de orçamento (secundário), só quando há orçamentos definidos.
@@ -10659,7 +10951,15 @@ function renderHomeExtras() {
   let spendValue, spendSuffix = '', spendSub, spendNeg = false;
   if (base <= 0) {
     spendValue = fmt(0); spendNeg = true;
-    spendSub = `Você já passou ${fmt(Math.abs(base))} do que entrou em ${mes}`;
+    if (withBudget.length) {
+      spendSub = `Orçamento de ${mes} esgotado — ${fmt(Math.abs(base))} acima`;
+    } else if (cur.sobra >= 0 && cur.investido > 0) {
+      // não é gasto demais: a sobra do mês foi para investimentos
+      spendNeg = false;
+      spendSub = `O que sobrou em ${mes} já foi investido`;
+    } else {
+      spendSub = `Seus gastos passaram ${fmt(Math.abs(base))} do que entrou em ${mes}`;
+    }
   } else if (isCurrentMonth) {
     spendValue = fmt(base / diasRestantes); spendSuffix = ' /dia';
     spendSub = `faltam ${diasRestantes} dia${diasRestantes === 1 ? '' : 's'} · ${fmt(base)} até o fim de ${mes}`;
@@ -10668,37 +10968,113 @@ function renderHomeExtras() {
     spendSub = `disponível em ${mes}`;
   }
 
-  const conta = getSaldoAcumulado(currentYear, currentMonth);
-  const investido = getInvestidoAcumulado();
-  const patr = conta + investido;
-
   let extras = document.getElementById('homeExtras');
   if (!extras) {
     extras = document.createElement('div');
     extras.id = 'homeExtras';
-    extras.className = 'grid grid-2';
-    extras.style.margin = '-6px 0 22px';
     kpis.insertAdjacentElement('afterend', extras);
   }
+  extras.className = 'home-extras';
+  extras.removeAttribute('style');
   extras.innerHTML = `
-    <div class="card">
-      <div class="label">Livre para gastar</div>
-      <div class="value ${spendNeg ? 'neg' : 'pos'}">${spendValue}<span style="font-size:0.55em; font-weight:600; color:var(--text-muted)">${spendSuffix}</span></div>
-      <div class="sub">${spendSub}</div>
+    <div class="card spend-card">
+      <div>
+        <div class="label">Livre para gastar</div>
+        <div class="sub">${spendSub}</div>
+      </div>
+      <div class="value ${spendNeg ? 'neg' : 'pos'}">${spendValue}<span class="spend-suffix">${spendSuffix}</span></div>
     </div>
-    <div class="card">
-      <div class="label">Patrimônio total</div>
-      <div class="value">${fmt(patr)}</div>
-      <div class="sub">${fmt(conta)} em conta + ${fmt(investido)} investido</div>
-    </div>
+    ${renderMoneyPanel(cur)}
   `;
+}
+
+// ── "Onde está seu dinheiro": conta × reserva de emergência × investimentos ──
+// Investir não é perder dinheiro — ele só muda de bolso. Este painel mostra os
+// três bolsos lado a lado e o total (patrimônio), que investir não altera.
+function renderMoneyPanel(cur) {
+  const mes = monthsFull[currentMonth].toLowerCase();
+  const conta = getSaldoAcumulado(currentYear, currentMonth);
+  const cart = getCarteira(currentYear, currentMonth);
+  const patr = conta + cart.total;
+  const classes = getInvestClasses();
+  const temReserva = classes.some(c => c.reserve);
+  const corReserva = (classes.find(c => c.reserve) || {}).color || '#12B76A';
+
+  // Barra segmentada (valores negativos não entram na proporção)
+  const pos = v => Math.max(0, v);
+  const baseBarra = pos(conta) + pos(cart.reserva) + pos(cart.investimentos) || 1;
+  const pct = v => (pos(v) / baseBarra * 100);
+  const seg = (v, cor) => pos(v) > 0 ? `<span style="width:${pct(v)}%;background:${cor}"></span>` : '';
+
+  // Reserva: quantos meses dos seus gastos ela cobre (referência: 6)
+  const META_MESES = 6;
+  const gastoMedio = getGastoMedioMensal(currentYear, currentMonth);
+  let reservaSub, reservaProg = 0;
+  if (cart.reserva <= 0) {
+    reservaSub = `Ainda vazia — o recomendado é juntar ${META_MESES} meses de gastos`;
+  } else if (gastoMedio <= 0) {
+    reservaSub = 'Registre seus gastos para ver quantos meses ela cobre';
+  } else {
+    const meses = cart.reserva / gastoMedio;
+    reservaProg = Math.min(1, meses / META_MESES);
+    const mesesTxt = meses.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+    reservaSub = meses >= META_MESES
+      ? `Cobre ${mesesTxt} meses dos seus gastos — meta de ${META_MESES} atingida`
+      : `Cobre ${mesesTxt} ${meses < 2 ? 'mês' : 'meses'} dos seus gastos · meta: ${META_MESES}`;
+  }
+
+  // Investimentos: as classes com saldo
+  const detalhe = classes.filter(c => !c.reserve && (cart.porClasse[c.id] || 0) > 0)
+    .map(c => `${escapeHtml(c.label)} ${fmt(cart.porClasse[c.id])}`);
+  const investSub = detalhe.length ? detalhe.slice(0, 3).join(' · ') : 'Nada aplicado ainda';
+
+  // Rodapé: o que aconteceu neste mês
+  const taxa = cur.entradas > 0 ? Math.round(cur.investido / cur.entradas * 100) : null;
+  let rodape = '';
+  if (cur.investido > 0) {
+    rodape = `Em ${mes} você investiu <strong>${fmt(cur.investido)}</strong>${taxa != null ? ` — ${taxa}% das entradas` : ''}. Isso saiu da conta e entrou no patrimônio.`;
+  } else if (cur.investido < 0) {
+    rodape = `Em ${mes} você resgatou <strong>${fmt(Math.abs(cur.investido))}</strong> dos investimentos para a conta.`;
+  }
+
+  const linha = (cor, nome, valor, sub, extra = '', neg = false) => `
+    <div class="money-row">
+      <span class="money-dot" style="background:${cor}"></span>
+      <div class="money-main">
+        <div class="money-top"><span class="money-name">${nome}</span>
+          <span class="money-val ${neg ? 'neg' : ''}">${fmt(valor)}</span></div>
+        <div class="money-sub">${sub}</div>${extra}
+      </div>
+    </div>`;
+
+  return `
+    <section class="panel money-panel" aria-label="Onde está seu dinheiro">
+      <div class="money-head">
+        <div>
+          <h2>Onde está seu dinheiro</h2>
+          <div class="money-kicker">Patrimônio total</div>
+        </div>
+        <div class="money-total">${fmt(patr)}</div>
+      </div>
+      <div class="money-bar" role="img" aria-label="Conta ${Math.round(pct(conta))}%, reserva ${Math.round(pct(cart.reserva))}%, investimentos ${Math.round(pct(cart.investimentos))}%">
+        ${seg(conta, 'var(--primary)')}${temReserva ? seg(cart.reserva, corReserva) : ''}${seg(cart.investimentos, 'var(--accent)')}
+      </div>
+      ${linha('var(--primary)', 'Em conta', conta,
+          conta < 0 ? 'Conta no vermelho' : 'Disponível para o dia a dia', '', conta < 0)}
+      ${temReserva ? linha(corReserva, 'Reserva de emergência', cart.reserva, reservaSub,
+          cart.reserva > 0 && gastoMedio > 0
+            ? `<div class="money-prog"><span style="width:${reservaProg * 100}%;background:${corReserva}"></span></div>` : '') : ''}
+      ${linha('var(--accent)', 'Investimentos', cart.investimentos, investSub)}
+      ${rodape ? `<p class="money-foot">${rodape}</p>` : ''}
+      <button type="button" class="link-btn money-link" onclick="navTo('investimentos')">Ver investimentos ›</button>
+    </section>`;
 }
 
 function renderRecentActivity() {
   const dash = document.getElementById('dashboard');
   if (!dash) return;
   const cur = getMonthData(currentYear, currentMonth);
-  const dated = (cur.items || []).filter(i => i.date)
+  const dated = [...(cur.items || []), ...(cur.aportes || [])].filter(i => i.date)
     .sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
 
   let panel = document.getElementById('recentActivity');
@@ -10710,15 +11086,30 @@ function renderRecentActivity() {
     if (anchor) anchor.insertAdjacentElement('beforebegin', panel);
     else dash.appendChild(panel);
   }
-  const rows = dated.map(i => `
+  const rows = dated.map(i => {
+    // Aporte aparece como movimento para o patrimônio, não como saída/gasto.
+    if (i._aporte) {
+      const c = getInvestClass(i.investClass) || { color: '#7A5AF8', label: 'Investimento' };
+      return `
+    <div class="recent-item">
+      <span class="recent-dot" style="background:${c.color}"></span>
+      <div class="recent-main">
+        <div class="recent-desc">${escapeHtml(i.desc)}</div>
+        <div class="recent-meta">${relativeDay(i.date)} · investido em ${escapeHtml(c.label)}</div>
+      </div>
+      <span class="recent-value invest">→ ${fmt(i.value)}</span>
+    </div>`;
+    }
+    return `
     <div class="recent-item">
       <span class="recent-dot" style="background:${getCategoryColor(i.cat)}"></span>
       <div class="recent-main">
         <div class="recent-desc">${escapeHtml(i.desc)}</div>
         <div class="recent-meta">${relativeDay(i.date)} · ${escapeHtml(i.cat || '')}</div>
       </div>
-      <span class="recent-value neg">− ${fmt(i.value).replace('R$ ', 'R$ ')}</span>
-    </div>`).join('');
+      <span class="recent-value neg">− ${fmt(i.value)}</span>
+    </div>`;
+  }).join('');
   panel.innerHTML = `
     <div class="panel-head-row">
       <h2>Atividade recente</h2>
@@ -11032,6 +11423,40 @@ function renderRecentActivity() {
     #quickAddCard::before { content: ''; position: absolute; top: 10px; left: 50%;
       transform: translateX(-50%); width: 40px; height: 5px; border-radius: 3px; background: var(--border); }
   }
+
+  /* ── Início: livre para gastar + "Onde está seu dinheiro" ───────── */
+  .home-extras { display: grid; gap: 14px; margin: -6px 0 22px; }
+  .spend-card { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+  .spend-card .value { white-space: nowrap; font-size: 1.45rem; }
+  .spend-suffix { font-size: .55em; font-weight: 600; color: var(--text-muted); }
+  .money-panel { margin: 0; }
+  .money-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+  .money-head h2 { margin: 0 0 2px; }
+  .money-kicker { font-size: .8rem; color: var(--text-muted); font-weight: 600; }
+  .money-total { font-size: 1.6rem; font-weight: 800; letter-spacing: -.03em; color: var(--text);
+    font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .money-bar { display: flex; height: 12px; border-radius: 999px; overflow: hidden;
+    background: var(--bg-soft); gap: 2px; margin-bottom: 8px; }
+  .money-bar span { display: block; height: 100%; min-width: 4px; transition: width .5s cubic-bezier(.4,0,.2,1); }
+  .money-row { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border-soft); }
+  .money-row:last-of-type { border-bottom: 0; }
+  .money-dot { width: 11px; height: 11px; border-radius: 4px; flex-shrink: 0; margin-top: 5px; }
+  .money-main { flex: 1; min-width: 0; }
+  .money-top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .money-name { font-weight: 600; font-size: .95rem; color: var(--text); }
+  .money-val { font-weight: 700; font-size: .95rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .money-sub { font-size: .8rem; color: var(--text-muted); margin-top: 2px; line-height: 1.4; }
+  .money-prog { height: 6px; border-radius: 999px; background: var(--bg-soft); overflow: hidden; margin-top: 8px; }
+  .money-prog span { display: block; height: 100%; border-radius: 999px; }
+  .money-foot { margin: 12px 0 0; padding: 10px 12px; border-radius: var(--radius);
+    background: var(--primary-tint); color: var(--text); font-size: .84rem; line-height: 1.45; }
+  .money-link { display: block; margin: 10px 0 0 auto; }
+  @media (max-width: 420px) { .money-total { font-size: 1.35rem; } .spend-card .value { font-size: 1.25rem; } }
+
+  /* Aportes listados em "Gastos no mês": visíveis e editáveis, mas marcados. */
+  .aporte-tag { display: inline-block; font-size: .68rem; font-weight: 700; letter-spacing: .02em;
+    padding: 2px 7px; border-radius: 999px; background: var(--invest-soft); color: var(--invest);
+    margin-left: 6px; vertical-align: 1px; }
 
   /* Estados vazios como convite (ícone chip + título + ação). */
   .empty-state { text-align: center; padding: 30px 18px; }
