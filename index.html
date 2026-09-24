@@ -2844,7 +2844,7 @@
     <div class="panel" id="usersPanel">
       <h2>Gerenciar usuários</h2>
       <p class="muted" style="font-size:0.88rem; margin-bottom:14px">
-        Usuários cadastrados neste dispositivo. Cada um tem seus próprios dados financeiros isolados.
+        Usuários cadastrados neste dispositivo. Cada um tem seus próprios dados financeiros isolados. Para excluir uma conta, é preciso a senha dela.
       </p>
       <div id="usersList"></div>
     </div>
@@ -3728,33 +3728,72 @@ function renderUsersList() {
   el.innerHTML = entries.map(([uname, u]) => {
     const isCurrent = uname === currentUser;
     const ownerBadge = u.role === 'owner' ? '<span class="user-owner-badge">proprietário</span>' : '';
-    const initial = (u.displayName || uname)[0].toUpperCase();
+    const initial = escapeHtml(String(u.displayName || uname)[0].toUpperCase());
+    const protegido = uname === OWNER_USER || u.role === 'owner';
     return `
       <div class="users-list-row">
         <div style="display:flex; align-items:center; gap:10px;">
           <div class="user-avatar" style="width:28px; height:28px; font-size:0.78rem">${initial}</div>
           <div class="user-row-info">
             <div class="uname">${escapeHtml(uname)}${ownerBadge}${isCurrent ? ' <span style="font-size:0.68rem; color:var(--pos)">(você)</span>' : ''}</div>
-            <div class="umeta">Criado em ${u.createdAt || '—'}</div>
+            <div class="umeta">Criado em ${escapeHtml(u.createdAt || '—')}</div>
           </div>
         </div>
-        ${!isCurrent && u.role !== 'owner' ? `<button class="btn danger" onclick="deleteUser('${uname}')">Excluir</button>` : '<span></span>'}
+        ${!protegido ? `<button class="btn danger" onclick="deleteUser(${jsArg(uname)})">${isCurrent ? 'Excluir minha conta' : 'Excluir'}</button>` : '<span></span>'}
       </div>`;
   }).join('');
 }
 
-async function deleteUser(username) {
-  if (username === 'kaiop') return toast('Não é possível excluir o proprietário.', 'error');
-  const ok = typeof confirmDialog === 'function'
-    ? await confirmDialog(`Excluir o usuário "${username}" e todos os seus dados?`)
-    : confirm(`Excluir "${username}"?`);
-  if (!ok) return;
+// Confere a senha de uma conta com a mesma regra do login (sem migrar o hash).
+async function verifyUserPassword(username, password) {
   const users = getUsers();
-  delete users[username];
-  saveUsers(users);
+  if (!password || !Object.prototype.hasOwnProperty.call(users, username)) return false;
+  const user = users[username];
+  if (user.hashAlgo === 'sha256' && user.passwordSalt) {
+    return (await hashPasswordStrong(password, user.passwordSalt)) === user.passwordHash;
+  }
+  return user.passwordHash === hashPasswordLegacy(password);
+}
+
+// v62: excluir uma conta exige a senha DELA. Antes qualquer pessoa logada no
+// aparelho apagava a conta (e todos os dados) de outra sem confirmar nada.
+// Não existe "administrador" sem senha: um nome reservado seria cadastrável
+// por qualquer um num aparelho onde ele ainda não existe.
+async function deleteUser(username) {
+  const users = getUsers();
+  if (!Object.prototype.hasOwnProperty.call(users, username)) return;
+  if (username === OWNER_USER || users[username].role === 'owner') {
+    return toast('Não é possível excluir o proprietário.', 'error');
+  }
+  const propria = username === currentUser;
+  let senha = '';
+  const ok = await modal.show(propria ? 'Excluir minha conta' : 'Excluir conta', `
+    <p style="margin:0 0 12px; color:var(--text-muted)">
+      ${propria ? 'Isso apaga a sua conta' : `Isso apaga a conta <strong>${escapeHtml(username)}</strong>`}
+      e todos os dados financeiros dela neste aparelho, incluindo os backups automáticos. Não dá para desfazer.
+    </p>
+    <div class="input-group"><label>${propria ? 'Sua senha' : `Senha de ${escapeHtml(username)}`}</label>
+      <input id="delUserPass" type="password" autocomplete="current-password"></div>`, {
+    confirmLabel: 'Excluir conta',
+    onConfirm: () => { senha = document.getElementById('delUserPass')?.value || ''; }
+  });
+  if (!ok) return;
+  if (!(await verifyUserPassword(username, senha))) {
+    return toast('Senha incorreta. A conta não foi excluída.', 'error');
+  }
+  const atual = getUsers();
+  delete atual[username];
+  saveUsers(atual);
   localStorage.removeItem(userDbKey(username));
+  localStorage.removeItem('financasApp_lastBackup_' + username);
+  localStorage.removeItem('financeapp_period_' + username);
+  Object.keys(localStorage).forEach(k => {
+    const dono = backupOwner(k);
+    if (dono && dono.user === username) localStorage.removeItem(k);
+  });
+  toast(propria ? 'Sua conta foi excluída' : `Conta "${username}" excluída`, 'success');
+  if (propria) { _performLogout(); return; }
   renderUsersList();
-  if (typeof toast === 'function') toast(`Usuário "${username}" excluído`, 'success');
 }
 
 // ── Helpers de UI ─────────────────────────────────────────────────────────────
@@ -5932,7 +5971,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v62';
+const APP_VERSION = 'v63';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
