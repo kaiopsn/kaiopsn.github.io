@@ -523,6 +523,7 @@
   .msg.bot .num { font-family: var(--font-display); color: var(--accent); font-weight: 500; }
   .msg.bot .pos { color: var(--pos); font-weight: 500; }
   .msg.bot .neg { color: var(--neg); font-weight: 500; }
+  .msg.bot .msg-hint { color: var(--text-muted); font-size: 0.82rem; }
 
   .assistant-suggestions {
     padding: 8px 20px 0;
@@ -3272,7 +3273,7 @@ function toggleAssistant() {
   const isOpen = panel.classList.toggle('open');
   fab.classList.toggle('hidden', isOpen);
   if (isOpen && document.getElementById('assistantMsgs').children.length === 0) {
-    appendMsg(ASSISTANT_GREETING + '<br><br><em style="color: var(--text-muted); font-size: 0.82rem">Toque numa sugestão ou digite sua pergunta.</em>', 'bot');
+    appendMsg(ASSISTANT_GREETING + '<br><br><em class="msg-hint">Toque numa sugestão ou digite sua pergunta.</em>', 'bot');
     renderSuggestions();
   }
   if (isOpen) {
@@ -3960,7 +3961,7 @@ window.renderGastos = function() {
         : i._remaining === 0
           ? ` <span class="parc-rest" style="color:var(--pos)">· última</span>`
           : '';
-      const tip = i._endLabel ? ` title="Termina em ${i._endLabel}"` : '';
+      const tip = i._endLabel ? ` title="Termina em ${escapeHtml(i._endLabel)}"` : '';
       detailBadge = `<span class="detail-badge installment"${tip}>${escapeHtml(i.detail)}</span>${restInfo}`;
     } else {
       detailBadge = `<span class="detail-badge">Único</span>`;
@@ -4925,20 +4926,31 @@ function exportTransactionsCSV() {
   if (!currentUser) return toast('Faça login primeiro', 'error');
   const lines = [['Data', 'Descrição', 'Categoria', 'Tipo', 'Método', 'Valor', 'Tags', 'Observação'].join(',')];
 
-  // Iterar todos os meses
-  for (let year of db.years.sort()) {
+  // Célula de CSV: sempre entre aspas (vírgula no texto ou no valor "12,50" não
+  // quebra colunas). Texto que começa com = + - @ ganha um ' na frente para a
+  // planilha não executá-lo como fórmula — descrições podem vir de um backup
+  // ou extrato importado.
+  const texto = v => {
+    let t = String(v == null ? '' : v);
+    if (/^[=+\-@\t\r]/.test(t)) t = "'" + t;
+    return `"${t.replace(/"/g, '""')}"`;
+  };
+  const numero = v => `"${safeNum(v, 0).toFixed(2).replace('.', ',')}"`;
+
+  // Iterar todos os meses (gastos e aportes — aporte saiu de d.items na v61)
+  for (let year of [...db.years].sort((a, b) => a - b)) {
     for (let m = 0; m < 12; m++) {
       const d = getMonthData(year, m);
-      (d.items || []).forEach(it => {
+      [...(d.items || []), ...(d.aportes || [])].forEach(it => {
         const row = [
           `${String(m+1).padStart(2,'0')}/${year}`,
-          `"${(it.desc || '').replace(/"/g, '""')}"`,
-          `"${it.cat || ''}"`,
-          it.type || '',
-          methodLabel(it.method || ''),
-          (it.value || 0).toFixed(2).replace('.', ','),
-          `"${(it.tags || []).join('; ')}"`,
-          `"${(it.note || it.detail || '').replace(/"/g, '""')}"`,
+          texto(it.desc),
+          texto(it._aporte ? getInvestClass(it.investClass)?.label || 'Investimento' : it.cat),
+          texto(it._aporte ? 'aporte' : it.type),
+          texto(methodLabel(it.method || '')),
+          numero(it.value),
+          texto(Array.isArray(it.tags) ? it.tags.join('; ') : ''),
+          texto(it.note || it.detail || ''),
         ];
         lines.push(row.join(','));
       });
@@ -5971,7 +5983,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v63';
+const APP_VERSION = 'v64';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -7024,17 +7036,23 @@ function jsArg(v) {
   return escapeHtml(JSON.stringify(v == null ? '' : v));
 }
 // Histórico do assistente é HTML gravado. Ao reexibir, só passam as tags de
-// formatação que as respostas usam; o resto vira texto e atributos on* caem.
+// formatação que as respostas usam; o resto vira texto. Atributos: só `class`,
+// e só as classes das respostas — sem style nem classes de layout do app, um
+// backup adulterado não consegue desenhar uma tela falsa por cima do app.
 function sanitizeChatHtml(html) {
   const tpl = document.createElement('template');   // conteúdo inerte: nada executa aqui
   tpl.innerHTML = String(html == null ? '' : html);
   const PERMITIDAS = new Set(['STRONG', 'B', 'EM', 'I', 'BR', 'SPAN', 'SMALL', 'P', 'DIV', 'UL', 'OL', 'LI']);
+  const CLASSES = new Set(['num', 'pos', 'neg', 'invest', 'msg-hint']);
   const limpa = node => {
     [...node.childNodes].forEach(n => {
       if (n.nodeType === 3) return;
       if (n.nodeType !== 1) { n.remove(); return; }
       if (!PERMITIDAS.has(n.tagName)) { n.replaceWith(document.createTextNode(n.textContent)); return; }
-      [...n.attributes].forEach(a => { if (a.name !== 'class' && a.name !== 'style') n.removeAttribute(a.name); });
+      [...n.attributes].forEach(a => {
+        const classes = a.name === 'class' ? a.value.split(/\s+/).filter(c => CLASSES.has(c)).join(' ') : '';
+        if (classes) n.setAttribute('class', classes); else n.removeAttribute(a.name);
+      });
       limpa(n);
     });
   };
@@ -9892,7 +9910,7 @@ function loadChatHistory() {
   if (!list) return;
   list.innerHTML = '';
   if (!db.chatHistory || db.chatHistory.length === 0) {
-    appendMsgRaw(ASSISTANT_GREETING + '<br><br><em style="color: var(--text-muted); font-size: 0.82rem">Toque numa sugestão ou digite sua pergunta.</em>', 'bot');
+    appendMsgRaw(ASSISTANT_GREETING + '<br><br><em class="msg-hint">Toque numa sugestão ou digite sua pergunta.</em>', 'bot');
     if (typeof renderSuggestions === 'function') renderSuggestions();
   } else {
     db.chatHistory.forEach(m => appendMsgRaw(sanitizeChatHtml(m.html), m.role === 'user' ? 'user' : 'bot'));
