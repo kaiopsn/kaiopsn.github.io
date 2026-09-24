@@ -3035,8 +3035,8 @@ function ansSpent(t, month, year, cat) {
   if (cat) {
     const items = d.items.filter(i => i.cat === cat);
     const total = items.reduce((a, b) => a + b.value, 0);
-    if (!items.length) return `Você não teve gastos em <strong>${cat}</strong> em ${monthsFull[m]}/${y}.`;
-    return `Em <strong>${monthsFull[m]}/${y}</strong>, você gastou <span class="num">${fmt(total)}</span> em <strong>${cat}</strong>, distribuídos em ${items.length} lançamento${items.length===1?'':'s'}.`;
+    if (!items.length) return `Você não teve gastos em <strong>${escapeHtml(cat)}</strong> em ${monthsFull[m]}/${y}.`;
+    return `Em <strong>${monthsFull[m]}/${y}</strong>, você gastou <span class="num">${fmt(total)}</span> em <strong>${escapeHtml(cat)}</strong>, distribuídos em ${items.length} lançamento${items.length===1?'':'s'}.`;
   }
   const cls = d.saldo >= 0 ? 'pos' : 'neg';
   return `Em <strong>${monthsFull[m]}/${y}</strong>:<br>
@@ -3055,13 +3055,13 @@ function ansTop(t, month, year, cat) {
     const grouped = groupByCat(d.items);
     const sorted = Object.entries(grouped).sort((a, b) => b[1] - a[1]).slice(0, 3);
     if (!sorted.length) return `Sem gastos em ${monthsFull[m]}/${y}.`;
-    const lines = sorted.map(([c, v], i) => `${i+1}. <strong>${c}</strong> — <span class="num">${fmt(v)}</span>`).join('<br>');
+    const lines = sorted.map(([c, v], i) => `${i+1}. <strong>${escapeHtml(c)}</strong> — <span class="num">${fmt(v)}</span>`).join('<br>');
     return `Top categorias em <strong>${monthsFull[m]}/${y}</strong>:<br>${lines}`;
   }
   // Maior gasto individual
   const sorted = [...d.items].sort((a, b) => b.value - a.value).slice(0, 3);
   if (!sorted.length) return 'Sem gastos.';
-  const lines = sorted.map((i, idx) => `${idx+1}. ${i.desc} (${i.cat}) — <span class="num">${fmt(i.value)}</span>`).join('<br>');
+  const lines = sorted.map((i, idx) => `${idx+1}. ${escapeHtml(i.desc)} (${escapeHtml(i.cat)}) — <span class="num">${fmt(i.value)}</span>`).join('<br>');
   return `Maiores gastos de <strong>${monthsFull[m]}/${y}</strong>:<br>${lines}`;
 }
 
@@ -3107,7 +3107,7 @@ function ansGoal(t) {
     const pct = goal.total ? (total / goal.total * 100) : 0;
     const status = pct >= 100 ? 'Concluída' : pct > 50 ? 'Mais da metade' : 'Em andamento';
     const restante = Math.max(0, goal.total - total);
-    return `<strong>${goal.name}</strong> ${status}<br>
+    return `<strong>${escapeHtml(goal.name)}</strong> ${status}<br>
       • Acumulado: <span class="num">${fmt(total)}</span> de <span class="num">${fmt(goal.total)}</span><br>
       • Progresso: <strong>${pct.toFixed(1)}%</strong><br>
       ${restante > 0 ? `• Falta: <span class="num">${fmt(restante)}</span>${goal.deadline ? ' até ' + new Date(goal.deadline).toLocaleDateString('pt-BR') : ''}` : '🎉 Meta batida!'}`;
@@ -3116,7 +3116,7 @@ function ansGoal(t) {
   const lines = db.goals.map(g => {
     const total = Object.values(g.contributions).reduce((a, b) => a + b, 0);
     const pct = g.total ? (total / g.total * 100) : 0;
-    return `• <strong>${g.name}</strong>: ${fmt(total)} de ${fmt(g.total)} (${pct.toFixed(0)}%)`;
+    return `• <strong>${escapeHtml(g.name)}</strong>: ${fmt(total)} de ${fmt(g.total)} (${pct.toFixed(0)}%)`;
   }).join('<br>');
   return `Suas metas:<br>${lines}`;
 }
@@ -3126,7 +3126,7 @@ function ansIncome(t, month, year) {
   const m = month != null ? month : currentMonth;
   const d = getMonthData(y, m);
   if (!d.income.length) return `Nenhuma entrada registrada em ${monthsFull[m]}/${y}.`;
-  const lines = d.income.map(i => `• ${i.desc}: <span class="num pos">${fmt(i.value)}</span>${i.recurring ? ' (recorrente)' : ''}`).join('<br>');
+  const lines = d.income.map(i => `• ${escapeHtml(i.desc)}: <span class="num pos">${fmt(i.value)}</span>${i.recurring ? ' (recorrente)' : ''}`).join('<br>');
   return `Entradas de <strong>${monthsFull[m]}/${y}</strong> — total <span class="num pos">${fmt(d.entradas)}</span>:<br>${lines}`;
 }
 
@@ -3365,6 +3365,16 @@ function defaultEmptyDb() {
   };
 }
 
+// Backups automáticos: financasApp_backup_<usuário>_<timestamp>. Devolve
+// { user, ts } ou null. O dono sai da própria chave — usuários podem ter "_"
+// no nome, então o timestamp é sempre o último trecho.
+function backupOwner(key) {
+  const PREFIX = 'financasApp_backup_';
+  if (typeof key !== 'string' || !key.startsWith(PREFIX)) return null;
+  const m = /^(.+)_(\d+)$/.exec(key.slice(PREFIX.length));
+  return m ? { user: m[1], ts: parseInt(m[2], 10) } : null;
+}
+
 // ── Limpeza de dados órfãos no localStorage ──────────────────────────────
 // Remove dbs / backups de usuários que não existem mais em financasApp_users.
 // Mantém só os dados de usuários cadastrados.
@@ -3378,7 +3388,9 @@ function cleanOrphanedData() {
     }
     const users = getUsers();
     const validKeys = new Set(Object.keys(users).map(u => userDbKey(u)));
-    const validBackupPrefixes = Object.keys(users).map(u => `financasApp_backup_${u}_`);
+    const isUser = u => Object.prototype.hasOwnProperty.call(users, u);
+    // v62: marcadores globais do backup automático (antes eram de todos)
+    ['financasApp_lastBackup', 'financasApp_lastBackupHash'].forEach(k => localStorage.removeItem(k));
 
     const allKeys = Object.keys(localStorage);
     let removed = 0;
@@ -3388,10 +3400,11 @@ function cleanOrphanedData() {
         localStorage.removeItem(k);
         removed++;
       }
-      // Limpar backups órfãos
+      // Limpar backups órfãos — e os antigos sem dono (financasApp_backup_<ts>),
+      // que ficavam visíveis para qualquer usuário do aparelho
       if (k.startsWith('financasApp_backup_')) {
-        const matches = validBackupPrefixes.some(p => k.startsWith(p));
-        if (!matches) {
+        const dono = backupOwner(k);
+        if (!dono || !isUser(dono.user)) {
           localStorage.removeItem(k);
           removed++;
         }
@@ -3399,7 +3412,7 @@ function cleanOrphanedData() {
       // Limpar lastBackup órfãos
       if (k.startsWith('financasApp_lastBackup_')) {
         const uname = k.replace('financasApp_lastBackup_', '');
-        if (!users[uname]) {
+        if (!isUser(uname)) {
           localStorage.removeItem(k);
           removed++;
         }
@@ -4423,8 +4436,8 @@ function fillMethodPanels() {
     const stat = agg[key] || { total: 0, count: 0 };
     const pct = totalGeral > 0 ? ((stat.total / totalGeral) * 100).toFixed(0) : 0;
     return `
-      <div class="method-card" style="--method-color:${meta.color}">
-        <div class="m-label"><span class="m-icon" style="display:inline-block;width:9px;height:9px;border-radius:3px;background:${meta.color};margin-right:8px;vertical-align:0"></span>${escapeHtml(meta.label)}</div>
+      <div class="method-card" style="--method-color:${safeColor(meta.color)}">
+        <div class="m-label"><span class="m-icon" style="display:inline-block;width:9px;height:9px;border-radius:3px;background:${safeColor(meta.color)};margin-right:8px;vertical-align:0"></span>${escapeHtml(meta.label)}</div>
         <div class="m-value">${fmt(stat.total)}</div>
         <div class="m-count">${stat.count} lançamento${stat.count === 1 ? '' : 's'}</div>
         ${totalGeral > 0 ? `<div class="m-pct">${pct}% do total</div>` : ''}
@@ -4526,7 +4539,7 @@ function setupAutoCategorize() {
     const suggested = autoCategorize(desc);
     if (suggested && db.categories.some(c => c.name === suggested) && catEl.value !== suggested) {
       const color = db.categories.find(c => c.name === suggested)?.color || '#94a3b8';
-      suggBox.innerHTML = `<span class="qa-suggestion-chip" onclick="document.getElementById('outCat').value='${suggested}'; document.getElementById('outSuggestions').innerHTML=''" style="border-left:3px solid ${color}; cursor:pointer">💡 ${suggested}</span>`;
+      suggBox.innerHTML = `<span class="qa-suggestion-chip" onclick="document.getElementById('outCat').value=${jsArg(suggested)}; document.getElementById('outSuggestions').innerHTML=''" style="border-left:3px solid ${safeColor(color)}; cursor:pointer">💡 ${escapeHtml(suggested)}</span>`;
     } else {
       suggBox.innerHTML = '';
     }
@@ -5263,7 +5276,7 @@ function openQuickAdd() {
   // Popular categorias
   const catSel = document.getElementById('qaCat');
   catSel.innerHTML = (db.categories || []).map(c =>
-    `<option value="${c.name}" data-color="${c.color}">${c.name}</option>`
+    `<option value="${escapeHtml(c.name)}" data-color="${safeColor(c.color)}">${escapeHtml(c.name)}</option>`
   ).join('');
 
   // Limpar campos
@@ -5303,7 +5316,7 @@ function updateQASuggestions(desc) {
   const suggCat = (typeof autoCategorize === 'function') ? autoCategorize(desc) : null;
   if (suggCat && db.categories.some(c => c.name === suggCat)) {
     const color = db.categories.find(c => c.name === suggCat)?.color || '#94a3b8';
-    container.innerHTML = `<span class="qa-suggestion-chip" onclick="applyQACat('${suggCat}')" style="border-left:3px solid ${color}">💡 ${suggCat}</span>`;
+    container.innerHTML = `<span class="qa-suggestion-chip" onclick="applyQACat(${jsArg(suggCat)})" style="border-left:3px solid ${safeColor(color)}">💡 ${escapeHtml(suggCat)}</span>`;
   } else {
     container.innerHTML = '';
   }
@@ -5919,7 +5932,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v61';
+const APP_VERSION = 'v62';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -6193,9 +6206,11 @@ document.addEventListener('click', e => {
 function showRowActionMenu(tr) {
   document.querySelectorAll('.row-action-menu').forEach(m => m.remove());
   const findBtn = (action) => tr.querySelector(`button[data-action="${action}"]`);
-  const dupId = findBtn('dup')?.dataset?.id || '';
-  const editId = findBtn('edit')?.dataset?.id || '';
-  const delId = findBtn('del')?.dataset?.id || '';
+  // ids entram num seletor CSS dentro de um onclick: só dígitos/letras/_/-
+  const limpaId = v => String(v || '').replace(/[^A-Za-z0-9_-]/g, '');
+  const dupId = limpaId(findBtn('dup')?.dataset?.id);
+  const editId = limpaId(findBtn('edit')?.dataset?.id);
+  const delId = limpaId(findBtn('del')?.dataset?.id);
   const menu = document.createElement('div');
   menu.className = 'row-action-menu';
   menu.innerHTML = `
@@ -6344,7 +6359,7 @@ function normalizeMethod(m) {
   return legacy || first;
 }
 const methodLabel = m => { const x = getMethod(normalizeMethod(m)); return x ? x.label : (m || '—'); };
-function methodColor(m) { const x = getMethod(normalizeMethod(m)); return x ? x.color : '#94a3b8'; }
+function methodColor(m) { const x = getMethod(normalizeMethod(m)); return x ? safeColor(x.color) : '#94a3b8'; }
 function methodKind(m)  { const x = getMethod(normalizeMethod(m)); return x ? (x.kind || 'instant') : 'instant'; }
 
 // Monta a lista inicial a partir do que o usuário JÁ usa, para não impor as
@@ -6541,6 +6556,196 @@ function _emptyDb() {
   };
 }
 
+// ── v62 · SEGURANÇA: saneamento dos dados ─────────────────────────────────
+// Tudo o que chega à tela passa por migrate(): o backup importado, o backup
+// automático restaurado e a própria base salva. Aqui os campos ESTRUTURAIS
+// (ids, cores, anos, meses, valores, datas) são forçados ao formato que o app
+// grava — um arquivo adulterado não consegue mais injetar HTML/JS por eles.
+// Texto livre (descrições, nomes) continua livre e é escapado ao desenhar.
+// Dados legítimos passam intactos. Nada aqui pode lançar exceção: loadDB trata
+// erro como "base vazia", e isso apagaria os dados do usuário.
+function isSafeId(v) {
+  return (typeof v === 'number' && Number.isFinite(v)) ||
+         (typeof v === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(v));
+}
+function safeColor(c, fallback) {
+  const fb = fallback || '#94a3b8';
+  if (typeof c !== 'string') return fb;
+  const s = c.trim();
+  return (/^#[0-9a-f]{3,8}$/i.test(s) || /^(rgb|hsl)a?\([\d\s.,%]+\)$/i.test(s) || /^[a-z]{3,20}$/i.test(s)) ? s : fb;
+}
+function safeNum(v, d = 0) {
+  const n = (typeof v === 'string' && v.trim() !== '') ? Number(v) : v;
+  return (typeof n === 'number' && Number.isFinite(n)) ? n : d;
+}
+function safeInt(v) {
+  const n = safeNum(v, NaN);
+  return Number.isInteger(n) ? n : null;
+}
+function sanitizeData(data) {
+  const passo = (nome, fn) => { try { fn(); } catch (e) { console.warn('[saneamento] ' + nome, e); } };
+  const obj = v => !!v && typeof v === 'object' && !Array.isArray(v);
+  const slug = (v, usados) => {
+    let base = String(v == null ? '' : v).normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'item';
+    if (base === 'withdrawals') base = 'withdrawals-1';
+    let id = base, n = 2;
+    while (usados.has(id)) id = `${base}-${n++}`;
+    usados.add(id);
+    return id;
+  };
+  let proxId = Date.now() * 1000;   // bem acima de qualquer id existente (Date.now())
+
+  passo('anos', () => {
+    const anos = (Array.isArray(data.years) ? data.years : [])
+      .map(safeInt).filter(y => y !== null && y >= 1900 && y <= 2200);
+    data.years = [...new Set(anos)].sort((a, b) => a - b);
+    if (!data.years.length) data.years = [new Date().getFullYear()];
+  });
+
+  // Formas de pagamento e classes de investimento: id fora do formato ganha um
+  // id limpo, e as referências a ele (lançamentos, investimentos) acompanham.
+  const remapMetodo = {}, remapClasse = {};
+  const saneiaLista = (lista, remap, extra) => {
+    const usados = new Set(lista.filter(x => obj(x) && isSafeId(x.id) && x.id !== 'withdrawals').map(x => String(x.id)));
+    return lista.filter(obj).map((x, i) => {
+      const limpo = { ...x };
+      if (!isSafeId(x.id) || x.id === 'withdrawals') {
+        limpo.id = slug(typeof x.label === 'string' ? x.label : x.id, usados);
+        if (x.id != null && typeof x.id !== 'object') remap[String(x.id)] = limpo.id;
+      }
+      limpo.label = typeof x.label === 'string' ? x.label : String(limpo.id);
+      limpo.color = safeColor(x.color, METHOD_PALETTE[i % METHOD_PALETTE.length]);
+      return extra(limpo);
+    });
+  };
+  passo('formas de pagamento', () => {
+    const tipo = m => { if (!['instant', 'credit', 'invest'].includes(m.kind)) m.kind = 'instant'; return m; };
+    let lista = saneiaLista(Array.isArray(data.paymentMethods) ? data.paymentMethods : [], remapMetodo, tipo);
+    if (!lista.length) lista = saneiaLista(seedPaymentMethods(data), remapMetodo, tipo);
+    data.paymentMethods = lista;
+  });
+  passo('classes de investimento', () => {
+    const reserva = c => { c.reserve = !!c.reserve; return c; };
+    let lista = saneiaLista(Array.isArray(data.investClasses) ? data.investClasses : [], remapClasse, reserva);
+    if (!lista.length) lista = saneiaLista(seedInvestClasses(data), remapClasse, reserva);
+    data.investClasses = lista;
+  });
+
+  const TEXTO = ['desc', 'cat', 'note', 'detail'];
+  const saneiaItem = it => {
+    if (!obj(it)) return null;
+    if (it.id != null && !isSafeId(it.id)) it.id = proxId++;
+    if ('value' in it) it.value = safeNum(it.value, 0);
+    TEXTO.forEach(f => {
+      if (it[f] != null && typeof it[f] !== 'string') it[f] = typeof it[f] === 'number' ? String(it[f]) : '';
+    });
+    if (it.type != null && !(typeof it.type === 'string' && /^[A-Za-z_-]{1,20}$/.test(it.type))) delete it.type;
+    if (it.date != null && !(typeof it.date === 'string' && /^[0-9T:.\/ Z+-]{1,40}$/.test(it.date))) delete it.date;
+    if (it.method != null) {
+      if (typeof it.method !== 'string' && typeof it.method !== 'number') delete it.method;
+      else if (remapMetodo[String(it.method)] !== undefined) it.method = remapMetodo[String(it.method)];
+    }
+    if (it.investClass != null) {
+      const id = remapClasse[String(it.investClass)] !== undefined ? remapClasse[String(it.investClass)] : it.investClass;
+      if (isSafeId(id)) it.investClass = id; else delete it.investClass;
+    }
+    if (it.investType != null && !['fixa', 'variavel'].includes(it.investType)) delete it.investType;
+    // Início/fim de recorrentes e parcelamentos: sempre inteiros
+    ['startYear', 'startMonth'].forEach(f => {
+      if (f in it) { const n = safeInt(it[f]); it[f] = n !== null ? n : (f === 'startYear' ? data.years[0] : 0); }
+    });
+    if ('endYear' in it || 'endMonth' in it) {
+      const ey = safeInt(it.endYear), em = safeInt(it.endMonth);
+      if (ey !== null && em !== null) { it.endYear = ey; it.endMonth = em; }
+      else if (it.endYear != null || it.endMonth != null) { delete it.endYear; delete it.endMonth; }
+    }
+    if ('total' in it && typeof it.total !== 'number') { const n = safeInt(it.total); it.total = n !== null && n > 0 ? n : 1; }
+    return it;
+  };
+  const saneiaArray = arr => (Array.isArray(arr) ? arr : []).map(saneiaItem).filter(Boolean);
+
+  passo('lançamentos', () => {
+    ['events', 'income'].forEach(campo => {
+      if (!obj(data[campo])) { data[campo] = {}; return; }
+      Object.keys(data[campo]).forEach(k => { data[campo][k] = saneiaArray(data[campo][k]); });
+    });
+  });
+  passo('recorrentes e parcelas', () => {
+    data.recurringExpenses = saneiaArray(data.recurringExpenses);
+    data.recurringIncome   = saneiaArray(data.recurringIncome);
+    data.installments      = saneiaArray(data.installments);
+  });
+
+  passo('investimentos', () => {
+    if (!obj(data.investments)) { data.investments = {}; return; }
+    Object.values(data.investments).forEach(e => {
+      if (!obj(e)) return;
+      Object.keys(e).forEach(k => {
+        const v = e[k];
+        delete e[k];
+        if (k === 'withdrawals') {
+          if (obj(v)) {
+            const w = {};
+            Object.keys(v).forEach(wk => {
+              const id = remapClasse[wk] !== undefined ? remapClasse[wk] : wk;
+              if (isSafeId(id)) w[id] = safeNum(v[wk], 0);
+            });
+            e.withdrawals = w;
+          } else e.withdrawals = safeNum(v, 0);
+          return;
+        }
+        const id = remapClasse[k] !== undefined ? remapClasse[k] : k;
+        if (!isSafeId(id)) return;
+        if (typeof v === 'number' ? Number.isFinite(v) : Number.isFinite(safeNum(v, NaN))) e[id] = v;
+      });
+    });
+  });
+
+  passo('categorias', () => {
+    data.categories = (Array.isArray(data.categories) ? data.categories : [])
+      .filter(c => obj(c) && (typeof c.name === 'string' || typeof c.name === 'number'))
+      .map((c, i) => {
+        c.name = String(c.name);
+        c.color = safeColor(c.color, METHOD_PALETTE[i % METHOD_PALETTE.length]);
+        c.budget = safeNum(c.budget, 0);
+        if (c.group != null && typeof c.group !== 'string') delete c.group;
+        return c;
+      });
+    if (!data.categories.length) data.categories = DEFAULT_CATEGORIES.slice();
+  });
+
+  passo('metas', () => {
+    data.goals = (Array.isArray(data.goals) ? data.goals : []).filter(obj).map(g => {
+      if (g.id != null && !isSafeId(g.id)) g.id = proxId++;
+      g.name = typeof g.name === 'string' ? g.name : String(g.name == null ? '' : g.name);
+      g.total = safeNum(g.total, 0);
+      if (g.deadline != null && !(typeof g.deadline === 'string' && /^[0-9T:.\/ Z+-]{1,40}$/.test(g.deadline))) delete g.deadline;
+      const contrib = {};
+      if (obj(g.contributions)) Object.keys(g.contributions).forEach(k => { contrib[k] = safeNum(g.contributions[k], 0); });
+      g.contributions = contrib;
+      return g;
+    });
+  });
+
+  passo('dinheiro em conta', () => {
+    const s = data.saldoConfig;
+    if (s == null) return;
+    if (!obj(s) || typeof s.anchorKey !== 'string' || !/^\d{4}-\d{1,2}$/.test(s.anchorKey)) { data.saldoConfig = null; return; }
+    ['openingValue', 'targetValue'].forEach(f => {
+      if (f in s && !(typeof s[f] === 'number' && Number.isFinite(s[f]))) delete s[f];
+    });
+  });
+
+  passo('diversos', () => {
+    if (!Array.isArray(data.chatHistory)) data.chatHistory = [];
+    data.chatHistory = data.chatHistory.filter(m => obj(m) && typeof m.html === 'string');
+    if (!obj(data.paidStatus)) data.paidStatus = {};
+    if (!Array.isArray(data.deletedIds)) data.deletedIds = [];
+  });
+  return data;
+}
+
 function migrate(data) {
   // Future-proof: bump schemaVersion when changing structure
   if (!data.schemaVersion) data.schemaVersion = SCHEMA_VERSION;
@@ -6586,7 +6791,7 @@ function migrate(data) {
     data._privacyPurgeV57 = true;
   }
 
-  return data;
+  return sanitizeData(data);
 }
 
 function saveDB() {
@@ -6620,6 +6825,7 @@ function importData(input) {
   reader.onload = async () => {
     try {
       const parsed = JSON.parse(reader.result);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('não é um backup do FinanceApp');
       const ok = await confirmDialog('Importar este backup vai substituir todos os dados atuais. Continuar?');
       if (!ok) return;
       db = migrate(parsed);
@@ -6741,7 +6947,7 @@ async function resetAllData() {
   localStorage.removeItem(key);
   // Apagar backups desse usuário também
   Object.keys(localStorage)
-    .filter(k => k.startsWith('financasApp_backup_' + currentUser + '_'))
+    .filter(k => { const dono = backupOwner(k); return dono && dono.user === currentUser; })
     .forEach(k => localStorage.removeItem(k));
   localStorage.removeItem('financasApp_lastBackup_' + currentUser);
   // Resetar db em memória — base vazia para qualquer conta
@@ -6772,14 +6978,38 @@ function escapeHtml(str) {
   if (str == null) return '';
   return String(str).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 }
+// Argumento para um handler inline: onclick="fn(${jsArg(id)})". Vira literal JS
+// (JSON) e depois é escapado para o atributo. escapeHtml sozinho NÃO basta aqui:
+// o navegador decodifica &#39; de volta para ' antes de executar o handler.
+function jsArg(v) {
+  return escapeHtml(JSON.stringify(v == null ? '' : v));
+}
+// Histórico do assistente é HTML gravado. Ao reexibir, só passam as tags de
+// formatação que as respostas usam; o resto vira texto e atributos on* caem.
+function sanitizeChatHtml(html) {
+  const tpl = document.createElement('template');   // conteúdo inerte: nada executa aqui
+  tpl.innerHTML = String(html == null ? '' : html);
+  const PERMITIDAS = new Set(['STRONG', 'B', 'EM', 'I', 'BR', 'SPAN', 'SMALL', 'P', 'DIV', 'UL', 'OL', 'LI']);
+  const limpa = node => {
+    [...node.childNodes].forEach(n => {
+      if (n.nodeType === 3) return;
+      if (n.nodeType !== 1) { n.remove(); return; }
+      if (!PERMITIDAS.has(n.tagName)) { n.replaceWith(document.createTextNode(n.textContent)); return; }
+      [...n.attributes].forEach(a => { if (a.name !== 'class' && a.name !== 'style') n.removeAttribute(a.name); });
+      limpa(n);
+    });
+  };
+  limpa(tpl.content);
+  return tpl.innerHTML;
+}
 function todayISO() {
   const d = new Date();
   return d.toISOString().slice(0, 10);
 }
 function fmtDate(iso) {
   if (!iso) return '—';
-  const [y, m, d] = iso.split('-');
-  return `${d}/${m}`;
+  const [y, m, d] = String(iso).split('-');
+  return escapeHtml(`${d}/${m}`);
 }
 
 // ============== TOAST ==============
@@ -6965,7 +7195,7 @@ function groupByCat(items) {
 
 function getCategoryColor(name) {
   const c = db.categories.find(x => x.name === name);
-  return c ? c.color : '#94a3b8';
+  return c ? safeColor(c.color) : '#94a3b8';
 }
 
 // Iconografia coesa: mapeia emojis legados → chips de linha tintados (mesmo
@@ -7363,7 +7593,7 @@ function renderBudgetTracking(cur) {
     return `
       <div style="padding:10px 0; border-bottom: 1px solid var(--border-soft)">
         <div style="display:flex; justify-content:space-between; align-items:baseline; font-size:0.88rem; margin-bottom:4px">
-          <span><span style="width:8px; height:8px; border-radius:2px; background:${c.color}; display:inline-block; margin-right:6px"></span>${escapeHtml(c.name)}</span>
+          <span><span style="width:8px; height:8px; border-radius:2px; background:${safeColor(c.color)}; display:inline-block; margin-right:6px"></span>${escapeHtml(c.name)}</span>
           <span>${rightTxt}</span>
         </div>
         <div class="cat-budget-bar"><div class="cat-budget-fill ${cls}" style="width:${pct}%"></div></div>
@@ -7412,7 +7642,7 @@ function renderUpcomingInstallments() {
           <span class="badge invest">${fmt(tot)}</span>
         </div>
         <div class="muted" style="font-size:0.78rem; margin-top:4px">
-          ${g.items.map(i => `${escapeHtml(i.desc)} (${typeof i.parc === 'string' ? i.parc : i.parc + '/' + i.total})`).join(' · ')}
+          ${g.items.map(i => `${escapeHtml(i.desc)} (${escapeHtml(typeof i.parc === 'string' ? i.parc : i.parc + '/' + i.total)})`).join(' · ')}
         </div>
       </div>`;
   }).join('');
@@ -7569,7 +7799,7 @@ function renderAnual() {
   const sel = document.getElementById('catEvolSelect');
   const allCats = db.categories.map(c => c.name);
   if (!sel.options.length) {
-    sel.innerHTML = allCats.map(c => `<option value="${c}">${c}</option>`).join('');
+    sel.innerHTML = allCats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
     sel.addEventListener('change', renderCatEvolution);
   }
   renderCatEvolution();
@@ -7808,7 +8038,7 @@ function editInvestModal(y, m) {
   const lanc = getMonthData(y, m).aportes || [];
   const lancTotal = lanc.reduce((a, b) => a + b.value, 0);
   const campo = (pref, c, v) => `<div class="input-group"><label>${escapeHtml(c.label)} (R$)</label>
-    <input id="${pref}_${escapeHtml(c.id)}" type="number" step="0.01" inputmode="decimal" value="${v || 0}"></div>`;
+    <input id="${pref}_${escapeHtml(c.id)}" type="number" step="0.01" inputmode="decimal" value="${escapeHtml(v || 0)}"></div>`;
 
   modal.show(`Investimentos — ${monthsFull[m]} de ${y}`, `
     <div class="invest-tabs" style="display:flex;gap:4px;margin:-4px 0 14px;border-bottom:1px solid var(--border-soft)">
@@ -7892,8 +8122,8 @@ function renderInvestClasses(cart) {
         <div class="method-row-meta">${fmt(cart.porClasse[c.id] || 0)} aplicados</div>
       </div>
       <div class="method-row-actions">
-        <button class="btn-icon" title="Editar" onclick="openInvestClassModal('${escapeHtml(c.id)}')">✎</button>
-        <button class="btn-icon" title="Excluir" onclick="deleteInvestClass('${escapeHtml(c.id)}')">✕</button>
+        <button class="btn-icon" title="Editar" onclick="openInvestClassModal(${jsArg(c.id)})">✎</button>
+        <button class="btn-icon" title="Excluir" onclick="deleteInvestClass(${jsArg(c.id)})">✕</button>
       </div>
     </div>`).join('');
 }
@@ -8080,15 +8310,15 @@ function renderCategories() {
     const overBudget = pct > 100;
     html += `
       <div class="cat-row">
-        <div><span class="cat-color" style="background:${c.color}"></span></div>
+        <div><span class="cat-color" style="background:${safeColor(c.color)}"></span></div>
         <div>
           <div style="font-weight:500">${escapeHtml(c.name)}</div>
           ${c.budget ? `<div class="cat-budget-bar"><div class="cat-budget-fill ${overBudget ? 'over' : (pct > 80 ? 'warn' : '')}" style="width:${Math.min(100, pct)}%"></div></div>
                        <div class="muted" style="font-size:0.7rem; margin-top:2px">${fmt(used)} / ${fmt(c.budget)} (${pct.toFixed(0)}%)</div>` : ''}
           ${groupSelect(c, idx)}
         </div>
-        <div><input type="color" value="${c.color}" onchange="updateCategoryColor(${idx}, this.value)" style="height:32px; padding:2px"></div>
-        <div><input type="number" step="0.01" value="${c.budget}" placeholder="0,00" onchange="updateCategoryBudget(${idx}, this.value)" style="padding:6px"></div>
+        <div><input type="color" value="${safeColor(c.color)}" onchange="updateCategoryColor(${idx}, this.value)" style="height:32px; padding:2px"></div>
+        <div><input type="number" step="0.01" value="${escapeHtml(c.budget)}" placeholder="0,00" onchange="updateCategoryBudget(${idx}, this.value)" style="padding:6px"></div>
         <div style="text-align:right">
           <button class="btn" onclick="renameCategory(${idx})">Renomear</button>
           <button class="btn danger" onclick="deleteCategory(${idx})">×</button>
@@ -8209,8 +8439,8 @@ function renderPaymentMethods() {
           <div class="method-row-meta">${escapeHtml(kind)} · ${usos} lançamento${usos === 1 ? '' : 's'}</div>
         </div>
         <div class="method-row-actions">
-          <button class="btn-icon" title="Editar" onclick="openMethodModal('${escapeHtml(m.id)}')">✎</button>
-          <button class="btn-icon" title="Excluir" onclick="deleteMethod('${escapeHtml(m.id)}')">✕</button>
+          <button class="btn-icon" title="Editar" onclick="openMethodModal(${jsArg(m.id)})">✎</button>
+          <button class="btn-icon" title="Excluir" onclick="deleteMethod(${jsArg(m.id)})">✕</button>
         </div>
       </div>`;
   }).join('');
@@ -8585,7 +8815,7 @@ function editTransactionModal(item) {
 
   modal.show('Editar lançamento', `
     <div class="input-group"><label>Descrição</label><input id="editDesc" value="${escapeHtml(item.desc)}"></div>
-    <div class="input-group"><label>Valor (R$)</label><input id="editVal" type="number" step="0.01" value="${item.value}"></div>
+    <div class="input-group"><label>Valor (R$)</label><input id="editVal" type="number" step="0.01" value="${escapeHtml(item.value)}"></div>
     <div class="input-group"><label>Categoria</label><select id="editCat">${catOpts}</select></div>
     <div class="input-group"><label>Método</label><select id="editMethod" onchange="document.getElementById('editInvestWrap').style.display = methodKind(this.value) === 'invest' ? '' : 'none'">${methodOpts}</select></div>
     <div class="input-group" id="editInvestWrap" style="display:${methodKind(item.method) === 'invest' ? '' : 'none'}">
@@ -8594,7 +8824,7 @@ function editTransactionModal(item) {
         return getInvestClasses().map(c => `<option value="${escapeHtml(c.id)}" ${c.id === atual ? 'selected' : ''}>${escapeHtml(c.label)}</option>`).join(''); })()}</select>
       <small class="muted" style="display:block;margin-top:4px;font-size:0.75rem">Aporte não conta como gasto — entra no seu patrimônio.</small>
     </div>
-    <div class="input-group"><label>Data exata</label><input id="editDate" type="date" value="${item.date || ''}"></div>
+    <div class="input-group"><label>Data exata</label><input id="editDate" type="date" value="${escapeHtml(item.date || '')}"></div>
     <div class="input-group">
       <label>${refLabel}</label>
       <input id="editRefMonth" type="month" value="${refValue}">
@@ -8727,8 +8957,8 @@ function editGoalModal(id) {
   if (!g) return;
   modal.show('Editar Meta', `
     <div class="input-group"><label>Nome</label><input id="egName" value="${escapeHtml(g.name)}"></div>
-    <div class="input-group"><label>Total (R$)</label><input id="egTotal" type="number" step="0.01" value="${g.total}"></div>
-    <div class="input-group"><label>Data limite</label><input id="egDate" type="date" value="${g.deadline || ''}"></div>
+    <div class="input-group"><label>Total (R$)</label><input id="egTotal" type="number" step="0.01" value="${escapeHtml(g.total)}"></div>
+    <div class="input-group"><label>Data limite</label><input id="egDate" type="date" value="${escapeHtml(g.deadline || '')}"></div>
   `, {
     confirmLabel: 'Salvar',
     onConfirm: () => {
@@ -8746,7 +8976,7 @@ function editGoalModal(id) {
 // ============== UI HELPERS ==============
 function rebuildYearSelectors() {
   const ys = document.getElementById('yearSelect');
-  ys.innerHTML = db.years.map(y => `<option value="${y}" ${y===currentYear?'selected':''}>${y}</option>`).join('');
+  ys.innerHTML = db.years.map(y => `<option value="${escapeHtml(y)}" ${y===currentYear?'selected':''}>${escapeHtml(y)}</option>`).join('');
 }
 
 function rebuildCategoryDropdowns() {
@@ -8918,7 +9148,7 @@ function updateContextBar() {
   const cm = document.getElementById('contextMonth');
   const meta = document.getElementById('contextMeta');
   if (cm && typeof currentYear !== 'undefined' && typeof currentMonth !== 'undefined') {
-    cm.innerHTML = `${monthsFull[currentMonth]} de <em>${currentYear}</em>`;
+    cm.innerHTML = `${monthsFull[currentMonth]} de <em>${escapeHtml(currentYear)}</em>`;
     const d = getMonthData(currentYear, currentMonth);
     const saldoCls = d.saldo >= 0 ? 'pos' : 'neg';
     meta.innerHTML = `Saldo: <span class="${saldoCls}" style="font-weight:600">${fmt(d.saldo)}</span>`;
@@ -9332,7 +9562,7 @@ function renderSearchResults(q) {
     html += r.cats.map(c => `
       <div class="search-item" data-action="goto-tab" data-tab="categorias">
         <div>
-          <div class="search-item-title"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${c.color};margin-right:6px"></span>${escapeHtml(c.name)}</div>
+          <div class="search-item-title"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${safeColor(c.color)};margin-right:6px"></span>${escapeHtml(c.name)}</div>
           ${c.budget ? `<div class="search-item-meta">Orçamento ${fmt(c.budget)}</div>` : ''}
         </div>
       </div>`).join('');
@@ -9626,7 +9856,7 @@ function loadChatHistory() {
     appendMsgRaw(ASSISTANT_GREETING + '<br><br><em style="color: var(--text-muted); font-size: 0.82rem">Toque numa sugestão ou digite sua pergunta.</em>', 'bot');
     if (typeof renderSuggestions === 'function') renderSuggestions();
   } else {
-    db.chatHistory.forEach(m => appendMsgRaw(m.html, m.role));
+    db.chatHistory.forEach(m => appendMsgRaw(sanitizeChatHtml(m.html), m.role === 'user' ? 'user' : 'bot'));
   }
 }
 
@@ -9680,38 +9910,45 @@ const BACKUP_INTERVAL_MS = 5 * 60 * 1000; // 5 min
 const _origSaveDB = window.saveDB;
 window.saveDB = function() {
   if (_origSaveDB) _origSaveDB.apply(this, arguments);
-  // Versão automática a cada 5 min (mas só se db mudou de fato)
+  // Versão automática a cada 5 min (mas só se db mudou de fato).
+  // v62: cada backup é do usuário logado — financasApp_backup_<usuário>_<ts>.
+  // Antes a chave não tinha dono e quem entrasse depois no mesmo aparelho via
+  // (e podia restaurar) os backups de outra pessoa.
   try {
-    const last = parseInt(localStorage.getItem('financasApp_lastBackup') || '0');
+    if (typeof currentUser === 'undefined' || !currentUser) return;
+    const metaKey = 'financasApp_lastBackup_' + currentUser;
+    let meta = {};
+    try { meta = JSON.parse(localStorage.getItem(metaKey) || '{}') || {}; } catch (_) { meta = {}; }
     const dbStr = JSON.stringify(db);
     // Dirty check: só faz backup se hash do db mudou desde último backup
-    const lastHash = localStorage.getItem('financasApp_lastBackupHash') || '';
     const curHash = dbStr.length + '_' + (dbStr.charCodeAt(0) || 0) + '_' + (dbStr.charCodeAt(dbStr.length-1) || 0);
-    if (Date.now() - last > BACKUP_INTERVAL_MS && curHash !== lastHash) {
+    if (Date.now() - (Number(meta.ts) || 0) > BACKUP_INTERVAL_MS && curHash !== meta.hash) {
       const ts = Date.now();
-      localStorage.setItem(`${BACKUP_PREFIX}${ts}`, dbStr);
-      localStorage.setItem('financasApp_lastBackup', String(ts));
-      localStorage.setItem('financasApp_lastBackupHash', curHash);
-      // Manter só 3 mais recentes
-      const keys = Object.keys(localStorage)
-        .filter(k => k.startsWith(BACKUP_PREFIX))
-        .map(k => ({ k, ts: parseInt(k.replace(BACKUP_PREFIX, '')) }))
-        .sort((a, b) => b.ts - a.ts);
-      keys.slice(3).forEach(o => localStorage.removeItem(o.k));
+      localStorage.setItem(`${BACKUP_PREFIX}${currentUser}_${ts}`, dbStr);
+      localStorage.setItem(metaKey, JSON.stringify({ ts, hash: curHash }));
+      // Manter só os 3 mais recentes deste usuário
+      listBackups().slice(3).forEach(b => localStorage.removeItem(b.key));
     }
   } catch (e) {
     console.warn('Auto-backup falhou:', e);
   }
 };
 
+// Só os backups do usuário logado
 function listBackups() {
+  if (typeof currentUser === 'undefined' || !currentUser) return [];
   return Object.keys(localStorage)
-    .filter(k => k.startsWith(BACKUP_PREFIX))
-    .map(k => ({ key: k, ts: parseInt(k.replace(BACKUP_PREFIX, '')) }))
+    .map(k => ({ key: k, dono: backupOwner(k) }))
+    .filter(b => b.dono && b.dono.user === currentUser)
+    .map(b => ({ key: b.key, ts: b.dono.ts }))
     .sort((a, b) => b.ts - a.ts);
 }
 
 async function restoreBackup(key) {
+  const dono = backupOwner(key);
+  if (!dono || typeof currentUser === 'undefined' || dono.user !== currentUser) {
+    return toast('Backup não encontrado', 'error');
+  }
   const data = localStorage.getItem(key);
   if (!data) return toast('Backup não encontrado', 'error');
   const ok = await confirmDialog('Restaurar este backup vai sobrescrever os dados atuais. Continuar?');
@@ -9749,7 +9986,7 @@ function renderBackupsList() {
           <div style="font-weight:500">${dateStr}</div>
           <div class="muted" style="font-size:0.78rem">${ageStr}</div>
         </div>
-        <button class="btn primary" onclick="restoreBackup('${b.key}')">Restaurar</button>
+        <button class="btn primary" onclick="restoreBackup(${jsArg(b.key)})">Restaurar</button>
       </div>`;
   }).join('');
 }
@@ -10169,7 +10406,7 @@ window.renderGastos = function() {
                 <td><span class="muted" style="font-size:0.78rem">${fmtDate(i.date)}</span></td>
                 <td>${escapeHtml(i.desc)}</td>
                 <td>${i._aporte
-                  ? (c => `<span class="badge" style="background:${c.color}30; color:${c.color}; border-color:transparent">${escapeHtml(c.label)}</span>`)(getInvestClass(i.investClass) || { color: '#7A5AF8', label: 'Investimento' })
+                  ? (c => `<span class="badge" style="background:${safeColor(c.color)}30; color:${safeColor(c.color)}; border-color:transparent">${escapeHtml(c.label)}</span>`)(getInvestClass(i.investClass) || { color: '#7A5AF8', label: 'Investimento' })
                   : `<span class="badge" style="background:${catColor}30; color:${catColor}; border-color:transparent">${escapeHtml(i.cat)}</span>`}</td>
                 <td>${detailBadge}</td>
                 <td><span class="method-tag">${escapeHtml(label)}</span></td>
@@ -10557,7 +10794,7 @@ function renderFutureCommitment() {
       <td>${escapeHtml(i.desc)}</td>
       <td class="table-num">${i.remaining}×</td>
       <td class="table-num">${fmt(i.value)}</td>
-      <td class="muted" style="font-size:0.8rem">até ${i.endLabel}</td>
+      <td class="muted" style="font-size:0.8rem">até ${escapeHtml(i.endLabel)}</td>
       <td class="table-num" style="font-weight:600; color:var(--neg)">${fmt(i.remValue)}</td>
     </tr>`).join('');
   panel.innerHTML = `
@@ -10998,7 +11235,7 @@ function renderMoneyPanel(cur) {
   const patr = conta + cart.total;
   const classes = getInvestClasses();
   const temReserva = classes.some(c => c.reserve);
-  const corReserva = (classes.find(c => c.reserve) || {}).color || '#12B76A';
+  const corReserva = safeColor((classes.find(c => c.reserve) || {}).color, '#12B76A');
 
   // Barra segmentada (valores negativos não entram na proporção)
   const pos = v => Math.max(0, v);
@@ -11092,7 +11329,7 @@ function renderRecentActivity() {
       const c = getInvestClass(i.investClass) || { color: '#7A5AF8', label: 'Investimento' };
       return `
     <div class="recent-item">
-      <span class="recent-dot" style="background:${c.color}"></span>
+      <span class="recent-dot" style="background:${safeColor(c.color)}"></span>
       <div class="recent-main">
         <div class="recent-desc">${escapeHtml(i.desc)}</div>
         <div class="recent-meta">${relativeDay(i.date)} · investido em ${escapeHtml(c.label)}</div>
