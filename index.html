@@ -2635,11 +2635,12 @@
 
       <div class="panel">
         <h2>Nova Entrada (Renda)</h2>
-        <div class="input-group"><label>Origem</label><input id="inDesc" placeholder="Ex: Bolsa, Freelance, Reembolso"></div>
+        <div class="input-group"><label>Data</label><input id="inDate" type="date"></div>
+        <div class="input-group"><label>Origem</label><input id="inDesc" placeholder="Ex: Salário, Freela, Reembolso"></div>
         <div class="input-group"><label>Valor (R$)</label><input id="inVal" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off"></div>
         <div class="checkbox-group">
           <input type="checkbox" id="inRecurring" onchange="toggleIncomeAdvanced()">
-          <label for="inRecurring">Renda recorrente (aplica a todos os meses a partir deste)</label>
+          <label for="inRecurring">Recebo todo mês (repete a partir desta data)</label>
         </div>
         <details class="advanced-options" id="incomeAdvanced" style="display:none">
           <summary>Opções avançadas</summary>
@@ -4532,24 +4533,40 @@ function fillMethodPanels() {
 
 // ── Auto-categorização por descrição ────────────────────────────────────
 // Casa palavras-chave da descrição com categorias conhecidas.
-const AUTO_CAT_RULES = {
-  'IFood/restaurante': /ifood|rapp|99food|uber\s*eats|burger|mc[\s-]?donald|sushi|pizza|restaur|hamb|açai/i,
-  'Transporte': /uber|99|cab|gasolin|combust|álcool|alcool|estaciona|metr[oô]|[oô]nibus/i,
-  'Mercado': /mercado|mercadinho|supermerc|atacad|carrefou|extra|pão de açúcar|hortifr|frut/i,
-  'Contas': /aluguel|condom[íi]n|luz|cemig|copel|enel|água|sabesp|net flix|netflix|spotify|youtube|amazon prime|consórcio|internet/i,
-  'Saúde': /farmác|drogar|medic|consulta|hospital|exame|laborat|dentista|psic[oó]l/i,
-  'Educação': /curso|udemy|coursera|livro|escola|faculd|universi|inglês|alura/i,
-  'Lazer': /cinema|show|teatro|netflix|spotify|game|steam|playstation|xbox/i,
-  'Beleza': /barb|cabel|salão|esmalt|cosmét|maquiag/i,
-  'Eletrônicos': /pichau|kabum|amazon|magazine|americana|monitor|teclado|mouse|cabo|fone/i,
-  'Desenvolvimento': /claude|chatgpt|github|aws|google cloud|domain|hostgator|vercel|netlify|cursor/i,
-};
+// v67: cada regra lista categorias candidatas; vale a primeira que a pessoa
+// tem. Antes as regras apontavam para nomes que não existem nas categorias
+// padrão ("Transporte" em vez de "Uber/transporte") e Netflix caía em "Contas".
+const AUTO_CAT_RULES = [
+  [/\bifood\b|rappi|99\s?food|uber\s*eats|burger|mc\s?donald|\bbk\b|sushi|pizza|restaur|lanch|hamb[uú]r|a[cç]a[ií]|padaria|cafeteria|starbucks/i, ['IFood/restaurante', 'Restaurante', 'Alimentação']],
+  [/gasolin|combust|etanol|\bposto\b|shell|ipiranga|petrobr/i, ['Gasolina', 'Uber/transporte', 'Transporte']],
+  [/\buber\b|\b99\b|\b99pop\b|t[aá]xi|cabify|estaciona|ped[aá]gio|metr[oô]|[oô]nibus|\btrem\b|bilhete [uú]nico/i, ['Uber/transporte', 'Transporte']],
+  [/mercado|mercadinho|supermerc|atacad|assa[ií]|carrefour|\bextra\b|p[aã]o de a[cç][uú]car|hortifr|feira|a[cç]ougue/i, ['Mercado', 'Alimentação']],
+  [/netflix|spotify|youtube premium|amazon prime|prime video|disney|\bhbo\b|\bmax\b|globoplay|deezer|apple music|icloud|paramount|crunchyroll|assinatura/i, ['Assinaturas', 'Lazer', 'Contas']],
+  [/aluguel|condom[ií]n|\biptu\b/i, ['Aluguel', 'Moradia', 'Contas']],
+  [/\bluz\b|energia|\benel\b|cemig|copel|light|[aá]gua|sabesp|internet|\bvivo\b|\bclaro\b|\btim\b|\boi\b|\bg[aá]s\b|telefone|celular pr[eé]|cons[oó]rcio/i, ['Contas']],
+  [/farm[aá]c|drogar|drogasil|rem[eé]dio|medic|consulta|hospital|exame|laborat|dentista|psic[oó]l|plano de sa[uú]de|academia|smart ?fit/i, ['Saúde']],
+  [/curso|udemy|coursera|livro|escola|faculd|universi|ingl[eê]s|alura|mensalidade/i, ['Educação']],
+  [/\bbar\b|boteco|cerveja|chopp|balada|cinema|\bshow\b|teatro|ingresso|\bgame|steam|playstation|xbox|nintendo|viagem|hotel|airbnb/i, ['Lazer']],
+  [/barb|cabel|sal[aã]o|esmalt|manicure|cosm[eé]t|maquiag|perfum/i, ['Beleza']],
+  [/renner|riachuelo|\bc&a\b|\bcea\b|zara|shein|hering|roupa|camis|cal[cç]a|vestido|t[eê]nis|sapato|nike|adidas/i, ['Roupa']],
+  [/pichau|kabum|magazine|magalu|americanas|mercado livre|monitor|teclado|mouse|\bcabo\b|fone|celular|notebook|carregador/i, ['Eletrônicos']],
+  [/claude|chatgpt|openai|github|\baws\b|google cloud|dom[ií]nio|hostgator|vercel|netlify|cursor/i, ['Desenvolvimento']],
+  [/presente|anivers[aá]rio/i, ['Presentes']],
+];
 
 function autoCategorize(desc) {
   if (!desc) return null;
-  for (const [cat, regex] of Object.entries(AUTO_CAT_RULES)) {
-    if (regex.test(desc)) return cat;
+  const cats = (typeof db !== 'undefined' && db && Array.isArray(db.categories)) ? db.categories : [];
+  const norm = t => String(t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const achar = nome => cats.find(c => norm(c.name) === norm(nome));
+  for (const [regex, candidatas] of AUTO_CAT_RULES) {
+    if (!regex.test(desc)) continue;
+    for (const nome of candidatas) { const c = achar(nome); if (c) return c.name; }
   }
+  // Nome de uma categoria da própria pessoa dentro da descrição ("ração pet" → Pet)
+  const d = norm(desc);
+  const porNome = cats.find(c => norm(c.name).length >= 3 && new RegExp(`\\b${norm(c.name).replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}\\b`).test(d));
+  if (porNome) return porNome.name;
   // Fallback: last-used pattern (já categorizado antes pelo usuário)
   if (typeof db !== 'undefined' && db) {
     const allItems = [];
@@ -5268,7 +5285,11 @@ window.toggleTheme = toggleTheme;
 // ── [2] Pré-preencher data com hoje + manter atualizada ────────────────
 function prefillDates() {
   const outDate = document.getElementById('outDate');
-  if (outDate && !outDate.value) outDate.value = (typeof currentUser !== 'undefined' && currentUser) ? defaultDateForView() : todayISO();
+  const logado = typeof currentUser !== 'undefined' && currentUser;
+  ['outDate', 'inDate'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && !el.value) el.value = logado ? defaultDateForView() : todayISO();
+  });
 }
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', prefillDates);
@@ -5316,46 +5337,106 @@ document.addEventListener('click', e => {
 <div id="quickAddOverlay" onclick="if(event.target===this) closeQuickAdd()" role="dialog" aria-labelledby="qaTitle">
   <div id="quickAddCard">
     <h3 id="qaTitle">
-      <span>➕ Adicionar rápido</span>
+      <span>Adicionar</span>
       <button class="qa-close" onclick="closeQuickAdd()" aria-label="Fechar">×</button>
     </h3>
-    <input id="qaDesc" type="text" placeholder="Descrição (ex: Almoço no centro)" autocomplete="off">
-    <div id="qaSuggestions" style="margin-bottom: 8px; min-height: 26px"></div>
-    <div class="qa-row">
-      <input id="qaValue" type="text" inputmode="decimal" placeholder="Valor (R$)" autocomplete="off">
-      <select id="qaMethod" onchange="syncQaInvest()"><!-- formas do usuário: rebuildMethodDropdowns() --></select>
+    <!-- v67: o "+" registra gasto, entrada ou dinheiro guardado -->
+    <div class="qa-tabs" role="tablist" aria-label="Tipo de lançamento">
+      <button type="button" role="tab" data-qa="gasto" onclick="qaSetMode('gasto')">Gasto</button>
+      <button type="button" role="tab" data-qa="entrada" onclick="qaSetMode('entrada')">Entrada</button>
+      <button type="button" role="tab" data-qa="guardar" onclick="qaSetMode('guardar')">Guardar dinheiro</button>
     </div>
-    <input id="qaDate" type="date" aria-label="Data do lançamento">
-    <select id="qaInvestClass" aria-label="Onde você aplicou" style="display:none"></select>
-    <select id="qaCat"></select>
-    <div id="qaInvestHint" class="qa-hint" style="display:none;margin:-4px 0 8px">Aporte: sai da conta e entra no seu patrimônio — não conta como gasto.</div>
-    <button class="qa-submit" onclick="submitQuickAdd()">Salvar (Enter)</button>
-    <div class="qa-hint">⏎ salva · Esc fecha · Tab navega</div>
+    <input id="qaDesc" type="text" placeholder="O que você comprou? (ex: Almoço, Uber)" autocomplete="off" aria-label="Descrição">
+    <div id="qaSuggestions" class="qa-sugg" aria-live="polite"></div>
+    <div class="qa-row">
+      <input id="qaValue" type="text" inputmode="decimal" placeholder="Valor (R$)" autocomplete="off" aria-label="Valor">
+      <input id="qaDate" type="date" aria-label="Data">
+    </div>
+    <div class="qa-row" data-only="gasto">
+      <select id="qaMethod" aria-label="Forma de pagamento"><!-- formas do usuário: rebuildMethodDropdowns() --></select>
+      <select id="qaCat" aria-label="Categoria"></select>
+    </div>
+    <label class="qa-check" data-only="entrada">
+      <input type="checkbox" id="qaRecorrente">
+      <span>Recebo todo mês <small>salário, aposentadoria, aluguel recebido… — repete a partir desta data</small></span>
+    </label>
+    <div data-only="guardar">
+      <select id="qaInvestClass" aria-label="Onde está guardado"></select>
+      <div class="qa-origem" role="radiogroup" aria-label="De onde veio o dinheiro">
+        <label><input type="radio" name="qaOrigem" value="conta" checked>
+          <span><strong>Saiu da minha conta agora</strong><small>É um aporte: sai da conta e entra no seu patrimônio. Não conta como gasto.</small></span></label>
+        <label><input type="radio" name="qaOrigem" value="guardado">
+          <span><strong>Já estava guardado antes</strong><small>Entra no patrimônio como saldo inicial. Não mexe na conta nem nas contas deste mês.</small></span></label>
+      </div>
+    </div>
+    <button class="qa-submit" id="qaSubmit" onclick="submitQuickAdd()">Salvar gasto</button>
+    <div class="qa-hint qa-kbd">⏎ salva · Esc fecha</div>
   </div>
 </div>
 
 
 <script>
 // ── [1] Quick Add ──────────────────────────────────────────────────────
-function openQuickAdd() {
+// v67: três modos. Gasto (categoria sugerida já aplicada, nunca "Mercado" por
+// padrão), Entrada (salário etc., com opção de repetir todo mês) e Guardar
+// dinheiro (aporte que sai da conta OU dinheiro que já estava guardado, que
+// vira saldo inicial da classe — antes a "caixinha" antiga contava como saída
+// do mês e derrubava o "Livre para gastar").
+let _qaMode = 'gasto';
+const QA_TEXTOS = {
+  gasto:   { desc: 'O que você comprou? (ex: Almoço, Uber)', botao: 'Salvar gasto' },
+  entrada: { desc: 'De onde veio? (ex: Salário, Freela, Pix recebido)', botao: 'Salvar entrada' },
+  guardar: { desc: 'Descrição (ex: Caixinha, Tesouro Selic)', botao: 'Guardar' },
+};
+
+function qaSetMode(mode) {
+  _qaMode = QA_TEXTOS[mode] ? mode : 'gasto';
+  document.querySelectorAll('#quickAddCard .qa-tabs [data-qa]').forEach(b => {
+    const on = b.dataset.qa === _qaMode;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  document.querySelectorAll('#quickAddCard [data-only]').forEach(el => {
+    el.style.display = el.dataset.only === _qaMode ? '' : 'none';
+  });
+  const t = QA_TEXTOS[_qaMode];
+  document.getElementById('qaDesc').placeholder = t.desc;
+  document.getElementById('qaSubmit').textContent = t.botao;
+  updateQASuggestions(document.getElementById('qaDesc').value);
+}
+window.qaSetMode = qaSetMode;
+
+function openQuickAdd(mode) {
   if (typeof currentUser === 'undefined' || !currentUser) return;
   const overlay = document.getElementById('quickAddOverlay');
   if (!overlay) return;
 
   const qaDate = document.getElementById('qaDate');
   if (qaDate) qaDate.value = defaultDateForView();
-  // Popular categorias
+  // Categorias: começa SEM categoria — a sugerida entra sozinha pelo nome
   const catSel = document.getElementById('qaCat');
-  catSel.innerHTML = (db.categories || []).map(c =>
+  catSel.innerHTML = '<option value="">Categoria…</option>' + (db.categories || []).map(c =>
     `<option value="${escapeHtml(c.name)}" data-color="${safeColor(c.color)}">${escapeHtml(c.name)}</option>`
   ).join('');
+  delete catSel.dataset.userSet;
+  catSel.onchange = () => { catSel.dataset.userSet = '1'; };
+  // Formas de pagamento de gasto (aporte agora é "Guardar dinheiro")
+  const metSel = document.getElementById('qaMethod');
+  const anterior = metSel.value;
+  const formas = getMethods().filter(m => m.kind !== 'invest');
+  metSel.innerHTML = formas.map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.label)}</option>`).join('');
+  if (formas.some(m => m.id === anterior)) metSel.value = anterior;
+  if (typeof rebuildInvestClassDropdowns === 'function') rebuildInvestClassDropdowns();
+  const origemConta = document.querySelector('input[name="qaOrigem"][value="conta"]');
+  if (origemConta) origemConta.checked = true;
+  const rec = document.getElementById('qaRecorrente');
+  if (rec) rec.checked = false;
 
   // Limpar campos
   document.getElementById('qaDesc').value = '';
   document.getElementById('qaValue').value = '';
   document.getElementById('qaSuggestions').innerHTML = '';
-  if (typeof rebuildInvestClassDropdowns === 'function') rebuildInvestClassDropdowns();
-  syncQaInvest();
+  qaSetMode(typeof mode === 'string' ? mode : 'gasto');
 
   overlay.classList.add('show');
   setTimeout(() => document.getElementById('qaDesc').focus(), 100);
@@ -5364,8 +5445,8 @@ function openQuickAdd() {
   const descEl = document.getElementById('qaDesc');
   descEl.oninput = () => updateQASuggestions(descEl.value);
 
-  // Enter salva
-  ['qaDesc', 'qaValue', 'qaCat', 'qaMethod'].forEach(id => {
+  // Enter salva, Esc fecha
+  ['qaDesc', 'qaValue', 'qaCat', 'qaMethod', 'qaDate', 'qaInvestClass'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.onkeydown = (e) => {
       if (e.key === 'Enter') { e.preventDefault(); submitQuickAdd(); }
@@ -5378,16 +5459,22 @@ function closeQuickAdd() {
   document.getElementById('quickAddOverlay')?.classList.remove('show');
 }
 
+// Gasto: aplica a categoria sugerida pelo nome (se a pessoa não escolheu uma).
 function updateQASuggestions(desc) {
   const container = document.getElementById('qaSuggestions');
   if (!container) return;
-  if (!desc || desc.length < 2) { container.innerHTML = ''; return; }
-
-  // Auto-categorizar
-  const suggCat = (typeof autoCategorize === 'function') ? autoCategorize(desc) : null;
-  if (suggCat && db.categories.some(c => c.name === suggCat)) {
-    const color = db.categories.find(c => c.name === suggCat)?.color || '#94a3b8';
-    container.innerHTML = `<span class="qa-suggestion-chip" onclick="applyQACat(${jsArg(suggCat)})" style="border-left:3px solid ${safeColor(color)}">💡 ${escapeHtml(suggCat)}</span>`;
+  const sel = document.getElementById('qaCat');
+  if (_qaMode !== 'gasto' || !desc || desc.length < 2) {
+    container.innerHTML = '';
+    if (sel && !sel.dataset.userSet) sel.value = '';
+    return;
+  }
+  const sug = (typeof autoCategorize === 'function') ? autoCategorize(desc) : null;
+  const ok = sug && db.categories.some(c => c.name === sug);
+  if (sel && !sel.dataset.userSet) sel.value = ok ? sug : '';
+  if (ok && sel && sel.value === sug) {
+    const color = db.categories.find(c => c.name === sug)?.color;
+    container.innerHTML = `<span class="qa-suggestion-chip" style="border-left:3px solid ${safeColor(color)}">💡 Categoria sugerida: <strong>${escapeHtml(sug)}</strong></span>`;
   } else {
     container.innerHTML = '';
   }
@@ -5395,55 +5482,80 @@ function updateQASuggestions(desc) {
 
 function applyQACat(cat) {
   const sel = document.getElementById('qaCat');
-  if (sel) sel.value = cat;
+  if (sel) { sel.value = cat; sel.dataset.userSet = '1'; }
   document.getElementById('qaValue')?.focus();
+}
+
+// Forma de pagamento do tipo investimento para os aportes (cria se não houver).
+function formaInvestimento() {
+  let m = getMethods().find(x => x.kind === 'invest');
+  if (!m) {
+    let id = 'invest', i = 2;
+    while (getMethods().some(x => x.id === id)) id = `invest-${i++}`;
+    m = { id, label: 'Investimento', color: '#E5A13A', kind: 'invest' };
+    db.paymentMethods.push(m);
+    if (typeof rebuildMethodDropdowns === 'function') rebuildMethodDropdowns();
+  }
+  return m.id;
 }
 
 async function submitQuickAdd() {
   const desc = document.getElementById('qaDesc').value.trim();
   const value = readMoney('qaValue');
-  const cat = document.getElementById('qaCat').value;
-  const method = document.getElementById('qaMethod').value;
+  if (!desc) { document.getElementById('qaDesc').focus(); return toast('Escreva uma descrição', 'error'); }
+  if (!value || value <= 0) { document.getElementById('qaValue').focus(); return toast('Valor inválido — ex.: 45,90', 'error'); }
 
-  if (!desc) return toast('Descrição obrigatória', 'error');
-  if (!value || value <= 0) return toast('Valor inválido', 'error');
-  if (!cat) return toast('Categoria obrigatória', 'error');
-
-  // Evento avulso no mês da data escolhida (padrão: hoje / mês aberto)
   const date = isoDay(document.getElementById('qaDate')?.value) || defaultDateForView();
   const ref = refFromDate(date);
-  ensureYear(ref.y);
+  const outroMes = (ref.y !== currentYear || ref.m !== currentMonth) ? ` · em ${monthsFull[ref.m]}/${ref.y}` : '';
   const key = getKey(ref.y, ref.m);
-  if (!db.events[key]) db.events[key] = [];
-  const item = {
-    id: Date.now(), desc, value, cat, method,
-    type: 'eventual',
-    date
-  };
-  // Aporte: guarda onde foi aplicado (não conta como gasto)
-  if (methodKind(method) === 'invest') item.investClass = document.getElementById('qaInvestClass').value;
-  db.events[key].push(item);
+  let msg;
+
+  if (_qaMode === 'entrada') {
+    ensureYear(ref.y);
+    if (document.getElementById('qaRecorrente')?.checked) {
+      db.recurringIncome.push({ id: Date.now(), desc, value, startYear: ref.y, startMonth: ref.m, date });
+      msg = `Entrada mensal: ${desc} — ${fmt(value)} a partir de ${monthsFull[ref.m]}/${ref.y}`;
+    } else {
+      if (!db.income[key]) db.income[key] = [];
+      db.income[key].push({ id: Date.now(), desc, value, date });
+      msg = `Entrada salva: ${desc} — ${fmt(value)}${outroMes}`;
+    }
+  } else if (_qaMode === 'guardar') {
+    const classe = getInvestClass(document.getElementById('qaInvestClass')?.value);
+    if (!classe) return toast('Crie uma classe de investimento em Investimentos', 'error');
+    const origem = document.querySelector('input[name="qaOrigem"]:checked')?.value || 'conta';
+    if (origem === 'guardado') {
+      classe.opening = safeNum(classe.opening, 0) + value;
+      msg = `${fmt(value)} somados ao que já estava em ${classe.label} — a conta não muda`;
+    } else {
+      ensureYear(ref.y);
+      if (!db.events[key]) db.events[key] = [];
+      db.events[key].push({ id: Date.now(), desc, value, cat: '', method: formaInvestimento(), type: 'eventual', date, investClass: classe.id });
+      msg = `Guardado em ${classe.label}: ${fmt(value)}${outroMes} — saiu da conta, não é gasto`;
+    }
+  } else {
+    const cat = document.getElementById('qaCat').value;
+    const method = document.getElementById('qaMethod').value;
+    if (!cat) { document.getElementById('qaCat').focus(); return toast('Escolha a categoria', 'error'); }
+    ensureYear(ref.y);
+    if (!db.events[key]) db.events[key] = [];
+    db.events[key].push({ id: Date.now(), desc, value, cat, method, type: 'eventual', date });
+    msg = `Salvo: ${desc} — ${fmt(value)}${outroMes}`;
+  }
   saveDB();
 
   closeQuickAdd();
   if (typeof renderGastos === 'function') renderGastos();
   if (typeof fillIncomePanels === 'function') fillIncomePanels();
+  if (_qaMode === 'guardar' && document.getElementById('investimentos')?.classList.contains('active') && typeof renderInvest === 'function') renderInvest();
   if (document.getElementById('dashboard')?.classList.contains('active')) renderDashboard();
-  const outroMes = (ref.y !== currentYear || ref.m !== currentMonth) ? ` · lançado em ${monthsFull[ref.m]}/${ref.y}` : '';
-  toast(`Salvo: ${desc} — ${fmt(value)}${outroMes}`, 'success', 3500);
+  toast(msg, 'success', 3500);
 }
 
-// Forma de pagamento do tipo investimento → pergunta ONDE aplicou (em vez da
-// categoria de gasto, que não se aplica a um aporte).
+// Compatibilidade: chamadas antigas (rebuild de formas) só reaplicam o modo.
 function syncQaInvest() {
-  const m = document.getElementById('qaMethod');
-  const aporte = !!m && typeof methodKind === 'function' && methodKind(m.value) === 'invest';
-  const cls = document.getElementById('qaInvestClass');
-  const cat = document.getElementById('qaCat');
-  const hint = document.getElementById('qaInvestHint');
-  if (cls) cls.style.display = aporte ? '' : 'none';
-  if (cat) cat.style.display = aporte ? 'none' : '';
-  if (hint) hint.style.display = aporte ? '' : 'none';
+  if (document.getElementById('quickAddOverlay')?.classList.contains('show')) qaSetMode(_qaMode);
 }
 window.syncQaInvest = syncQaInvest;
 
@@ -5987,7 +6099,7 @@ function setupRecurringPreview() {
     if (el) el.addEventListener('input', updatePreview);
   });
   // Data escolhida pela pessoa não é sobrescrita quando ela troca o mês na tela
-  document.getElementById('outDate')?.addEventListener('input', e => { e.target.dataset.userSet = '1'; });
+  ['outDate', 'inDate'].forEach(id => document.getElementById(id)?.addEventListener('input', e => { e.target.dataset.userSet = '1'; }));
 }
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', setupRecurringPreview);
@@ -6016,7 +6128,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v66';
+const APP_VERSION = 'v67';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -8935,7 +9047,7 @@ function saveOut() {
   const competenceRaw = (document.getElementById('outCompetenceDate')?.value || '').trim();
   const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
 
-  const base = { id, desc, cat, value, method, date };
+  const base = { id, desc, cat: methodKind(method) === 'invest' ? '' : cat, value, method, date };
   if (tags.length) base.tags = tags;
   if (competenceRaw) { const [cy, cm] = competenceRaw.split('-').map(Number); base.competenceYear = cy; base.competenceMonth = cm - 1; }
   if (methodKind(method) === 'invest') base.investClass = document.getElementById('outInvestType').value;
@@ -9013,17 +9125,21 @@ function saveIn() {
   if (!desc)  return toast('Origem obrigatória', 'error');
   if (!value || value <= 0) return toast('Valor inválido', 'error');
 
+  // v67: a entrada tem data (o dia em que o dinheiro cai) e vai para o mês dela
+  const date = isoDay(document.getElementById('inDate')?.value) || defaultDateForView();
+  const ref = refFromDate(date);
+  ensureYear(ref.y);
   if (recurring) {
     const startRaw = (document.getElementById('inStartDate')?.value || '').trim();
     const endRaw   = (document.getElementById('inEndDate')?.value   || '').trim();
     const note     = (document.getElementById('inNote')?.value      || '').trim();
 
-    let startYear = currentYear, startMonth = currentMonth;
+    let startYear = ref.y, startMonth = ref.m;
     if (startRaw) {
       const [sy, sm] = startRaw.split('-').map(Number);
       startYear = sy; startMonth = sm - 1;
     }
-    const entry = { id: Date.now(), desc, value, startYear, startMonth };
+    const entry = { id: Date.now(), desc, value, startYear, startMonth, date };
     if (endRaw) {
       const [ey, em] = endRaw.split('-').map(Number);
       entry.endYear = ey; entry.endMonth = em - 1;
@@ -9031,9 +9147,9 @@ function saveIn() {
     if (note) entry.note = note;
     db.recurringIncome.push(entry);
   } else {
-    const key = getKey(currentYear, currentMonth);
+    const key = getKey(ref.y, ref.m);
     if (!db.income[key]) db.income[key] = [];
-    db.income[key].push({ id: Date.now(), desc, value });
+    db.income[key].push({ id: Date.now(), desc, value, date });
   }
 
   saveDB();
@@ -9049,7 +9165,9 @@ function saveIn() {
   renderRecurringIncome();
   if (typeof fillIncomePanels === 'function') fillIncomePanels();
   if (document.getElementById('dashboard').classList.contains('active')) renderDashboard();
-  toast(recurring ? 'Renda recorrente cadastrada' : `Entrada salva em ${monthsFull[currentMonth]}`, 'success');
+  const inDateEl = document.getElementById('inDate');
+  if (inDateEl) { inDateEl.value = defaultDateForView(); delete inDateEl.dataset.userSet; }
+  toast(recurring ? `Entrada mensal cadastrada a partir de ${monthsFull[ref.m]}/${ref.y}` : `Entrada salva em ${monthsFull[ref.m]}/${ref.y}`, 'success');
 }
 
 function renderRecurringIncome() {
@@ -12161,6 +12279,31 @@ function renderRecentActivity() {
   .ci-due { display: block; font-size: .7rem; font-weight: 500; color: var(--text-muted); margin-top: 2px; text-transform: none; letter-spacing: 0; }
   .money-sub .link-btn { font-size: inherit; padding: 0; text-decoration: underline; text-underline-offset: 2px; }
   .hh-context a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+  /* v67 · "+" com três modos */
+  #quickAddCard .qa-tabs {
+    display: grid; grid-template-columns: 1fr 1fr 1.35fr; gap: 4px; padding: 4px; margin-bottom: 12px;
+    background: var(--bg-soft); border-radius: 12px;
+  }
+  #quickAddCard .qa-tabs button {
+    border: 0; background: transparent; color: var(--text-muted); font: inherit; font-size: .88rem; font-weight: 600;
+    padding: 9px 6px; border-radius: 9px; cursor: pointer; min-height: 40px;
+  }
+  #quickAddCard .qa-tabs button.active { background: var(--surface); color: var(--primary); box-shadow: var(--shadow-xs); }
+  #quickAddCard .qa-tabs button:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+  #quickAddCard .qa-sugg { min-height: 22px; margin: -4px 0 8px; }
+  #quickAddCard .qa-suggestion-chip { cursor: default; }
+  #quickAddCard .qa-suggestion-chip:hover { background: var(--surface-warm); color: var(--text-muted); border-color: var(--border-soft); }
+  #quickAddCard .qa-check { display: flex; gap: 10px; align-items: flex-start; font-size: .92rem; margin: 2px 0 12px; cursor: pointer; }
+  #quickAddCard .qa-check input, #quickAddCard .qa-origem input { width: auto; margin: 3px 0 0; accent-color: var(--primary); }
+  #quickAddCard .qa-check small, #quickAddCard .qa-origem small { display: block; color: var(--text-muted); font-size: .78rem; font-weight: 400; margin-top: 2px; }
+  #quickAddCard .qa-origem { display: grid; gap: 8px; margin-bottom: 10px; }
+  #quickAddCard .qa-origem label {
+    display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; cursor: pointer;
+    border: 1px solid var(--border); border-radius: 10px; font-size: .9rem;
+  }
+  #quickAddCard .qa-origem label:has(input:checked) { border-color: var(--primary); background: var(--primary-tint); }
+  /* Atalhos de teclado não fazem sentido no celular */
+  @media (hover: none) { #quickAddCard .qa-kbd { display: none; } }
   @media (max-width: 768px) {
     /* Assistente em tela cheia ACIMA da barra inferior e dos botões do topo:
        antes o campo de digitação ficava atrás da barra (tocar abria Gastos). */
@@ -12182,8 +12325,10 @@ function renderRecentActivity() {
   window.renderAll = function () {
     const r = orig.apply(this, arguments);
     try {
-      const el = document.getElementById('outDate');
-      if (el && !el.dataset.userSet && typeof currentUser !== 'undefined' && currentUser) el.value = defaultDateForView();
+      ['outDate', 'inDate'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el && !el.dataset.userSet && typeof currentUser !== 'undefined' && currentUser) el.value = defaultDateForView();
+      });
     } catch (e) { /* formulário ausente */ }
     return r;
   };
