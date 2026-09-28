@@ -2816,7 +2816,7 @@
     <div class="panel">
       <h2>Dinheiro em conta</h2>
       <p class="muted" style="font-size: 0.88rem; margin-bottom: 14px;">
-        Diga quanto você tem em conta hoje para calibrar a tela Início. A partir daqui o app soma o que sobra e desconta o que falta a cada mês — o saldo nunca zera na virada.
+        Diga quanto você tem em conta hoje, como aparece no app do banco. Daqui pra frente o app soma as entradas e desconta os gastos à vista, os aportes e as faturas do cartão no dia do vencimento — o saldo nunca zera na virada do mês.
       </p>
       <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
         <input id="contaHoje" type="text" inputmode="decimal" placeholder="1500,00" style="max-width: 200px;">
@@ -4654,7 +4654,7 @@ function fillInvoicePanels() {
     return `
       <div class="card-invoice">
         <div class="card-invoice-header">
-          <span class="card-invoice-title">Fatura ${escapeHtml(label)} — ${monthsFull[currentMonth]}</span>
+          <span class="card-invoice-title">Fatura ${escapeHtml(label)} — ${monthsFull[currentMonth]}<small class="ci-due">sai da conta em ${String(diaVencimento(m)).padStart(2, '0')}/${String((currentMonth + 1) % 12 + 1).padStart(2, '0')}</small></span>
           <span class="card-invoice-total">${fmt(total)}</span>
         </div>
         <div class="card-invoice-items">${rows}</div>
@@ -4698,7 +4698,8 @@ function decorateKPIsWithComparison() {
 
   // Calcular variações com limite sensato (evita "+10842%" quando base é ~0)
   function variation(cur, ref) {
-    if (!ref || Math.abs(ref) < 50) return null; // ignora bases < R$ 50 — gera %s irreais
+    // v66: base negativa (ex.: mês de resgate) dava "↑ 280%" sem sentido
+    if (!ref || ref < 50 || cur < 0) return null; // ignora bases < R$ 50 — gera %s irreais
     const pct = ((cur - ref) / Math.abs(ref)) * 100;
     if (Math.abs(pct) > 999) return null; // cap em 999% — acima disso, esconde
     return pct;
@@ -4727,7 +4728,7 @@ function decorateKPIsWithComparison() {
     if (old) old.remove();
 
     const arrow = pct > 0 ? '↑' : pct < 0 ? '↓' : '→';
-    const color = isGood ? 'var(--pos)' : 'var(--neg)';
+    const color = Math.round(pct) === 0 ? 'var(--text-muted)' : isGood ? 'var(--pos)' : 'var(--neg)';
     const badge = document.createElement('div');
     badge.className = 'kpi-comp';
     badge.style.cssText = `font-size:0.7rem; margin-top:4px; color:${color}; font-weight:600`;
@@ -4931,7 +4932,10 @@ function renderSmartInsights() {
 // ── Export CSV ──────────────────────────────────────────────────────────
 function exportTransactionsCSV() {
   if (!currentUser) return toast('Faça login primeiro', 'error');
-  const lines = [['Data', 'Descrição', 'Categoria', 'Tipo', 'Método', 'Valor', 'Tags', 'Observação'].join(',')];
+  // v66: ";" (o Excel em português usa vírgula como decimal), entradas incluídas,
+  // data do dia e só meses que já aconteceram — nada de projeção no arquivo.
+  const SEP = ';';
+  const lines = [['Mês', 'Data', 'Movimento', 'Descrição', 'Categoria / classe', 'Tipo', 'Forma de pagamento', 'Valor', 'Tags', 'Observação'].join(SEP)];
 
   // Célula de CSV: sempre entre aspas (vírgula no texto ou no valor "12,50" não
   // quebra colunas). Texto que começa com = + - @ ganha um ' na frente para a
@@ -4942,25 +4946,32 @@ function exportTransactionsCSV() {
     if (/^[=+\-@\t\r]/.test(t)) t = "'" + t;
     return `"${t.replace(/"/g, '""')}"`;
   };
-  const numero = v => `"${safeNum(v, 0).toFixed(2).replace('.', ',')}"`;
+  const numero = v => safeNum(v, 0).toFixed(2).replace('.', ',');
 
-  // Iterar todos os meses (gastos e aportes — aporte saiu de d.items na v61)
+  // Fixos, parcelas e rendas recorrentes: o dia da data original, no mês da linha
+  const dataBR = (it, y, m) => {
+    const s = isoDay(it.date);
+    if (!s) return '';
+    if (it.type === 'fixo' || it.type === 'parc' || it.recurring) {
+      const dd = Math.min(Number(s.slice(8, 10)) || 1, new Date(y, m + 1, 0).getDate());
+      return `${String(dd).padStart(2, '0')}/${String(m + 1).padStart(2, '0')}/${y}`;
+    }
+    return s.split('-').reverse().join('/');
+  };
+  const TIPO = { fixo: 'fixo', parc: 'parcela', eventual: 'avulso' };
   for (let year of [...db.years].sort((a, b) => a - b)) {
-    for (let m = 0; m < 12; m++) {
+    const lim = ultimoMesRealizado(year);
+    for (let m = 0; m <= lim; m++) {
       const d = getMonthData(year, m);
-      [...(d.items || []), ...(d.aportes || [])].forEach(it => {
-        const row = [
-          `${String(m+1).padStart(2,'0')}/${year}`,
-          texto(it.desc),
-          texto(it._aporte ? getInvestClass(it.investClass)?.label || 'Investimento' : it.cat),
-          texto(it._aporte ? 'aporte' : it.type),
-          texto(methodLabel(it.method || '')),
-          numero(it.value),
-          texto(Array.isArray(it.tags) ? it.tags.join('; ') : ''),
-          texto(it.note || it.detail || ''),
-        ];
-        lines.push(row.join(','));
-      });
+      const mes = `${String(m + 1).padStart(2, '0')}/${year}`;
+      (d.income || []).forEach(it => lines.push([
+        mes, dataBR(it, year, m), 'Entrada', texto(it.desc), texto(''), texto(it.recurring ? 'recorrente' : 'avulsa'),
+        texto(''), numero(it.value), texto(''), texto(it.note || '')].join(SEP)));
+      [...(d.items || []), ...(d.aportes || [])].forEach(it => lines.push([
+        mes, dataBR(it, year, m), it._aporte ? 'Aporte' : 'Gasto', texto(it.desc),
+        texto(it._aporte ? (getInvestClass(it.investClass) || {}).label || 'Investimento' : it.cat),
+        texto(TIPO[it.type] || it.type || ''), texto(methodLabel(it.method || '')), numero(it.value),
+        texto(Array.isArray(it.tags) ? it.tags.join(', ') : ''), texto(it.note || it.detail || '')].join(SEP)));
     }
   }
 
@@ -4969,7 +4980,7 @@ function exportTransactionsCSV() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `financeapp_${currentUser}_${new Date().toISOString().substring(0,10)}.csv`;
+  a.download = `financeapp_${currentUser}_${todayISO()}.csv`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -5256,9 +5267,8 @@ window.toggleTheme = toggleTheme;
 <script>
 // ── [2] Pré-preencher data com hoje + manter atualizada ────────────────
 function prefillDates() {
-  const today = new Date().toISOString().substring(0, 10);
   const outDate = document.getElementById('outDate');
-  if (outDate && !outDate.value) outDate.value = today;
+  if (outDate && !outDate.value) outDate.value = (typeof currentUser !== 'undefined' && currentUser) ? defaultDateForView() : todayISO();
 }
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', prefillDates);
@@ -5678,7 +5688,7 @@ function enhanceAnualTable() {
   // Identificar melhor/pior saldo (entre meses com dados — saldo != 0)
   const validIdx = monthly
     .map((d, i) => (d.gastos > 0 || d.entradas > 0) ? i : -1)
-    .filter(i => i !== -1);
+    .filter(i => i !== -1 && i <= ultimoMesRealizado(currentYear));   // v66: projeção não disputa melhor/pior
   // melhor/pior mês pela SOBRA: um mês em que você investiu muito não é "pior"
   const saldosValidos = validIdx.map(i => ({ i, s: monthly[i].sobra }));
   const melhor = saldosValidos.length ? saldosValidos.reduce((a, b) => b.s > a.s ? b : a) : null;
@@ -6006,7 +6016,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v65';
+const APP_VERSION = 'v66';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -6694,13 +6704,21 @@ function sanitizeData(data) {
     });
   };
   passo('formas de pagamento', () => {
-    const tipo = m => { if (!['instant', 'credit', 'invest'].includes(m.kind)) m.kind = 'instant'; return m; };
+    const tipo = m => {
+      if (!['instant', 'credit', 'invest'].includes(m.kind)) m.kind = 'instant';
+      if (m.dueDay != null) { const d = safeInt(m.dueDay); if (d !== null && d >= 1 && d <= 31) m.dueDay = d; else delete m.dueDay; }
+      return m;
+    };
     let lista = saneiaLista(Array.isArray(data.paymentMethods) ? data.paymentMethods : [], remapMetodo, tipo);
     if (!lista.length) lista = saneiaLista(seedPaymentMethods(data), remapMetodo, tipo);
     data.paymentMethods = lista;
   });
   passo('classes de investimento', () => {
-    const reserva = c => { c.reserve = !!c.reserve; return c; };
+    const reserva = c => {
+      c.reserve = !!c.reserve;
+      if (c.opening != null) { const v = safeNum(c.opening, 0); if (v > 0) c.opening = v; else delete c.opening; }
+      return c;
+    };
     let lista = saneiaLista(Array.isArray(data.investClasses) ? data.investClasses : [], remapClasse, reserva);
     if (!lista.length) lista = saneiaLista(seedInvestClasses(data), remapClasse, reserva);
     data.investClasses = lista;
@@ -6806,15 +6824,17 @@ function sanitizeData(data) {
     const s = data.saldoConfig;
     if (s == null) return;
     if (!obj(s) || typeof s.anchorKey !== 'string' || !/^\d{4}-\d{1,2}$/.test(s.anchorKey)) { data.saldoConfig = null; return; }
-    ['openingValue', 'targetValue'].forEach(f => {
+    ['openingValue', 'targetValue', 'value'].forEach(f => {
       if (f in s && !(typeof s[f] === 'number' && Number.isFinite(s[f]))) delete s[f];
     });
+    if ('anchorDate' in s && !(typeof s.anchorDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s.anchorDate))) delete s.anchorDate;
   });
 
   passo('diversos', () => {
     if (!Array.isArray(data.chatHistory)) data.chatHistory = [];
     data.chatHistory = data.chatHistory.filter(m => obj(m) && typeof m.html === 'string');
     if (!obj(data.paidStatus)) data.paidStatus = {};
+    if (data.custoVidaMensal != null) { const v = safeNum(data.custoVidaMensal, 0); data.custoVidaMensal = v > 0 ? v : null; }
     if (!Array.isArray(data.deletedIds)) data.deletedIds = [];
   });
   return data;
@@ -7407,51 +7427,135 @@ window.emptyState = function(icon, title, desc, ctaLabel, ctaOnclick) {
 };
 
 // ============== DINHEIRO EM CONTA (ponto de partida + soma pra frente) ==========
-// A conta reseta num "ponto de partida" (por padrão o mês atual, começando em
-// R$ 0) e soma SÓ dali pra frente. Meses anteriores ao ponto de partida são
-// ignorados de propósito — evita o descompasso de dados antigos incompletos.
-// Ao informar o saldo real em Configurações, o ponto de partida passa a ser o
-// mês atual com aquele valor.
+// A conta parte de um "ponto de partida" — o saldo real informado em
+// Configurações, com a DATA em que foi informado — e soma só dali pra frente.
+// Sem ponto de partida, começa em R$ 0 hoje. Meses anteriores são ignorados de
+// propósito (dados antigos incompletos causavam descompasso).
+//
+// v66 · A conta segue o CAIXA, não o mês da compra:
+//  - compra no crédito sai da conta quando a FATURA é paga — no mês seguinte,
+//    no dia de vencimento do cartão (padrão: dia 10). Antes saía no dia da
+//    compra e o valor nunca batia com o extrato do banco;
+//  - lançamentos com data até o dia do ponto de partida já estão no valor
+//    informado. Antes a âncora era o mês inteiro: quem calibrava no dia 28 e
+//    depois lançava o que já tinha acontecido no mês via a conta inflar.
+// O RESULTADO do mês (sobra = entradas − gastos) continua pelo mês da compra.
 
-// Config efetiva do ponto de partida: explícita (db.saldoConfig) ou padrão.
-// openingValue = dinheiro em conta no INÍCIO do mês-âncora (antes dos lançamentos).
+const DIA_VENCIMENTO_PADRAO = 10;
+function diaVencimento(metodoId) {
+  const m = getMethod(normalizeMethod(metodoId));
+  const d = m && Number.isInteger(m.dueDay) ? m.dueDay : DIA_VENCIMENTO_PADRAO;
+  return Math.min(31, Math.max(1, d));
+}
+
+// Compras no crédito feitas em (y, m), por forma de pagamento.
+function comprasCreditoDoMes(y, m) {
+  const por = {};
+  (getMonthData(y, m).items || []).forEach(i => {
+    if (methodKind(i.method) !== 'credit') return;
+    (por[i.method] = por[i.method] || []).push(i);
+  });
+  return por;
+}
+// Faturas PAGAS em (y, m) = compras no crédito do mês anterior.
+function faturasPagasEm(y, m) {
+  const t = y * 12 + m - 1, py = Math.floor(t / 12), pm = t % 12;
+  return Object.entries(comprasCreditoDoMes(py, pm)).map(([metodo, itens]) => ({
+    metodo, compraY: py, compraM: pm, dia: diaVencimento(metodo), itens,
+    valor: itens.reduce((a, b) => a + b.value, 0)
+  }));
+}
+
+// Movimentos da CONTA em (y, m): { valor (+ entra / − sai), dia do mês }.
+function getFluxosConta(y, m) {
+  const d = getMonthData(y, m);
+  const ultimo = new Date(y, m + 1, 0).getDate();
+  const dia = it => {
+    const s = isoDay(it && it.date);   // recorrentes e parcelas repetem no dia da data original
+    return s ? Math.min(ultimo, Number(s.slice(8, 10)) || 1) : 1;
+  };
+  const f = [];
+  (d.income || []).forEach(i => f.push({ valor: i.value, dia: dia(i) }));
+  (d.items || []).forEach(i => { if (methodKind(i.method) !== 'credit') f.push({ valor: -i.value, dia: dia(i) }); });
+  (d.aportes || []).forEach(i => f.push({ valor: -i.value, dia: dia(i) }));
+  const aba = (d.investido || 0) - (d.aportesLancados || 0);   // aba Investimentos, sem data
+  if (Math.abs(aba) >= 0.005) f.push({ valor: -aba, dia: 1 });
+  faturasPagasEm(y, m).forEach(ft => f.push({ valor: -ft.valor, dia: Math.min(ultimo, ft.dia), fatura: ft }));
+  return f;
+}
+// Variação da conta no mês inteiro (caixa).
+function saldoCaixaMes(y, m) {
+  return getFluxosConta(y, m).reduce((a, x) => a + x.valor, 0);
+}
+
+// Ponto de partida normalizado: { ay, am, dia, valor, anchorKey }.
+// dia = até que dia do mês os lançamentos já estão no valor (0 = nenhum).
 function getSaldoAnchor() {
   const cfg = db.saldoConfig;
-  if (cfg && cfg.anchorKey && typeof cfg.openingValue === 'number') return cfg;
-  // Compatibilidade com o formato antigo (targetValue = saldo no FIM da âncora).
+  if (cfg && typeof cfg.anchorDate === 'string' && typeof cfg.value === 'number') {
+    const [y, m, d] = cfg.anchorDate.split('-').map(Number);
+    return { ay: y, am: m - 1, dia: d, valor: cfg.value, anchorKey: getKey(y, m - 1) };
+  }
+  // Formatos antigos (até a v65): saldo no INÍCIO / FIM do mês-âncora.
+  if (cfg && cfg.anchorKey && typeof cfg.openingValue === 'number') {
+    const [ay, am] = cfg.anchorKey.split('-').map(Number);
+    return { ay, am, dia: 0, valor: cfg.openingValue, anchorKey: cfg.anchorKey, _legado: true };
+  }
   if (cfg && cfg.anchorKey && typeof cfg.targetValue === 'number') {
     const [ay, am] = cfg.anchorKey.split('-').map(Number);
-    return { anchorKey: cfg.anchorKey, openingValue: cfg.targetValue - getMonthData(ay, am).saldo };
+    return { ay, am, dia: 0, valor: cfg.targetValue - saldoCaixaMes(ay, am), anchorKey: cfg.anchorKey, _legado: true };
   }
-  // Padrão: mês real atual começa em R$ 0 (o saldo do próprio mês é neutralizado).
+  // Padrão: R$ 0 hoje.
   const now = new Date();
-  const ay = now.getFullYear(), am = now.getMonth();
-  return { anchorKey: getKey(ay, am), openingValue: -getMonthData(ay, am).saldo, _default: true };
+  return { ay: now.getFullYear(), am: now.getMonth(), dia: now.getDate(), valor: 0,
+           anchorKey: getKey(now.getFullYear(), now.getMonth()), _default: true };
 }
 
 // Posição de (y, m) vs. ponto de partida: <0 antes, 0 na âncora, >0 depois.
 function saldoAnchorCmp(y, m) {
-  const [ay, am] = getSaldoAnchor().anchorKey.split('-').map(Number);
-  return (y - ay) * 12 + (m - am);
+  const a = getSaldoAnchor();
+  return (y - a.ay) * 12 + (m - a.am);
 }
 
-// Soma dos saldos mensais de (ay, am) até (y, m), ambos inclusive.
+// Soma da variação de caixa de (ay, am) até (y, m), ambos inclusive.
 function sumSaldoRange(ay, am, y, m) {
-  let sum = 0, yy = ay, mm = am, guard = 0;
-  while ((yy < y || (yy === y && mm <= m)) && guard++ < 1200) {
-    sum += getMonthData(yy, mm).saldo;
-    if (++mm > 11) { mm = 0; yy++; }
-  }
+  let sum = 0;
+  for (let t = ay * 12 + am, fim = y * 12 + m, g = 0; t <= fim && g++ < 1200; t++) sum += saldoCaixaMes(Math.floor(t / 12), t % 12);
   return sum;
 }
 
-// "Dinheiro em conta" ao fim de (y, m). Antes do ponto de partida devolve o
-// próprio ponto de partida (o passado é ignorado); dali pra frente acumula.
-function getSaldoAcumulado(y, m) {
-  const cfg = getSaldoAnchor();
-  const [ay, am] = cfg.anchorKey.split('-').map(Number);
-  if ((y - ay) * 12 + (m - am) < 0) return cfg.openingValue;
-  return cfg.openingValue + sumSaldoRange(ay, am, y, m);
+// "Dinheiro em conta" ao FIM de (y, m) — ou até o dia `ateDia` desse mês.
+// Antes do ponto de partida devolve o próprio ponto de partida.
+function getSaldoAcumulado(y, m, ateDia) {
+  const a = getSaldoAnchor();
+  const ini = a.ay * 12 + a.am, alvo = y * 12 + m;
+  if (alvo < ini) return a.valor;
+  let total = a.valor;
+  for (let t = ini; t <= alvo && t - ini < 1200; t++) {
+    getFluxosConta(Math.floor(t / 12), t % 12).forEach(f => {
+      if (t === ini && f.dia <= a.dia) return;                     // já está no valor informado
+      if (t === alvo && ateDia != null && f.dia > ateDia) return;  // ainda vai acontecer
+      total += f.valor;
+    });
+  }
+  return total;
+}
+// Valor mostrado na tela: HOJE no mês atual; fim do mês nos outros.
+function ehMesAtual(y, m) {
+  const now = new Date();
+  return y === now.getFullYear() && m === now.getMonth();
+}
+function getContaExibida(y, m) {
+  return ehMesAtual(y, m) ? getSaldoAcumulado(y, m, new Date().getDate()) : getSaldoAcumulado(y, m);
+}
+
+// Último mês JÁ VIVIDO de um ano (−1 = ano todo no futuro). Base para separar
+// realizado de projeção no Anual, no CSV e nos totais do ano.
+function ultimoMesRealizado(y) {
+  const now = new Date();
+  if (y < now.getFullYear()) return 11;
+  if (y > now.getFullYear()) return -1;
+  return now.getMonth();
 }
 
 // Total ainda investido (aportes − retiradas, por classe), somando todos os meses.
@@ -7476,7 +7580,9 @@ function firstDataMonth() {
 // os aportes lançados pelo Adicionar (o dinheiro "sumia" do patrimônio).
 function getCarteira(y, m) {
   const porClasse = {};
-  getInvestClasses().forEach(c => { porClasse[c.id] = 0; });
+  // v66: saldo inicial = o que já estava aplicado antes de usar o app. Não é
+  // aporte: não sai da conta nem entra na sobra/poupança de nenhum mês.
+  getInvestClasses().forEach(c => { porClasse[c.id] = safeNum(c.opening, 0); });
   const ini = firstDataMonth();
   const fim = y * 12 + m;
   if (ini !== null) {
@@ -7504,17 +7610,69 @@ function getPatrimonio(y, m) {
   return getSaldoAcumulado(y, m) + getCarteira(y, m).total;
 }
 
-// Gasto médio mensal (últimos meses com gasto) — base para dizer quantos
-// meses a reserva de emergência cobre.
-function getGastoMedioMensal(y, m, janela = 6) {
-  const vals = [];
-  for (let i = 0; i < janela; i++) {
-    const t = y * 12 + m - i;
-    const g = getMonthData(Math.floor(t / 12), t % 12).gastos;
-    if (g > 0) vals.push(g);
+// CUSTO DE VIDA MENSAL — base ÚNICA de "quantos meses a reserva cobre".
+// v66: 1) o valor que a pessoa definiu, se houver; 2) senão, a média dos gastos
+// dos últimos até 6 meses JÁ VIVIDOS que têm entradas registradas (meses
+// completos). Antes a média entrava com meses quase vazios — só uma parcela
+// antiga, só um conserto — e a reserva aparecia cobrindo 7 meses quando
+// cobria 2; 3) sem mês completo, a média dos meses com gasto.
+function getCustoVidaMensal(y, m) {
+  const definido = safeNum(db.custoVidaMensal, 0);
+  if (definido > 0) return { valor: definido, origem: 'definido', meses: 0 };
+  const lim = Math.min(y * 12 + m, (() => { const n = new Date(); return n.getFullYear() * 12 + n.getMonth(); })());
+  const completos = [], comGasto = [];
+  for (let i = 0; i < 6; i++) {
+    const t = lim - i;
+    const d = getMonthData(Math.floor(t / 12), t % 12);
+    if (d.gastos > 0) comGasto.push(d.gastos);
+    if (d.gastos > 0 && d.entradas > 0) completos.push(d.gastos);
   }
-  return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+  const base = completos.length ? completos : comGasto;
+  const valor = base.length ? base.reduce((a, b) => a + b, 0) / base.length : 0;
+  return { valor, origem: completos.length ? 'media' : 'parcial', meses: base.length };
 }
+function getGastoMedioMensal(y, m) {
+  return getCustoVidaMensal(y, m).valor;
+}
+// Texto de cobertura da reserva (mesmo em todas as telas).
+function coberturaReserva(reserva, y, m) {
+  const META = 6;
+  const cv = getCustoVidaMensal(y, m);
+  if (reserva <= 0) return { meses: 0, prog: 0, texto: `Ainda vazia — o recomendado é juntar ${META} meses de custo de vida`, cv };
+  if (cv.valor <= 0) return { meses: null, prog: 0, texto: 'Registre seus gastos para ver quantos meses ela cobre', cv };
+  const meses = reserva / cv.valor;
+  const arred = Math.round(meses * 10) / 10;
+  const mt = arred.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+  const unid = arred < 2 ? 'mês' : 'meses';   // o plural segue o número mostrado
+  const texto = meses >= META
+    ? `Cobre ${mt} ${unid} de custo de vida — meta de ${META} atingida`
+    : `Cobre ${mt} ${unid} de custo de vida · meta: ${META}`;
+  return { meses, prog: Math.min(1, meses / META), texto, cv };
+}
+function openCustoVidaModal() {
+  const cv = getCustoVidaMensal(currentYear, currentMonth);
+  const definido = safeNum(db.custoVidaMensal, 0) > 0;
+  modal.show('Custo de vida mensal', `
+    <p class="muted" style="margin:0 0 12px;font-size:0.88rem">É quanto você gasta num mês normal. Serve para dizer quantos meses a reserva de emergência cobre.
+      ${definido ? '' : `Hoje o app usa a média dos seus meses completos: <strong>${fmt(cv.valor)}</strong>.`}</p>
+    <div class="input-group"><label>Meu custo de vida (deixe vazio para usar a média)</label>
+      <input id="cvValor" type="text" inputmode="decimal" placeholder="${escapeHtml(fmtInput(cv.valor))}" value="${definido ? escapeHtml(fmtInput(db.custoVidaMensal)) : ''}"></div>`, {
+    confirmLabel: 'Salvar',
+    onConfirm: () => {
+      const raw = document.getElementById('cvValor').value.trim();
+      if (!raw) { db.custoVidaMensal = null; }
+      else {
+        const v = parseMoneyBR(raw);
+        if (!Number.isFinite(v) || v <= 0) { toast('Digite um valor válido, ex.: 4500,00', 'error'); return false; }
+        db.custoVidaMensal = v;
+      }
+      saveDB();
+      if (typeof renderAll === 'function') renderAll();
+      toast(db.custoVidaMensal ? 'Custo de vida salvo' : 'Voltando a usar a média dos meses', 'success');
+    }
+  });
+}
+window.openCustoVidaModal = openCustoVidaModal;
 
 // Lê valores como um brasileiro digita: "1500,00", "1.500,00", "1.500",
 // "12,5" e também "1500.00". Com os dois separadores, o último é o decimal.
@@ -7542,32 +7700,33 @@ function setContaHoje() {
   const el = document.getElementById('contaHoje');
   const v = parseMoneyBR(el.value);
   if (!Number.isFinite(v)) { toast('Digite um valor válido, ex.: 1500,00', 'warn'); return; }
-  // Ancora no mês REAL de hoje. openingValue = saldo no início do mês, pra que a
-  // conta mostre exatamente o valor informado agora e reflita edições do mês.
+  // v66: guarda o valor e o DIA. Lançamentos com data até hoje já estão nesse
+  // valor; só os posteriores (e as faturas que ainda vão vencer) mexem na conta.
   const now = new Date();
-  const ay = now.getFullYear(), am = now.getMonth();
-  db.saldoConfig = { anchorKey: getKey(ay, am), openingValue: v - getMonthData(ay, am).saldo };
+  db.saldoConfig = { anchorKey: getKey(now.getFullYear(), now.getMonth()), anchorDate: todayISO(), value: v };
   saveDB();
   updateContaHojeHint();
   if (typeof renderDashboard === 'function' &&
       document.getElementById('dashboard')?.classList.contains('active')) renderDashboard();
-  toast('Saldo salvo — a conta soma a partir de agora', 'success');
+  toast('Saldo salvo — a conta segue a partir de hoje', 'success');
 }
 
 // Mostra o estado atual do ponto de partida no painel de Configurações.
 function updateContaHojeHint() {
   const hint = document.getElementById('contaHojeHint');
   const inp = document.getElementById('contaHoje');
-  const cfg = db.saldoConfig;
-  const calibrado = cfg && cfg.anchorKey &&
-    (typeof cfg.openingValue === 'number' || typeof cfg.targetValue === 'number');
-  if (calibrado) {
-    const [ay, am] = cfg.anchorKey.split('-').map(Number);
-    const atual = getSaldoAcumulado(ay, am);   // valor reconciliado no mês do ponto de partida
-    if (hint) hint.textContent = `Ponto de partida em ${monthsFull[am]} de ${ay}: ${fmt(atual)}. Salve de novo quando quiser reconciliar com o extrato.`;
-    if (inp && !inp.value) inp.value = atual.toFixed(2).replace('.', ',');
-  } else if (hint) {
-    hint.textContent = 'A conta começa em R$ 0,00 neste mês. Informe seu saldo real para reconciliar e somar a partir daqui.';
+  const a = getSaldoAnchor();
+  const now = new Date();
+  const hoje = getSaldoAcumulado(now.getFullYear(), now.getMonth(), now.getDate());
+  if (a._default) {
+    if (hint) hint.textContent = 'A conta começa em R$ 0,00 hoje. Informe seu saldo real para ela bater com o extrato do banco.';
+  } else if (a._legado) {
+    if (hint) hint.textContent = `Desde a v66 as compras no cartão saem da conta quando a fatura é paga, e não no dia da compra. Confira o saldo do seu banco e salve de novo — hoje o app calcula ${fmt(hoje)}.`;
+    if (inp && !inp.value) inp.value = fmtInput(hoje);
+  } else {
+    const [y, m, d] = db.saldoConfig.anchorDate.split('-');
+    if (hint) hint.textContent = `Ponto de partida: ${fmt(a.valor)} em ${d}/${m}/${y}. Hoje a conta está em ${fmt(hoje)}. Salve de novo sempre que quiser conferir com o extrato.`;
+    if (inp && !inp.value) inp.value = fmtInput(hoje);
   }
 }
 
@@ -7922,19 +8081,28 @@ function renderComparison() {
 }
 
 // ============== ANUAL ==============
+// v66: meses que ainda não aconteceram aparecem como PROJEÇÃO (fixos e
+// parcelas já cadastrados) e ficam fora dos totais realizados. Antes o ano
+// somava outubro–dezembro como se o salário já tivesse entrado.
 function renderAnual() {
-  document.getElementById('anualSub').textContent = `Visão consolidada de ${currentYear}.`;
-  let totG = 0, totE = 0, totI = 0;
+  const lim = ultimoMesRealizado(currentYear);
+  document.getElementById('anualSub').textContent = lim >= 11
+    ? `Visão consolidada de ${currentYear}.`
+    : lim < 0 ? `${currentYear} ainda não começou — tudo abaixo é projeção dos fixos e parcelas cadastrados.`
+    : `Realizado de janeiro a ${monthsFull[lim].toLowerCase()} de ${currentYear}; os meses seguintes são projeção.`;
+  let totG = 0, totE = 0, totI = 0, projG = 0, projE = 0, projI = 0;
   const linhas = months.map((m, i) => {
     const d = getMonthData(currentYear, i);
-    totG += d.gastos; totE += d.entradas; totI += d.investido;
+    const proj = i > lim;
+    if (proj) { projG += d.gastos; projE += d.entradas; projI += d.investido; }
+    else { totG += d.gastos; totE += d.entradas; totI += d.investido; }
     const cls = d.sobra >= 0 ? 'pos' : 'neg';
     // "Em conta" só a partir do ponto de partida; antes disso mostra "—".
     const contaCell = saldoAnchorCmp(currentYear, i) < 0
       ? `<td class="muted">—</td>`
       : (c => `<td class="${c >= 0 ? 'pos' : 'neg'}" style="font-weight:600">${fmt(c)}</td>`)(getSaldoAcumulado(currentYear, i));
-    return `<tr>
-      <td>${monthsFull[i]}</td>
+    return `<tr class="${proj ? 'anual-proj' : ''}">
+      <td>${monthsFull[i]}${proj ? ' <span class="proj-tag">projeção</span>' : ''}</td>
       <td class="neg">${fmt(d.gastos)}</td>
       <td class="pos">${fmt(d.entradas)}</td>
       <td class="invest">${fmt(d.investido)}</td>
@@ -7945,17 +8113,23 @@ function renderAnual() {
   document.getElementById('anualTbody').innerHTML = linhas;
   // Sobra do ano = entradas − gastos (investir não reduz o resultado)
   const totSaldo = totE - totG;
-  const contaFimCell = saldoAnchorCmp(currentYear, 11) < 0
+  const celConta = (i, extra = '') => saldoAnchorCmp(currentYear, i) < 0
     ? `<td class="muted">—</td>`
-    : (c => `<td class="${c >= 0 ? 'pos' : 'neg'}" style="font-weight:600">${fmt(c)}</td>`)(getSaldoAcumulado(currentYear, 11));
+    : (c => `<td class="${c >= 0 ? 'pos' : 'neg'}" style="font-weight:600${extra}">${fmt(c)}</td>`)(getSaldoAcumulado(currentYear, i));
+  const temProj = lim < 11;
+  const rotReal = lim < 0 ? '' : lim >= 11 ? `Total ${currentYear}` : `Realizado (jan–${months[lim].toLowerCase()})`;
+  const cheioG = totG + projG, cheioE = totE + projE, cheioI = totI + projI, cheioS = cheioE - cheioG;
   document.getElementById('anualTfoot').innerHTML = `
-    <tr><td>Total ${currentYear}</td><td class="neg">${fmt(totG)}</td><td class="pos">${fmt(totE)}</td><td class="invest">${fmt(totI)}</td><td class="${totSaldo >= 0 ? 'pos' : 'neg'}">${fmt(totSaldo)}</td>${contaFimCell}</tr>`;
+    ${lim >= 0 ? `<tr><td>${rotReal}</td><td class="neg">${fmt(totG)}</td><td class="pos">${fmt(totE)}</td><td class="invest">${fmt(totI)}</td><td class="${totSaldo >= 0 ? 'pos' : 'neg'}">${fmt(totSaldo)}</td>${celConta(lim)}</tr>` : ''}
+    ${temProj ? `<tr class="anual-proj"><td>Ano com projeção</td><td class="neg">${fmt(cheioG)}</td><td class="pos">${fmt(cheioE)}</td><td class="invest">${fmt(cheioI)}</td><td class="${cheioS >= 0 ? 'pos' : 'neg'}">${fmt(cheioS)}</td>${celConta(11)}</tr>` : ''}`;
 
+  const ate = lim >= 11 ? '' : lim < 0 ? '' : ` até ${months[lim].toLowerCase()}`;
+  const projSub = v => temProj ? `<div class="sub">com projeção: ${fmt(v)}</div>` : '';
   document.getElementById('anualStats').innerHTML = `
-    <div class="card"><div class="label">Entradas</div><div class="value pos">${fmt(totE)}</div></div>
-    <div class="card"><div class="label">Gastos</div><div class="value neg">${fmt(totG)}</div></div>
-    <div class="card"><div class="label">Investido</div><div class="value invest">${fmt(totI)}</div></div>
-    <div class="card"><div class="label">Sobra</div><div class="value ${totSaldo >= 0 ? 'pos' : 'neg'}">${fmt(totSaldo)}</div></div>
+    <div class="card"><div class="label">Entradas${ate}</div><div class="value pos">${fmt(totE)}</div>${projSub(cheioE)}</div>
+    <div class="card"><div class="label">Gastos${ate}</div><div class="value neg">${fmt(totG)}</div>${projSub(cheioG)}</div>
+    <div class="card"><div class="label">Investido${ate}</div><div class="value invest">${fmt(totI)}</div>${projSub(cheioI)}</div>
+    <div class="card"><div class="label">Sobra${ate}</div><div class="value ${totSaldo >= 0 ? 'pos' : 'neg'}">${fmt(totSaldo)}</div>${projSub(cheioS)}</div>
   `;
 
   const ctx = document.getElementById('anualChart').getContext('2d');
@@ -7965,9 +8139,10 @@ function renderAnual() {
     data: {
       labels: monthsFull,
       datasets: [
-        { label: 'Entradas', data: months.map((_, i) => getMonthData(currentYear, i).entradas), backgroundColor: '#10b981' },
-        { label: 'Gastos', data: months.map((_, i) => getMonthData(currentYear, i).gastos), backgroundColor: '#ef4444' },
-        { label: 'Investido', data: months.map((_, i) => getMonthData(currentYear, i).investido), backgroundColor: '#f59e0b' }
+        // meses de projeção em tom claro
+        { label: 'Entradas', data: months.map((_, i) => getMonthData(currentYear, i).entradas), backgroundColor: months.map((_, i) => i > lim ? '#10b98140' : '#10b981') },
+        { label: 'Gastos', data: months.map((_, i) => getMonthData(currentYear, i).gastos), backgroundColor: months.map((_, i) => i > lim ? '#ef444440' : '#ef4444') },
+        { label: 'Investido', data: months.map((_, i) => getMonthData(currentYear, i).investido), backgroundColor: months.map((_, i) => i > lim ? '#f59e0b40' : '#f59e0b') }
       ]
     },
     options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
@@ -8160,8 +8335,7 @@ function renderInvest() {
     </tr>`;
 
   // 4. Cards: o que está investido hoje, separado em reserva × investimentos
-  const gastoMedio = getGastoMedioMensal(currentYear, currentMonth);
-  const mesesRes = gastoMedio > 0 ? cart.reserva / gastoMedio : null;
+  const cobRes = coberturaReserva(cart.reserva, currentYear, currentMonth);
   const temReserva = classes.some(c => c.reserve);
   const topInv = classes.filter(c => !c.reserve && (cart.porClasse[c.id] || 0) > 0)
     .map(c => escapeHtml(c.label)).slice(0, 3).join(' · ') || 'nada aplicado ainda';
@@ -8174,9 +8348,7 @@ function renderInvest() {
     <div class="card">
       <div class="label">Reserva de emergência</div>
       <div class="value anim-num" data-value="${cart.reserva}">${fmt(cart.reserva)}</div>
-      <div class="sub">${!temReserva ? 'marque uma classe como reserva abaixo'
-        : (mesesRes == null ? 'registre gastos para ver a cobertura'
-        : `cobre ${mesesRes.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} ${mesesRes < 2 ? 'mês' : 'meses'} de gastos`)}</div>
+      <div class="sub">${!temReserva ? 'marque uma classe como reserva abaixo' : cobRes.texto.replace(/^Cobre/, 'cobre')}</div>
     </div>
     <div class="card">
       <div class="label">Investimentos</div>
@@ -8282,6 +8454,7 @@ function investClassUsage(id) {
   Object.values(db.events || {}).forEach(arr => (arr || []).forEach(conta));
   (db.recurringExpenses || []).forEach(conta);
   (db.installments || []).forEach(conta);
+  if (safeNum((getInvestClass(id) || {}).opening, 0) > 0) n++;   // saldo inicial também é valor
   return n;
 }
 
@@ -8300,7 +8473,7 @@ function renderInvestClasses(cart) {
       <span class="method-row-dot" style="background:${escapeHtml(c.color)}"></span>
       <div class="method-row-main">
         <div class="method-row-name">${escapeHtml(c.label)}${c.reserve ? '<span class="aporte-tag">reserva de emergência</span>' : ''}</div>
-        <div class="method-row-meta">${fmt(cart.porClasse[c.id] || 0)} aplicados</div>
+        <div class="method-row-meta">${fmt(cart.porClasse[c.id] || 0)} aplicados${safeNum(c.opening, 0) > 0 ? ` · inclui ${fmt(c.opening)} de saldo inicial` : ''}</div>
       </div>
       <div class="method-row-actions">
         <button class="btn-icon" title="Editar" onclick="openInvestClassModal(${jsArg(c.id)})">✎</button>
@@ -8317,6 +8490,9 @@ function openInvestClassModal(id) {
       <input id="icName" placeholder="Ex: Tesouro Selic, CDB, Ações, Cripto" value="${atual ? escapeHtml(atual.label) : ''}"></div>
     <div class="input-group"><label>Cor</label>
       <input id="icColor" type="color" value="${escapeHtml(cor)}" style="height:40px"></div>
+    <div class="input-group"><label>Já tinha aplicado antes de usar o app (saldo inicial)</label>
+      <input id="icOpening" type="text" inputmode="decimal" placeholder="0,00" value="${atual && safeNum(atual.opening, 0) > 0 ? escapeHtml(fmtInput(atual.opening)) : ''}">
+      <small class="muted" style="display:block;margin-top:4px;font-size:0.75rem">Entra no patrimônio, mas não conta como aporte de nenhum mês — não sai da sua conta nem mexe na sua sobra.</small></div>
     <label style="display:flex;gap:10px;align-items:flex-start;font-size:0.9rem;cursor:pointer;margin-top:4px">
       <input id="icReserve" type="checkbox" ${atual && atual.reserve ? 'checked' : ''} style="margin-top:3px">
       <span>É minha <strong>reserva de emergência</strong><br><span class="muted" style="font-size:0.8rem">Dinheiro guardado para imprevistos. A Início mostra quantos meses de gastos ele cobre.</span></span>
@@ -8330,14 +8506,18 @@ function openInvestClassModal(id) {
       if (dup) { toast('Já existe uma classe com esse nome', 'error'); return false; }
       const color = document.getElementById('icColor').value;
       const reserve = document.getElementById('icReserve').checked;
+      const openingRaw = document.getElementById('icOpening').value.trim();
+      const opening = openingRaw ? parseMoneyBR(openingRaw) : 0;
+      if (!Number.isFinite(opening) || opening < 0) { toast('Saldo inicial inválido, ex.: 12.000,00', 'error'); return false; }
       if (atual) {
         atual.label = label; atual.color = color; atual.reserve = reserve;
+        if (opening > 0) atual.opening = opening; else delete atual.opening;
       } else {
         let base = label.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
           .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'classe';
         let novo = base, i = 2;
         while (getInvestClasses().some(c => c.id === novo) || novo === 'withdrawals') novo = `${base}-${i++}`;
-        db.investClasses.push({ id: novo, label, color, reserve });
+        db.investClasses.push(opening > 0 ? { id: novo, label, color, reserve, opening } : { id: novo, label, color, reserve });
       }
       saveDB();
       rebuildInvestClassDropdowns();
@@ -8370,6 +8550,8 @@ async function deleteInvestClass(id) {
         const w = e.withdrawals;
         if (w && typeof w === 'object' && w[id]) { w[destino] = (w[destino] || 0) + w[id]; delete w[id]; }
       });
+      const origemOp = safeNum(c.opening, 0), dest = getInvestClass(destino);
+      if (origemOp > 0 && dest) dest.opening = safeNum(dest.opening, 0) + origemOp;
     }
     db.investClasses = getInvestClasses().filter(x => x.id !== id);
     saveDB();
@@ -8637,7 +8819,10 @@ function openMethodModal(id) {
   modal.show(atual ? 'Editar forma de pagamento' : 'Nova forma de pagamento', `
     <div class="input-group"><label>Nome</label>
       <input id="mtName" placeholder="Ex: Nubank, PicPay, Inter" value="${atual ? escapeHtml(atual.label) : ''}"></div>
-    <div class="input-group"><label>Tipo</label><select id="mtKind">${kinds}</select></div>
+    <div class="input-group"><label>Tipo</label><select id="mtKind" onchange="document.getElementById('mtDueWrap').style.display = this.value === 'credit' ? '' : 'none'">${kinds}</select></div>
+    <div class="input-group" id="mtDueWrap" style="display:${atual && atual.kind === 'credit' ? '' : 'none'}"><label>Dia de vencimento da fatura</label>
+      <input id="mtDue" type="number" min="1" max="31" inputmode="numeric" placeholder="${DIA_VENCIMENTO_PADRAO}" value="${atual && atual.dueDay ? atual.dueDay : ''}">
+      <small class="muted" style="display:block;margin-top:4px;font-size:0.75rem">As compras de um mês saem da sua conta nesse dia do mês seguinte.</small></div>
     <div class="input-group"><label>Cor</label>
       <input id="mtColor" type="color" value="${escapeHtml(cor)}" style="height:40px"></div>
     ${atual ? `<p class="muted" style="font-size:0.8rem;margin:0">Renomear é seguro: os ${countMethodUsage(atual.id)} lançamentos desta forma continuam ligados a ela.</p>` : ''}
@@ -8651,15 +8836,18 @@ function openMethodModal(id) {
       const duplicada = getMethods().some(m => m.id !== id && m.label.toLowerCase() === label.toLowerCase());
       if (duplicada) { toast('Já existe uma forma com esse nome', 'error'); return false; }
 
+      const dueRaw = parseInt(document.getElementById('mtDue')?.value, 10);
+      const dueDay = kind === 'credit' && dueRaw >= 1 && dueRaw <= 31 ? dueRaw : null;
       if (atual) {
         atual.label = label; atual.kind = kind; atual.color = color;
+        if (dueDay) atual.dueDay = dueDay; else delete atual.dueDay;
       } else {
         // ID estável derivado do nome; é ele que fica gravado nos lançamentos.
         let base = label.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
           .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'forma';
         let novo = base, i = 2;
         while (getMethods().some(m => m.id === novo)) novo = `${base}-${i++}`;
-        db.paymentMethods.push({ id: novo, label, color, kind });
+        db.paymentMethods.push(dueDay ? { id: novo, label, color, kind, dueDay } : { id: novo, label, color, kind });
       }
       saveDB();
       renderPaymentMethods();
@@ -10900,14 +11088,18 @@ html { overflow-x: clip; }
 </style>
 <script>
 // ── Saldo acumulado (carry-over) + taxa de poupança no ano ─────────────
+// v66: só meses JÁ VIVIDOS e UMA taxa de poupança: (entradas − gastos) ÷
+// entradas — quanto do que entrou não foi consumido. Antes era investido ÷
+// entradas: um saldo inicial lançado como aporte dava "128%".
 function computeYTD(year, uptoMonth) {
-  let saldoAcum = 0, entradas = 0, gastos = 0, investido = 0;
-  for (let m = 0; m <= uptoMonth; m++) {
+  const ate = Math.min(uptoMonth, ultimoMesRealizado(year));
+  let sobra = 0, entradas = 0, gastos = 0, investido = 0;
+  for (let m = 0; m <= ate; m++) {
     const d = getMonthData(year, m);
-    saldoAcum += d.saldo; entradas += d.entradas; gastos += d.gastos; investido += d.investido;
+    sobra += d.sobra; entradas += d.entradas; gastos += d.gastos; investido += d.investido;
   }
-  const taxa = entradas > 0 ? (investido / entradas * 100) : null;
-  return { saldoAcum, entradas, gastos, investido, taxa };
+  const taxa = entradas > 0 ? (sobra / entradas * 100) : null;
+  return { sobra, saldoAcum: sobra, entradas, gastos, investido, taxa, ate };
 }
 function renderYTDPanel() {
   const hero = document.getElementById('dashKPIs');
@@ -10920,23 +11112,24 @@ function renderYTDPanel() {
     hero.insertAdjacentElement('afterend', panel);
   }
   const y = computeYTD(currentYear, currentMonth);
-  const sCls = y.saldoAcum >= 0 ? 'pos' : 'neg';
-  const mesLabel = (monthsFull[currentMonth] || '').toLowerCase();
+  if (y.ate < 0) { panel.innerHTML = ''; return; }   // ano ainda não começou
+  const sCls = y.sobra >= 0 ? 'pos' : 'neg';
+  const mesLabel = (monthsFull[y.ate] || '').toLowerCase();
   const taxaTxt = y.taxa == null ? '—' : y.taxa.toFixed(0) + '%';
   const taxaW = y.taxa == null ? 0 : Math.max(0, Math.min(100, y.taxa));
   const taxaHint = y.taxa == null ? 'Cadastre entradas para calcular'
     : (y.taxa >= 20 ? 'Ótimo — acima de 20%' : y.taxa >= 10 ? 'Bom — meta ideal: 20%' : 'Abaixo do recomendado (20%)');
   panel.innerHTML = `
     <div class="ytd-card">
-      <div class="ytd-label">Saldo acumulado no ano</div>
-      <div class="ytd-value ${sCls}">${fmt(y.saldoAcum)}</div>
-      <div class="ytd-sub">Soma dos saldos de janeiro a ${mesLabel} · ${currentYear}</div>
+      <div class="ytd-label">Sobra no ano</div>
+      <div class="ytd-value ${sCls}">${fmt(y.sobra)}</div>
+      <div class="ytd-sub">Entradas − gastos de janeiro a ${mesLabel} · ${currentYear}${y.investido > 0 ? ` · ${fmt(y.investido)} foram investidos` : ''}</div>
     </div>
     <div class="ytd-card">
       <div class="ytd-label">🐷 Taxa de poupança (ano)</div>
       <div class="ytd-value invest">${taxaTxt}</div>
       <div class="save-bar"><div class="save-fill" style="width:${taxaW}%"></div></div>
-      <div class="ytd-sub">${taxaHint}</div>
+      <div class="ytd-sub">Do que entrou, quanto não foi gasto · ${taxaHint}</div>
     </div>
   `;
 }
@@ -11315,34 +11508,39 @@ function renderHomeHero() {
   // A manchete é o DINHEIRO EM CONTA: reseta no ponto de partida e soma daí pra
   // frente. Antes do ponto de partida os meses são ignorados (dados antigos
   // incompletos causavam descompasso).
-  const amount   = getSaldoAcumulado(currentYear, currentMonth);
-  const saldoMes = cur.saldo;
+  // v66: a manchete segue o CAIXA — no mês atual é o saldo de HOJE (o cartão
+  // só sai quando a fatura vence), nos outros meses é o saldo ao fim do mês.
+  const atual    = ehMesAtual(currentYear, currentMonth);
+  const amount   = getContaExibida(currentYear, currentMonth);
+  const fimMes   = getSaldoAcumulado(currentYear, currentMonth);
   const mes      = monthsFull[currentMonth].toLowerCase();
-  const question = 'Dinheiro em conta';
+  const question = atual ? 'Dinheiro em conta hoje' : `Dinheiro em conta no fim de ${mes}`;
   const anchor   = getSaldoAnchor();
   const cmp      = saldoAnchorCmp(currentYear, currentMonth);
   let context;
   if (cmp < 0) {
-    const [ay, am] = anchor.anchorKey.split('-').map(Number);
-    context = `Antes do seu ponto de partida (${monthsFull[am].toLowerCase()} de ${ay})`;
-  } else if (cmp === 0) {
-    context = anchor._default
-      ? 'Comece definindo seu saldo real em Configurações → Dinheiro em conta'
-      : 'Seu ponto de partida — a conta soma a partir daqui';
+    context = `Antes do seu ponto de partida (${monthsFull[anchor.am].toLowerCase()} de ${anchor.ay})`;
+  } else if (anchor._default && cmp === 0) {
+    context = 'Comece informando seu saldo real em Configurações → Dinheiro em conta';
+  } else if (atual) {
+    const hojeDia = new Date().getDate();
+    const faturaAVencer = faturasPagasEm(currentYear, currentMonth)
+      .filter(f => f.dia > hojeDia).reduce((a, f) => a + f.valor, 0);
+    context = Math.abs(fimMes - amount) < 0.005
+      ? `Nada mais previsto para ${mes}`
+      : `No fim de ${mes}: ${fmt(fimMes)}${faturaAVencer > 0 ? ` — depois de pagar ${fmt(faturaAVencer)} de fatura` : ''}`;
   } else {
-    const vindoAntes = amount - saldoMes;
-    const parteAntes = vindoAntes >= 0
-      ? `${fmt(vindoAntes)} acumulado`
-      : `${fmt(Math.abs(vindoAntes))} no vermelho`;
-    // saldoMes é a variação da CONTA (já descontado o que foi investido)
-    const parteMes = saldoMes >= 0
-      ? `+ ${fmt(saldoMes)} ficaram na conta em ${mes}`
-      : `− ${fmt(Math.abs(saldoMes))} saíram da conta em ${mes}`;
-    context = `${parteAntes} ${parteMes}`;
+    const t = currentYear * 12 + currentMonth - 1;
+    const inicio = cmp === 0 ? anchor.valor : getSaldoAcumulado(Math.floor(t / 12), t % 12);
+    const varMes = amount - inicio;
+    context = `${fmt(inicio)} no início de ${mes} ${varMes >= 0 ? '+' : '−'} ${fmt(Math.abs(varMes))} no mês`;
   }
   // Investir reduz a conta, mas não é perda: deixa isso explícito.
   if (cmp >= 0 && cur.investido > 0) {
     context += ` · ${fmt(cur.investido)} foram investidos e seguem no seu patrimônio`;
+  }
+  if (anchor._legado) {
+    context += ` · <a href="#" onclick="navTo('config'); return false">O cálculo do cartão mudou: confira seu saldo</a>`;
   }
 
   // Medidor de orçamento (secundário), só quando há orçamentos definidos.
@@ -11405,7 +11603,10 @@ function renderHomeExtras() {
   const diasRestantes = isCurrentMonth ? Math.max(1, daysInMonth - now.getDate() + 1) : null;
 
   let spendValue, spendSuffix = '', spendSub, spendNeg = false;
-  if (base <= 0) {
+  if (base <= 0 && !withBudget.length && cur.entradas === 0 && cur.gastos === 0) {
+    spendValue = fmt(0);
+    spendSub = `Registre as entradas e os gastos de ${mes} para ver quanto pode gastar`;
+  } else if (base <= 0) {
     spendValue = fmt(0); spendNeg = true;
     if (withBudget.length) {
       spendSub = `Orçamento de ${mes} esgotado — ${fmt(Math.abs(base))} acima`;
@@ -11449,9 +11650,16 @@ function renderHomeExtras() {
 // três bolsos lado a lado e o total (patrimônio), que investir não altera.
 function renderMoneyPanel(cur) {
   const mes = monthsFull[currentMonth].toLowerCase();
-  const conta = getSaldoAcumulado(currentYear, currentMonth);
+  const conta = getContaExibida(currentYear, currentMonth);
   const cart = getCarteira(currentYear, currentMonth);
   const patr = conta + cart.total;
+  const atual = ehMesAtual(currentYear, currentMonth);
+  const hojeDia = new Date().getDate();
+  const faturaAVencer = atual ? faturasPagasEm(currentYear, currentMonth).filter(f => f.dia > hojeDia) : [];
+  const contaSub = conta < 0 ? 'Conta no vermelho'
+    : faturaAVencer.length
+      ? `Hoje · fatura de ${fmt(faturaAVencer.reduce((a, f) => a + f.valor, 0))} vence dia ${Math.min(...faturaAVencer.map(f => f.dia))}`
+      : (atual ? 'Hoje · disponível para o dia a dia' : `No fim de ${mes}`);
   const classes = getInvestClasses();
   const temReserva = classes.some(c => c.reserve);
   const corReserva = safeColor((classes.find(c => c.reserve) || {}).color, '#12B76A');
@@ -11462,33 +11670,23 @@ function renderMoneyPanel(cur) {
   const pct = v => (pos(v) / baseBarra * 100);
   const seg = (v, cor) => pos(v) > 0 ? `<span style="width:${pct(v)}%;background:${cor}"></span>` : '';
 
-  // Reserva: quantos meses dos seus gastos ela cobre (referência: 6)
-  const META_MESES = 6;
-  const gastoMedio = getGastoMedioMensal(currentYear, currentMonth);
-  let reservaSub, reservaProg = 0;
-  if (cart.reserva <= 0) {
-    reservaSub = `Ainda vazia — o recomendado é juntar ${META_MESES} meses de gastos`;
-  } else if (gastoMedio <= 0) {
-    reservaSub = 'Registre seus gastos para ver quantos meses ela cobre';
-  } else {
-    const meses = cart.reserva / gastoMedio;
-    reservaProg = Math.min(1, meses / META_MESES);
-    const mesesTxt = meses.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
-    reservaSub = meses >= META_MESES
-      ? `Cobre ${mesesTxt} meses dos seus gastos — meta de ${META_MESES} atingida`
-      : `Cobre ${mesesTxt} ${meses < 2 ? 'mês' : 'meses'} dos seus gastos · meta: ${META_MESES}`;
-  }
+  // Reserva: quantos meses de CUSTO DE VIDA ela cobre (mesma regra em todas as telas)
+  const cob = coberturaReserva(cart.reserva, currentYear, currentMonth);
+  const gastoMedio = cob.cv.valor;
+  const reservaProg = cob.prog;
+  const reservaSub = cob.meses
+    ? `${cob.texto} · <button type="button" class="link-btn" onclick="openCustoVidaModal()">custo de vida ${fmt(cob.cv.valor)}/mês</button>`
+    : cob.texto;
 
   // Investimentos: as classes com saldo
   const detalhe = classes.filter(c => !c.reserve && (cart.porClasse[c.id] || 0) > 0)
     .map(c => `${escapeHtml(c.label)} ${fmt(cart.porClasse[c.id])}`);
   const investSub = detalhe.length ? detalhe.slice(0, 3).join(' · ') : 'Nada aplicado ainda';
 
-  // Rodapé: o que aconteceu neste mês
-  const taxa = cur.entradas > 0 ? Math.round(cur.investido / cur.entradas * 100) : null;
+  // Rodapé: o que aconteceu neste mês (sem outra "taxa": a de poupança é uma só)
   let rodape = '';
   if (cur.investido > 0) {
-    rodape = `Em ${mes} você investiu <strong>${fmt(cur.investido)}</strong>${taxa != null ? ` — ${taxa}% das entradas` : ''}. Isso saiu da conta e entrou no patrimônio.`;
+    rodape = `Em ${mes} você investiu <strong>${fmt(cur.investido)}</strong>. Isso saiu da conta e entrou no patrimônio.`;
   } else if (cur.investido < 0) {
     rodape = `Em ${mes} você resgatou <strong>${fmt(Math.abs(cur.investido))}</strong> dos investimentos para a conta.`;
   }
@@ -11515,8 +11713,7 @@ function renderMoneyPanel(cur) {
       <div class="money-bar" role="img" aria-label="Conta ${Math.round(pct(conta))}%, reserva ${Math.round(pct(cart.reserva))}%, investimentos ${Math.round(pct(cart.investimentos))}%">
         ${seg(conta, 'var(--primary)')}${temReserva ? seg(cart.reserva, corReserva) : ''}${seg(cart.investimentos, 'var(--accent)')}
       </div>
-      ${linha('var(--primary)', 'Em conta', conta,
-          conta < 0 ? 'Conta no vermelho' : 'Disponível para o dia a dia', '', conta < 0)}
+      ${linha('var(--primary)', 'Em conta', conta, contaSub, '', conta < 0)}
       ${temReserva ? linha(corReserva, 'Reserva de emergência', cart.reserva, reservaSub,
           cart.reserva > 0 && gastoMedio > 0
             ? `<div class="money-prog"><span style="width:${reservaProg * 100}%;background:${corReserva}"></span></div>` : '') : ''}
@@ -11955,6 +12152,15 @@ function renderRecentActivity() {
   /* Avisos nunca bloqueiam toques (cobriam o "+" por 3s depois de salvar) */
   #toastContainer, #toastContainer .toast { pointer-events: none; }
   #qaDate { width: 100%; margin-bottom: 8px; }
+  /* v66 */
+  #anualTbody tr.anual-proj td, #anualTfoot tr.anual-proj td { opacity: .62; font-style: italic; }
+  .proj-tag {
+    font-size: .62rem; font-style: normal; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--text-muted); border: 1px solid var(--border-soft); border-radius: 999px; padding: 1px 6px; margin-left: 4px;
+  }
+  .ci-due { display: block; font-size: .7rem; font-weight: 500; color: var(--text-muted); margin-top: 2px; text-transform: none; letter-spacing: 0; }
+  .money-sub .link-btn { font-size: inherit; padding: 0; text-decoration: underline; text-underline-offset: 2px; }
+  .hh-context a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
   @media (max-width: 768px) {
     /* Assistente em tela cheia ACIMA da barra inferior e dos botões do topo:
        antes o campo de digitação ficava atrás da barra (tocar abria Gastos). */
