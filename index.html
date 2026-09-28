@@ -463,7 +463,8 @@
 
   /* ===== ASSISTANT (CHATBOT) ===== */
   .assistant-fab {
-    position: fixed; bottom: 24px; right: 24px; z-index: 70;
+    /* v65: acima do "+" (#fab, mesmo canto) — antes o "+" cobria o balão */
+    position: fixed; bottom: 92px; right: 24px; z-index: 70;
     width: 56px; height: 56px; border-radius: 50%;
     background: linear-gradient(135deg, var(--primary), var(--accent));
     color: white; border: none; cursor: pointer;
@@ -475,7 +476,7 @@
   .assistant-fab.hidden { transform: scale(0); opacity: 0; }
 
   .assistant-panel {
-    position: fixed; right: 0; top: 0; bottom: 0; z-index: 90;
+    position: fixed; right: 0; top: 0; bottom: 0; z-index: 99;
     width: 420px; max-width: 100vw;
     background: var(--surface); border-left: 1px solid var(--border);
     box-shadow: var(--shadow-lg);
@@ -2589,7 +2590,7 @@
         <h2>Nova Saída (Gasto)</h2>
         <div class="input-group"><label>Data</label><input id="outDate" type="date"></div>
         <div class="input-group"><label>Descrição</label><input id="outDesc" placeholder="Ex: Almoço com amigos"></div>
-        <div class="input-group"><label>Valor (R$)</label><input id="outVal" type="number" step="0.01" placeholder="0,00"></div>
+        <div class="input-group"><label>Valor (R$)</label><input id="outVal" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off"></div>
         <div class="input-group"><label>Categoria</label><select id="outCat"></select></div>
         <div class="input-group">
           <label>Tipo</label>
@@ -2635,7 +2636,7 @@
       <div class="panel">
         <h2>Nova Entrada (Renda)</h2>
         <div class="input-group"><label>Origem</label><input id="inDesc" placeholder="Ex: Bolsa, Freelance, Reembolso"></div>
-        <div class="input-group"><label>Valor (R$)</label><input id="inVal" type="number" step="0.01" placeholder="0,00"></div>
+        <div class="input-group"><label>Valor (R$)</label><input id="inVal" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off"></div>
         <div class="checkbox-group">
           <input type="checkbox" id="inRecurring" onchange="toggleIncomeAdvanced()">
           <label for="inRecurring">Renda recorrente (aplica a todos os meses a partir deste)</label>
@@ -2699,7 +2700,7 @@
       <div class="panel">
         <h2>Nova Meta</h2>
         <div class="input-group"><label>O que eu quero</label><input id="goalName" placeholder="Ex: Viagem Internacional"></div>
-        <div class="input-group"><label>Total (R$)</label><input id="goalTotal" type="number" step="0.01"></div>
+        <div class="input-group"><label>Total (R$)</label><input id="goalTotal" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off"></div>
         <div class="input-group"><label>Data limite</label><input id="goalDeadline" type="date"></div>
         <button class="btn primary btn-save" onclick="saveGoal()">Adicionar Meta</button>
       </div>
@@ -2707,7 +2708,7 @@
         <h2>Registrar Aporte</h2>
         <div class="input-group"><label>Meta</label><select id="contribGoal"></select></div>
         <div class="input-group"><label>Mês</label><select id="contribMonth"></select></div>
-        <div class="input-group"><label>Valor (R$)</label><input id="contribValue" type="number" step="0.01"></div>
+        <div class="input-group"><label>Valor (R$)</label><input id="contribValue" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off"></div>
         <button class="btn success btn-save" onclick="saveContribution()">Salvar Aporte</button>
       </div>
     </div>
@@ -3039,12 +3040,12 @@ function ansSpent(t, month, year, cat) {
     if (!items.length) return `Você não teve gastos em <strong>${escapeHtml(cat)}</strong> em ${monthsFull[m]}/${y}.`;
     return `Em <strong>${monthsFull[m]}/${y}</strong>, você gastou <span class="num">${fmt(total)}</span> em <strong>${escapeHtml(cat)}</strong>, distribuídos em ${items.length} lançamento${items.length===1?'':'s'}.`;
   }
-  const cls = d.saldo >= 0 ? 'pos' : 'neg';
+  const cls = d.sobra >= 0 ? 'pos' : 'neg';
   return `Em <strong>${monthsFull[m]}/${y}</strong>:<br>
     • Gastos: <span class="num neg">${fmt(d.gastos)}</span> em ${d.items.length} lançamentos<br>
     • Entradas: <span class="num pos">${fmt(d.entradas)}</span><br>
-    • Investido: <span class="num">${fmt(d.investido)}</span><br>
-    • Saldo: <span class="num ${cls}">${fmt(d.saldo)}</span>`;
+    • Sobra (entradas − gastos): <span class="num ${cls}">${fmt(d.sobra)}</span><br>
+    • Investido: <span class="num">${fmt(d.investido)}</span> — não conta como gasto`;
 }
 
 function ansTop(t, month, year, cat) {
@@ -3066,29 +3067,35 @@ function ansTop(t, month, year, cat) {
   return `Maiores gastos de <strong>${monthsFull[m]}/${y}</strong>:<br>${lines}`;
 }
 
+// v65: lê as classes DO USUÁRIO e os mesmos números da tela (getMonthData /
+// getCarteira). Antes somava só a aba Investimentos com as classes fixas do
+// dono do app — respondia R$ 0 e mostrava a outros usuários uma classe que não é deles.
 function ansInvest(t, month, year) {
   const y = year || currentYear;
+  const nome = id => escapeHtml((getInvestClass(id) || {}).label || id);
+  const linhas = porClasse => Object.entries(porClasse)
+    .filter(([, v]) => Math.abs(v) >= 0.005)
+    .sort((a, b) => b[1] - a[1])
+    .map(([id, v]) => `• ${nome(id)}: <span class="num">${fmt(v)}</span>`).join('<br>');
   if (month != null) {
-    const inv = db.investments[getKey(y, month)] || { reserva: 0, rendaFixa: 0, polyMarket: 0, acoes: 0 };
-    const total = (inv.reserva||0) + (inv.rendaFixa||0) + (inv.polyMarket||0) + (inv.acoes||0);
-    return `Em <strong>${monthsFull[month]}/${y}</strong>, você investiu <span class="num">${fmt(total)}</span>:<br>
-      • Reserva: ${fmt(inv.reserva)}<br>
-      • Renda Fixa: ${fmt(inv.rendaFixa)}<br>
-      • RV Poly Market: ${fmt(inv.polyMarket)}<br>
-      • RV Ações: ${fmt(inv.acoes)}`;
+    const d = getMonthData(y, month);
+    if (Math.abs(d.investido) < 0.005) return `Em <strong>${monthsFull[month]}/${y}</strong> você não registrou aportes nem resgates.`;
+    const verbo = d.investido >= 0 ? 'investiu' : 'resgatou (líquido)';
+    return `Em <strong>${monthsFull[month]}/${y}</strong>, você ${verbo} <span class="num">${fmt(Math.abs(d.investido))}</span>:<br>${linhas(d.porClasse)}`;
   }
-  // Total no ano
-  let totR=0, totF=0, totP=0, totA=0;
-  for (let mm = 0; mm < 12; mm++) {
-    const inv = db.investments[getKey(y, mm)] || {};
-    totR += inv.reserva || 0; totF += inv.rendaFixa || 0;
-    totP += inv.polyMarket || 0; totA += inv.acoes || 0;
+  // Ano: só meses que já aconteceram
+  const hoje = new Date();
+  const ate = y === hoje.getFullYear() ? hoje.getMonth() : (y > hoje.getFullYear() ? -1 : 11);
+  const soma = {}; let total = 0;
+  for (let mm = 0; mm <= ate; mm++) {
+    const d = getMonthData(y, mm);
+    total += d.investido;
+    Object.entries(d.porClasse).forEach(([id, v]) => { soma[id] = (soma[id] || 0) + v; });
   }
-  const total = totR + totF + totP + totA;
-  return `Em <strong>${y}</strong>, você investiu <span class="num">${fmt(total)}</span>:<br>
-    • Reserva: ${fmt(totR)}<br>
-    • Renda Fixa: ${fmt(totF)}<br>
-    • Renda Variável: ${fmt(totP + totA)} (Poly: ${fmt(totP)}, Ações: ${fmt(totA)})`;
+  const periodo = ate < 11 && ate >= 0 ? ` (até ${monthsFull[ate]})` : '';
+  const cart = getCarteira(hoje.getFullYear(), hoje.getMonth());
+  return `Em <strong>${y}</strong>${periodo}, você aportou <span class="num">${fmt(total)}</span> (aportes − resgates)${Object.keys(soma).length ? ':<br>' + linhas(soma) : '.'}<br><br>
+    Investido hoje: <span class="num">${fmt(cart.total)}</span>${cart.reserva > 0 ? ` — reserva ${fmt(cart.reserva)}, investimentos ${fmt(cart.investimentos)}` : ''}.`;
 }
 
 function ansGoal(t) {
@@ -3111,7 +3118,7 @@ function ansGoal(t) {
     return `<strong>${escapeHtml(goal.name)}</strong> ${status}<br>
       • Acumulado: <span class="num">${fmt(total)}</span> de <span class="num">${fmt(goal.total)}</span><br>
       • Progresso: <strong>${pct.toFixed(1)}%</strong><br>
-      ${restante > 0 ? `• Falta: <span class="num">${fmt(restante)}</span>${goal.deadline ? ' até ' + new Date(goal.deadline).toLocaleDateString('pt-BR') : ''}` : '🎉 Meta batida!'}`;
+      ${restante > 0 ? `• Falta: <span class="num">${fmt(restante)}</span>${goal.deadline ? ' até ' + parseLocalDate(goal.deadline).toLocaleDateString('pt-BR') : ''}` : '🎉 Meta batida!'}`;
   }
   // Lista todas
   const lines = db.goals.map(g => {
@@ -5268,7 +5275,7 @@ document.addEventListener('click', e => {
 <!-- ── [1] FAB + Quick Add ── -->
 <!-- ── [12] Botão busca visível ── -->
 <button class="header-search-btn" id="headerSearchBtn"
-  onclick="if(typeof openGlobalSearch==='function') openGlobalSearch(); else document.getElementById('globalSearch')?.focus()"
+  onclick="openSearch()"
   aria-label="Buscar lançamentos" title="Buscar (/)">🔍</button>
 
 <!-- ── Mobile bottom navigation ── -->
@@ -5305,9 +5312,10 @@ document.addEventListener('click', e => {
     <input id="qaDesc" type="text" placeholder="Descrição (ex: Almoço no centro)" autocomplete="off">
     <div id="qaSuggestions" style="margin-bottom: 8px; min-height: 26px"></div>
     <div class="qa-row">
-      <input id="qaValue" type="number" step="0.01" placeholder="Valor (R$)" inputmode="decimal">
+      <input id="qaValue" type="text" inputmode="decimal" placeholder="Valor (R$)" autocomplete="off">
       <select id="qaMethod" onchange="syncQaInvest()"><!-- formas do usuário: rebuildMethodDropdowns() --></select>
     </div>
+    <input id="qaDate" type="date" aria-label="Data do lançamento">
     <select id="qaInvestClass" aria-label="Onde você aplicou" style="display:none"></select>
     <select id="qaCat"></select>
     <div id="qaInvestHint" class="qa-hint" style="display:none;margin:-4px 0 8px">Aporte: sai da conta e entra no seu patrimônio — não conta como gasto.</div>
@@ -5324,6 +5332,8 @@ function openQuickAdd() {
   const overlay = document.getElementById('quickAddOverlay');
   if (!overlay) return;
 
+  const qaDate = document.getElementById('qaDate');
+  if (qaDate) qaDate.value = defaultDateForView();
   // Popular categorias
   const catSel = document.getElementById('qaCat');
   catSel.innerHTML = (db.categories || []).map(c =>
@@ -5381,7 +5391,7 @@ function applyQACat(cat) {
 
 async function submitQuickAdd() {
   const desc = document.getElementById('qaDesc').value.trim();
-  const value = parseFloat(document.getElementById('qaValue').value);
+  const value = readMoney('qaValue');
   const cat = document.getElementById('qaCat').value;
   const method = document.getElementById('qaMethod').value;
 
@@ -5389,13 +5399,16 @@ async function submitQuickAdd() {
   if (!value || value <= 0) return toast('Valor inválido', 'error');
   if (!cat) return toast('Categoria obrigatória', 'error');
 
-  // Adicionar como evento avulso do mês atual
-  const key = getKey(currentYear, currentMonth);
+  // Evento avulso no mês da data escolhida (padrão: hoje / mês aberto)
+  const date = isoDay(document.getElementById('qaDate')?.value) || defaultDateForView();
+  const ref = refFromDate(date);
+  ensureYear(ref.y);
+  const key = getKey(ref.y, ref.m);
   if (!db.events[key]) db.events[key] = [];
   const item = {
     id: Date.now(), desc, value, cat, method,
     type: 'eventual',
-    date: new Date().toISOString()
+    date
   };
   // Aporte: guarda onde foi aplicado (não conta como gasto)
   if (methodKind(method) === 'invest') item.investClass = document.getElementById('qaInvestClass').value;
@@ -5406,7 +5419,8 @@ async function submitQuickAdd() {
   if (typeof renderGastos === 'function') renderGastos();
   if (typeof fillIncomePanels === 'function') fillIncomePanels();
   if (document.getElementById('dashboard')?.classList.contains('active')) renderDashboard();
-  toast(`Salvo: ${desc} — ${fmt(value)}`, 'success', 3500);
+  const outroMes = (ref.y !== currentYear || ref.m !== currentMonth) ? ` · lançado em ${monthsFull[ref.m]}/${ref.y}` : '';
+  toast(`Salvo: ${desc} — ${fmt(value)}${outroMes}`, 'success', 3500);
 }
 
 // Forma de pagamento do tipo investimento → pergunta ONDE aplicou (em vez da
@@ -5550,17 +5564,19 @@ function undoDelete(numId) {
     db.deletedIds = db.deletedIds.filter(id => id !== numId);
   }
   // Restaurar na fonte original
-  if (item.type === 'fixo') {
+  const origem = window._lastDeletedFrom;
+  if (origem && origem.lista === 'recurringExpenses' || !origem && item.type === 'fixo') {
     db.recurringExpenses.push(item);
-  } else if (item.type === 'parc') {
+  } else if (origem && origem.lista === 'installments' || !origem && item.type === 'parc') {
     db.installments.push(item);
   } else {
-    // eventual: voltar pro key correto
-    const itemDate = item.date ? new Date(item.date) : new Date();
-    const key = `${itemDate.getFullYear()}-${itemDate.getMonth()}`;
+    // eventual: voltar pro mês de onde saiu (ou o da data, se não souber)
+    let key = origem && origem.key;
+    if (!key) { const r = refFromDate(item.date); key = getKey(r.y, r.m); }
     if (!db.events[key]) db.events[key] = [];
     db.events[key].push(item);
   }
+  window._lastDeletedFrom = null;
   saveDB();
   if (typeof renderGastos === 'function') renderGastos();
   if (typeof fillIncomePanels === 'function') fillIncomePanels();
@@ -5914,9 +5930,10 @@ function setupRecurringPreview() {
   function updatePreview() {
     const type = typeSelect.value;
     const desc = document.getElementById('outDesc')?.value.trim() || 'esse gasto';
-    const value = parseFloat(document.getElementById('outVal')?.value);
+    const value = readMoney('outVal');
     const totalEl = document.getElementById('outParcelas');
     const endDate = document.getElementById('outEndDate')?.value;
+    const ref = refFromDate(document.getElementById('outDate')?.value);
 
     if (type === 'fixo') {
       const endLabel = endDate
@@ -5924,7 +5941,7 @@ function setupRecurringPreview() {
         : '<strong>até você encerrar</strong>';
       preview.innerHTML = `
         <span class="preview-icon">🔁</span>
-        <span>"${escapeHtml(desc)}" aparecerá todo mês a partir de ${monthsFull[currentMonth]}/${currentYear} ${endLabel}.</span>
+        <span>"${escapeHtml(desc)}" aparecerá todo mês a partir de ${monthsFull[ref.m]}/${ref.y} ${endLabel}.</span>
         ${!endDate ? '<button type="button" class="preview-link" onclick="document.getElementById(\'expenseAdvanced\').open=true; document.getElementById(\'outEndDate\').focus()">✏️ definir data fim</button>' : ''}
       `;
       preview.style.display = 'flex';
@@ -5932,12 +5949,16 @@ function setupRecurringPreview() {
       const total = parseInt(totalEl?.value) || 0;
       if (total >= 2 && value > 0) {
         const totalValue = (value * total).toFixed(2).replace('.', ',');
-        const endMonthAbs = currentMonth + total - 1;
-        const endYear = currentYear + Math.floor(endMonthAbs / 12);
+        const endMonthAbs = ref.m + total - 1;
+        const endYear = ref.y + Math.floor(endMonthAbs / 12);
         const endM = endMonthAbs % 12;
+        // Parcela em que a compra está hoje (compra antiga já em andamento)
+        const hoje = new Date();
+        const atual = (hoje.getFullYear() - ref.y) * 12 + (hoje.getMonth() - ref.m) + 1;
+        const andamento = atual > 1 && atual <= total ? ` Hoje está na <strong>${atual}ª de ${total}</strong>.` : '';
         preview.innerHTML = `
           <span class="preview-icon">📅</span>
-          <span>${total}x de ${fmt(value)} = <strong>R$ ${totalValue}</strong>. Termina em <strong>${monthsFull[endM]}/${endYear}</strong>.</span>
+          <span>${total}x de ${fmt(value)} = <strong>${fmt(value * total)}</strong>. 1ª parcela em ${monthsFull[ref.m]}/${ref.y}, termina em <strong>${monthsFull[endM]}/${endYear}</strong>.${andamento}</span>
         `;
         preview.style.display = 'flex';
       } else {
@@ -5951,10 +5972,12 @@ function setupRecurringPreview() {
 
   // Listeners
   typeSelect.addEventListener('change', updatePreview);
-  ['outDesc', 'outVal', 'outParcelas', 'outEndDate'].forEach(id => {
+  ['outDesc', 'outVal', 'outParcelas', 'outEndDate', 'outDate'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('input', updatePreview);
   });
+  // Data escolhida pela pessoa não é sobrescrita quando ela troca o mês na tela
+  document.getElementById('outDate')?.addEventListener('input', e => { e.target.dataset.userSet = '1'; });
 }
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', setupRecurringPreview);
@@ -5983,7 +6006,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v64';
+const APP_VERSION = 'v65';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -6797,6 +6820,47 @@ function sanitizeData(data) {
   return data;
 }
 
+// ── v65 · Reparos de dados ─────────────────────────────────────────────────
+// 1) Datas gravadas com hora (Adicionar rápido até a v64: "2026-09-28T15:22Z")
+//    viram só o dia local — em Gastos aparecia "28T15:22:37.726Z/09".
+// 2) Aporte em meta passa a guardar ano e mês ("2026-8"). Antes era só o mês
+//    (0–11): o aporte de set/2026 aparecia também em 2025. Os antigos ficam no
+//    ano mais recente em que aquele mês não está no futuro.
+// 3) Parcelamento/fixo copiado para db.events pelo bug do "Mês de referência"
+//    (mesmo id nas duas listas): a cópia sai — excluí-la apagava o original.
+function migrateV65(data) {
+  try {
+    const dia = v => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v)) ? (isoDay(v) || v) : v;
+    const arruma = it => { if (it && it.date) it.date = dia(it.date); };
+    [data.events, data.income].forEach(o => Object.values(o || {}).forEach(a => Array.isArray(a) && a.forEach(arruma)));
+    [data.recurringExpenses, data.recurringIncome, data.installments].forEach(a => Array.isArray(a) && a.forEach(arruma));
+
+    const hoje = new Date();
+    (Array.isArray(data.goals) ? data.goals : []).forEach(g => {
+      const c = g && g.contributions;
+      if (!c || typeof c !== 'object') return;
+      Object.keys(c).filter(k => /^\d{1,2}$/.test(k) && +k <= 11).forEach(k => {
+        const m = +k;
+        const y = m <= hoje.getMonth() ? hoje.getFullYear() : hoje.getFullYear() - 1;
+        const novo = `${y}-${m}`;
+        c[novo] = (Number(c[novo]) || 0) + (Number(c[k]) || 0);
+        delete c[k];
+      });
+    });
+
+    const idsPlano = new Set([...(data.installments || []), ...(data.recurringExpenses || [])]
+      .filter(x => x && x.id != null).map(x => x.id));
+    Object.keys(data.events || {}).forEach(k => {
+      const lista = data.events[k];
+      if (!Array.isArray(lista) || !lista.length) return;
+      const limpa = lista.filter(it => !(it && idsPlano.has(it.id) && ('startYear' in it || 'total' in it)));
+      if (limpa.length !== lista.length) {
+        if (limpa.length) data.events[k] = limpa; else delete data.events[k];
+      }
+    });
+  } catch (e) { console.warn('[v65] reparo de dados', e); }
+}
+
 function migrate(data) {
   // Future-proof: bump schemaVersion when changing structure
   if (!data.schemaVersion) data.schemaVersion = SCHEMA_VERSION;
@@ -6842,6 +6906,7 @@ function migrate(data) {
     data._privacyPurgeV57 = true;
   }
 
+  migrateV65(data);
   return sanitizeData(data);
 }
 
@@ -7059,13 +7124,57 @@ function sanitizeChatHtml(html) {
   limpa(tpl.content);
   return tpl.innerHTML;
 }
+// ── v65 · Datas no fuso LOCAL ─────────────────────────────────────────────
+// new Date("AAAA-MM-DD") é meia-noite UTC: no Brasil (UTC−3) virava o dia
+// anterior. E toISOString() depois das 21h já dava a data de amanhã.
+function isoDay(v) {
+  if (!v) return '';
+  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  const d = v instanceof Date ? v : new Date(v);
+  if (isNaN(d)) return '';
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function parseLocalDate(v) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v || ''));
+  return m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(v);
+}
 function todayISO() {
-  const d = new Date();
-  return d.toISOString().slice(0, 10);
+  return isoDay(new Date());
+}
+// Mês de um lançamento = mês da DATA informada, não o mês aberto na tela.
+function refFromDate(dateStr) {
+  const d = isoDay(dateStr);
+  if (!d) return { y: currentYear, m: currentMonth };
+  const [y, m] = d.split('-').map(Number);
+  return { y, m: m - 1 };
+}
+function ensureYear(y) {
+  if (!Number.isInteger(y) || db.years.includes(y)) return;
+  db.years.push(y);
+  db.years.sort((a, b) => a - b);
+  if (typeof rebuildYearSelectors === 'function') rebuildYearSelectors();
+}
+// Data sugerida nos formulários: hoje, se a tela mostra o mês atual; senão o
+// mesmo dia dentro do mês aberto (quem navega até agosto quer lançar em agosto).
+function defaultDateForView() {
+  const hoje = new Date();
+  if (hoje.getFullYear() === currentYear && hoje.getMonth() === currentMonth) return todayISO();
+  const ultimo = new Date(currentYear, currentMonth + 1, 0).getDate();
+  return isoDay(new Date(currentYear, currentMonth, Math.min(hoje.getDate(), ultimo)));
+}
+// Valor para um campo de texto: "1234,56" (o leitor aceita também 1.234,56).
+function fmtInput(v) {
+  const n = safeNum(v, NaN);
+  return Number.isFinite(n) ? n.toFixed(2).replace('.', ',') : '';
+}
+function readMoney(id) {
+  const el = document.getElementById(id);
+  return el ? parseMoneyBR(el.value) : NaN;
 }
 function fmtDate(iso) {
-  if (!iso) return '—';
-  const [y, m, d] = String(iso).split('-');
+  const dia = isoDay(iso);
+  if (!dia) return '—';
+  const [y, m, d] = dia.split('-');
   return escapeHtml(`${d}/${m}`);
 }
 
@@ -7407,14 +7516,26 @@ function getGastoMedioMensal(y, m, janela = 6) {
   return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
 }
 
-// Aceita "1500,00", "1.500,00" e "1500.00" — o último separador é o decimal.
+// Lê valores como um brasileiro digita: "1500,00", "1.500,00", "1.500",
+// "12,5" e também "1500.00". Com os dois separadores, o último é o decimal.
+// Só com ponto: "1.500" e "12.345.678" são milhar; "12.5" é decimal.
+// v65: é o leitor de TODOS os campos de valor. Antes eles eram type="number",
+// cuja leitura depende do idioma do navegador — em inglês "1.200,00" virava 1,20.
 function parseMoneyBR(str) {
-  let s = String(str).trim().replace(/\s|R\$/gi, '');
+  let s = String(str == null ? '' : str).trim().replace(/\s|R\$/gi, '');
   if (!s) return NaN;
+  const neg = /^[-−]/.test(s);
+  s = s.replace(/^[-−+]/, '');
   const c = s.lastIndexOf(','), d = s.lastIndexOf('.');
   if (c > -1 && d > -1) s = c > d ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '');
-  else if (c > -1) s = s.replace(',', '.');
-  return parseFloat(s);
+  else if (c > -1) s = (s.split(',').length > 2) ? s.replace(/,/g, '') : s.replace(',', '.');
+  else if (d > -1) {
+    const partes = s.split('.');
+    if (partes.length > 2 || partes[partes.length - 1].length === 3) s = s.replace(/\./g, '');
+  }
+  if (!/^\d*\.?\d+$|^\d+\.$/.test(s)) return NaN;
+  const n = parseFloat(s);
+  return neg ? -n : n;
 }
 
 function setContaHoje() {
@@ -7889,7 +8010,7 @@ function renderGoals() {
     ? db.goals.map(g => `<option value="${g.id}">${escapeHtml(g.name)}</option>`).join('')
     : '<option value="">— nenhuma meta —</option>';
   const monthSel = document.getElementById('contribMonth');
-  monthSel.innerHTML = monthsFull.map((m, i) => `<option value="${i}" ${i===currentMonth?'selected':''}>${m}</option>`).join('');
+  monthSel.innerHTML = monthsFull.map((m, i) => `<option value="${i}" ${i===currentMonth?'selected':''}>${m}/${currentYear}</option>`).join('');
 
   const list = document.getElementById('goalsList');
   if (!db.goals.length) {
@@ -7919,16 +8040,19 @@ function renderGoals() {
     const pct   = g.total ? Math.min(100, (total / g.total) * 100) : 0;
     const realPct = g.total ? (total / g.total * 100) : 0;
     const done  = realPct >= 100 && g.total > 0;
-    const aportes = months.map((m, i) => {
-      const v = g.contributions[i] || 0;
-      return v ? `<span class="goal-chip" onclick="deleteContribution(${g.id}, ${i})" title="Clique para remover">${m}: ${fmt(v)} ✕</span>` : '';
-    }).join('');
+    // v65: aportes guardados por ano e mês ("2026-8"), em ordem cronológica
+    const aportes = Object.keys(g.contributions)
+      .map(k => { const [yy, mm] = k.split('-').map(Number); return { k, yy, mm, v: g.contributions[k] || 0 }; })
+      .filter(a => a.v && Number.isInteger(a.yy) && months[a.mm])
+      .sort((a, b) => (a.yy * 12 + a.mm) - (b.yy * 12 + b.mm))
+      .map(a => `<span class="goal-chip" onclick="deleteContribution(${jsArg(g.id)}, ${jsArg(a.k)})" title="Clique para remover">${months[a.mm]}/${String(a.yy).slice(2)}: ${fmt(a.v)} ✕</span>`)
+      .join('');
     return `
       <div class="goal-row">
         <div class="goal-head">
           <div>
             <div class="goal-title">${escapeHtml(g.name)}</div>
-            <div class="goal-meta">Alvo: ${fmt(g.total)}${g.deadline ? ' · Até ' + new Date(g.deadline).toLocaleDateString('pt-BR') : ''}</div>
+            <div class="goal-meta">Alvo: ${fmt(g.total)}${g.deadline ? ' · Até ' + parseLocalDate(g.deadline).toLocaleDateString('pt-BR') : ''}</div>
           </div>
           <div style="display:flex; gap:6px; flex-shrink:0">
             <button class="btn" onclick="editGoalModal(${g.id})">Editar</button>
@@ -8095,7 +8219,7 @@ function editInvestModal(y, m) {
   const lanc = getMonthData(y, m).aportes || [];
   const lancTotal = lanc.reduce((a, b) => a + b.value, 0);
   const campo = (pref, c, v) => `<div class="input-group"><label>${escapeHtml(c.label)} (R$)</label>
-    <input id="${pref}_${escapeHtml(c.id)}" type="number" step="0.01" inputmode="decimal" value="${escapeHtml(v || 0)}"></div>`;
+    <input id="${pref}_${escapeHtml(c.id)}" type="text" inputmode="decimal" value="${escapeHtml(fmtInput(v || 0))}"></div>`;
 
   modal.show(`Investimentos — ${monthsFull[m]} de ${y}`, `
     <div class="invest-tabs" style="display:flex;gap:4px;margin:-4px 0 14px;border-bottom:1px solid var(--border-soft)">
@@ -8119,7 +8243,7 @@ function editInvestModal(y, m) {
     confirmLabel: 'Salvar',
     onConfirm: () => {
       const key = getKey(y, m);
-      const ler = id => parseFloat(document.getElementById(id).value) || 0;
+      const ler = id => readMoney(id) || 0;
       const entry = {};
       classes.forEach(c => { const v = ler('ei_' + c.id); if (v) entry[c.id] = v; });
       // preserva valores de classes que não estão na lista (nada se perde)
@@ -8375,7 +8499,7 @@ function renderCategories() {
           ${groupSelect(c, idx)}
         </div>
         <div><input type="color" value="${safeColor(c.color)}" onchange="updateCategoryColor(${idx}, this.value)" style="height:32px; padding:2px"></div>
-        <div><input type="number" step="0.01" value="${escapeHtml(c.budget)}" placeholder="0,00" onchange="updateCategoryBudget(${idx}, this.value)" style="padding:6px"></div>
+        <div><input type="text" inputmode="decimal" value="${escapeHtml(c.budget ? fmtInput(c.budget) : '')}" placeholder="0,00" aria-label="Orçamento mensal de ${escapeHtml(c.name)}" onchange="updateCategoryBudget(${idx}, this.value)" style="padding:6px"></div>
         <div style="text-align:right">
           <button class="btn" onclick="renameCategory(${idx})">Renomear</button>
           <button class="btn danger" onclick="deleteCategory(${idx})">×</button>
@@ -8399,7 +8523,7 @@ function updateCategoryColor(idx, color) {
 }
 
 function updateCategoryBudget(idx, val) {
-  db.categories[idx].budget = parseFloat(val) || 0;
+  db.categories[idx].budget = Math.max(0, parseMoneyBR(val) || 0);
   saveDB();
   renderCategories();
   if (document.getElementById('dashboard').classList.contains('active')) renderDashboard();
@@ -8443,7 +8567,7 @@ function openNewCategoryModal() {
     <div class="input-group"><label>Nome</label><input id="newCatName" placeholder="Ex: Pets"></div>
     <div class="input-group"><label>Cor</label><input id="newCatColor" type="color" value="#3b82f6" style="height:40px"></div>
     <div class="input-group"><label>Grupo</label><select id="newCatGroup">${CATEGORY_GROUPS.map(g => `<option ${g === 'Outros' ? 'selected' : ''}>${g}</option>`).join('')}</select></div>
-    <div class="input-group"><label>Orçamento mensal (opcional)</label><input id="newCatBudget" type="number" step="0.01" placeholder="0,00"></div>
+    <div class="input-group"><label>Orçamento mensal (opcional)</label><input id="newCatBudget" type="text" inputmode="decimal" placeholder="0,00"></div>
   `, {
     confirmLabel: 'Criar',
     onConfirm: () => {
@@ -8453,7 +8577,7 @@ function openNewCategoryModal() {
       db.categories.push({
         name,
         color: document.getElementById('newCatColor').value,
-        budget: parseFloat(document.getElementById('newCatBudget').value) || 0,
+        budget: Math.max(0, readMoney('newCatBudget') || 0),
         group: document.getElementById('newCatGroup') ? document.getElementById('newCatGroup').value : 'Outros'
       });
       saveDB();
@@ -8609,7 +8733,7 @@ function refreshFormUI() {
 
 function saveOut() {
   const desc   = document.getElementById('outDesc').value.trim();
-  const value  = parseFloat(document.getElementById('outVal').value);
+  const value  = readMoney('outVal');
   const cat    = document.getElementById('outCat').value;
   const method = outMethod().value;
   const date   = document.getElementById('outDate').value || todayISO();
@@ -8628,11 +8752,16 @@ function saveOut() {
   if (competenceRaw) { const [cy, cm] = competenceRaw.split('-').map(Number); base.competenceYear = cy; base.competenceMonth = cm - 1; }
   if (methodKind(method) === 'invest') base.investClass = document.getElementById('outInvestType').value;
 
+  // v65: o mês do lançamento é o da DATA informada (antes era sempre o mês
+  // aberto na tela: um gasto de 18/08 caía em setembro, e um parcelamento
+  // começado em junho aparecia como 1/12 em setembro).
+  const ref = refFromDate(date);
+  ensureYear(ref.y);
   if (type === 'parc') {
     const total = parseInt(document.getElementById('outParcelas').value) || 2;
-    db.installments.push({ ...base, startYear: currentYear, startMonth: currentMonth, total });
+    db.installments.push({ ...base, startYear: ref.y, startMonth: ref.m, total });
   } else if (type === 'fixo') {
-    const fixoEntry = { ...base, type: 'fixo', startYear: currentYear, startMonth: currentMonth };
+    const fixoEntry = { ...base, type: 'fixo', startYear: ref.y, startMonth: ref.m };
     // Ler data fim opcional
     const endRaw = (document.getElementById('outEndDate')?.value || '').trim();
     if (endRaw) {
@@ -8642,7 +8771,7 @@ function saveOut() {
     }
     db.recurringExpenses.push(fixoEntry);
   } else {
-    const key = getKey(currentYear, currentMonth);
+    const key = getKey(ref.y, ref.m);
     if (!db.events[key]) db.events[key] = [];
     db.events[key].push({ ...base, type: 'eventual' });
   }
@@ -8658,7 +8787,9 @@ function saveOut() {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
-  document.getElementById('outDate').value = todayISO();
+  const outDateEl = document.getElementById('outDate');
+  outDateEl.value = defaultDateForView();
+  delete outDateEl.dataset.userSet;
   renderGastos();
   if (typeof fillIncomePanels === 'function') fillIncomePanels();
   if (document.getElementById('dashboard').classList.contains('active')) renderDashboard();
@@ -8670,6 +8801,7 @@ function saveOut() {
   } else if (type === 'parc') {
     _toastMsg += ` (parcelado — aparece nos próximos meses)`;
   }
+  if (ref.y !== currentYear || ref.m !== currentMonth) _toastMsg += ` · lançado em ${monthsFull[ref.m]}/${ref.y}`;
   toast(_toastMsg, 'success', 4000);
 }
 
@@ -8688,7 +8820,7 @@ function toggleIncomeAdvanced() {
 
 function saveIn() {
   const desc      = document.getElementById('inDesc').value.trim();
-  const value     = parseFloat(document.getElementById('inVal').value);
+  const value     = readMoney('inVal');
   const recurring = document.getElementById('inRecurring').checked;
   if (!desc)  return toast('Origem obrigatória', 'error');
   if (!value || value <= 0) return toast('Valor inválido', 'error');
@@ -8801,8 +8933,12 @@ async function handleTableAction(e) {
       : 'Excluir este lançamento?';
     const ok = await confirmDialog(msg);
     if (!ok) return;
-    // Guardar pra possível undo
+    // Guardar pra possível undo — e de ONDE saiu (parcelamento não tem `type`)
     window._lastDeleted = item ? { ...item } : null;
+    window._lastDeletedFrom = !item ? null
+      : db.installments.includes(item) ? { lista: 'installments' }
+      : db.recurringExpenses.includes(item) ? { lista: 'recurringExpenses' }
+      : { lista: 'events', key: Object.keys(db.events).find(k => db.events[k].includes(item)) };
     // Registrar tombstone ANTES de remover — impede que migrate() reinjete
     db.deletedIds = db.deletedIds || [];
     if (!db.deletedIds.includes(numId)) db.deletedIds.push(numId);
@@ -8846,11 +8982,17 @@ function editTransactionModal(item) {
     `<option value="${escapeHtml(m.id)}" ${m.id === itemMethodId ? 'selected' : ''}>${escapeHtml(m.label)}</option>`
   ).join('');
 
+  // v65: o tipo vem da lista onde o item está guardado. Parcelamentos são
+  // gravados sem `type`; antes caíam no ramo "avulso" e mudar o mês criava uma
+  // cópia com o mesmo id em db.events — excluir a cópia apagava o parcelamento.
+  const kind = db.installments.includes(item) ? 'parc'
+             : db.recurringExpenses.includes(item) ? 'fixo' : 'eventual';
+
   // Descobrir o mês de referência atual do lançamento
   // - Eventual: vem do key em db.events (YYYY-M)
   // - Fixo/parc: vem de startYear/startMonth
   let curRefY = currentYear, curRefM = currentMonth;
-  if (item.type === 'eventual' || !item.type) {
+  if (kind === 'eventual') {
     // Procurar em qual key está
     for (const key in db.events) {
       if (db.events[key].some(x => x.id === item.id)) {
@@ -8866,13 +9008,14 @@ function editTransactionModal(item) {
   const refValue = `${curRefY}-${String(curRefM + 1).padStart(2, '0')}`;
 
   // Label e hint conforme o tipo
-  const refLabel = item.type === 'fixo' ? 'Mês de início (recorrente)'
-                 : item.type === 'parc' ? 'Mês da 1ª parcela'
+  const refLabel = kind === 'fixo' ? 'Mês de início (recorrente)'
+                 : kind === 'parc' ? 'Mês da 1ª parcela'
                  : 'Mês de referência';
+  const oldDate = isoDay(item.date);
 
   modal.show('Editar lançamento', `
     <div class="input-group"><label>Descrição</label><input id="editDesc" value="${escapeHtml(item.desc)}"></div>
-    <div class="input-group"><label>Valor (R$)</label><input id="editVal" type="number" step="0.01" value="${escapeHtml(item.value)}"></div>
+    <div class="input-group"><label>Valor (R$)</label><input id="editVal" type="text" inputmode="decimal" value="${escapeHtml(fmtInput(item.value))}"></div>
     <div class="input-group"><label>Categoria</label><select id="editCat">${catOpts}</select></div>
     <div class="input-group"><label>Método</label><select id="editMethod" onchange="document.getElementById('editInvestWrap').style.display = methodKind(this.value) === 'invest' ? '' : 'none'">${methodOpts}</select></div>
     <div class="input-group" id="editInvestWrap" style="display:${methodKind(item.method) === 'invest' ? '' : 'none'}">
@@ -8881,7 +9024,7 @@ function editTransactionModal(item) {
         return getInvestClasses().map(c => `<option value="${escapeHtml(c.id)}" ${c.id === atual ? 'selected' : ''}>${escapeHtml(c.label)}</option>`).join(''); })()}</select>
       <small class="muted" style="display:block;margin-top:4px;font-size:0.75rem">Aporte não conta como gasto — entra no seu patrimônio.</small>
     </div>
-    <div class="input-group"><label>Data exata</label><input id="editDate" type="date" value="${escapeHtml(item.date || '')}"></div>
+    <div class="input-group"><label>Data exata</label><input id="editDate" type="date" value="${escapeHtml(oldDate)}"></div>
     <div class="input-group">
       <label>${refLabel}</label>
       <input id="editRefMonth" type="month" value="${refValue}">
@@ -8893,7 +9036,7 @@ function editTransactionModal(item) {
     confirmLabel: 'Salvar alterações',
     onConfirm: () => {
       const newDesc = document.getElementById('editDesc').value.trim();
-      const newVal  = parseFloat(document.getElementById('editVal').value);
+      const newVal  = readMoney('editVal');
       if (!newDesc || !newVal) { toast('Preencha descrição e valor', 'error'); return false; }
 
       const oldRefY = curRefY, oldRefM = curRefM;
@@ -8902,6 +9045,13 @@ function editTransactionModal(item) {
       if (refRaw) {
         const [yy, mm] = refRaw.split('-').map(Number);
         newRefY = yy; newRefM = mm - 1;
+      }
+      // Avulso: se só a DATA mudou de mês, o lançamento acompanha a data
+      const newDateEarly = isoDay(document.getElementById('editDate').value);
+      if (kind === 'eventual' && newDateEarly && newDateEarly !== oldDate &&
+          newRefY === oldRefY && newRefM === oldRefM) {
+        const r = refFromDate(newDateEarly);
+        newRefY = r.y; newRefM = r.m;
       }
       const refChanged = (newRefY !== oldRefY || newRefM !== oldRefM);
 
@@ -8912,12 +9062,12 @@ function editTransactionModal(item) {
       item.method = document.getElementById('editMethod').value;
       if (methodKind(item.method) === 'invest') item.investClass = document.getElementById('editInvestClass').value;
       else delete item.investClass;
-      const newDate = document.getElementById('editDate').value;
-      item.date = newDate || item.date;
+      const newDate = newDateEarly;
+      item.date = newDate || oldDate || item.date;
 
       // Se o mês de referência mudou, mover o item
       if (refChanged) {
-        if (item.type === 'eventual' || !item.type) {
+        if (kind === 'eventual') {
           // Mover entre keys de db.events
           const oldKey = `${oldRefY}-${oldRefM}`;
           const newKey = `${newRefY}-${newRefM}`;
@@ -8927,24 +9077,20 @@ function editTransactionModal(item) {
           }
           if (!db.events[newKey]) db.events[newKey] = [];
           // Coerência: ajustar item.date pro novo mês se não foi mudado manualmente
-          if (!newDate || (new Date(item.date).getFullYear() !== newRefY ||
-                            new Date(item.date).getMonth() !== newRefM)) {
+          if (!newDate || (parseLocalDate(item.date).getFullYear() !== newRefY ||
+                            parseLocalDate(item.date).getMonth() !== newRefM)) {
             item.date = `${newRefY}-${String(newRefM + 1).padStart(2, '0')}-15`;
           }
           db.events[newKey].push(item);
-        } else if (item.type === 'fixo' || item.type === 'parc') {
-          // Mudar startYear/startMonth
+        } else {
+          // Fixo/parcelamento: muda o início no PRÓPRIO registro, nunca copia
           item.startYear = newRefY;
           item.startMonth = newRefM;
         }
       }
 
       // Garantir que o ano existe em db.years
-      if (!db.years.includes(newRefY)) {
-        db.years.push(newRefY);
-        db.years.sort();
-        if (typeof rebuildYearSelectors === 'function') rebuildYearSelectors();
-      }
+      ensureYear(newRefY);
 
       saveDB();
       renderGastos();
@@ -8962,7 +9108,7 @@ function editTransactionModal(item) {
 // ============== METAS HANDLERS ==============
 function saveGoal() {
   const name     = document.getElementById('goalName').value.trim();
-  const total    = parseFloat(document.getElementById('goalTotal').value);
+  const total    = readMoney('goalTotal');
   const deadline = document.getElementById('goalDeadline').value;
   if (!name) return toast('Nome obrigatório', 'error');
   if (!total || total <= 0) return toast('Total inválido', 'error');
@@ -8978,11 +9124,12 @@ function saveGoal() {
 function saveContribution() {
   const goalId = parseInt(document.getElementById('contribGoal').value);
   const month  = parseInt(document.getElementById('contribMonth').value);
-  const value  = parseFloat(document.getElementById('contribValue').value);
+  const value  = readMoney('contribValue');
   if (!goalId || isNaN(month) || !value) return toast('Preencha todos os campos', 'error');
   const goal = db.goals.find(g => g.id === goalId);
   if (!goal) return;
-  goal.contributions[month] = (goal.contributions[month] || 0) + value;
+  const chave = getKey(currentYear, month);
+  goal.contributions[chave] = (goal.contributions[chave] || 0) + value;
   saveDB();
   document.getElementById('contribValue').value = '';
   renderGoals();
@@ -8998,12 +9145,13 @@ async function deleteGoal(id) {
   toast('Meta excluída', 'success');
 }
 
-async function deleteContribution(goalId, monthIdx) {
+async function deleteContribution(goalId, chave) {
   const goal = db.goals.find(g => g.id === goalId);
-  if (!goal) return;
-  const ok = await confirmDialog(`Remover aporte de ${monthsFull[monthIdx]}?`);
+  if (!goal || !(chave in goal.contributions)) return;
+  const [yy, mm] = String(chave).split('-').map(Number);
+  const ok = await confirmDialog(`Remover aporte de ${monthsFull[mm] || ''}/${yy}?`);
   if (!ok) return;
-  delete goal.contributions[monthIdx];
+  delete goal.contributions[chave];
   saveDB();
   renderGoals();
   toast('Aporte removido', 'success');
@@ -9014,13 +9162,13 @@ function editGoalModal(id) {
   if (!g) return;
   modal.show('Editar Meta', `
     <div class="input-group"><label>Nome</label><input id="egName" value="${escapeHtml(g.name)}"></div>
-    <div class="input-group"><label>Total (R$)</label><input id="egTotal" type="number" step="0.01" value="${escapeHtml(g.total)}"></div>
+    <div class="input-group"><label>Total (R$)</label><input id="egTotal" type="text" inputmode="decimal" value="${escapeHtml(fmtInput(g.total))}"></div>
     <div class="input-group"><label>Data limite</label><input id="egDate" type="date" value="${escapeHtml(g.deadline || '')}"></div>
   `, {
     confirmLabel: 'Salvar',
     onConfirm: () => {
       const name = document.getElementById('egName').value.trim();
-      const total = parseFloat(document.getElementById('egTotal').value);
+      const total = readMoney('egTotal');
       if (!name || !total) { toast('Preencha nome e total', 'error'); return false; }
       g.name = name; g.total = total; g.deadline = document.getElementById('egDate').value;
       saveDB();
@@ -9207,8 +9355,9 @@ function updateContextBar() {
   if (cm && typeof currentYear !== 'undefined' && typeof currentMonth !== 'undefined') {
     cm.innerHTML = `${monthsFull[currentMonth]} de <em>${escapeHtml(currentYear)}</em>`;
     const d = getMonthData(currentYear, currentMonth);
-    const saldoCls = d.saldo >= 0 ? 'pos' : 'neg';
-    meta.innerHTML = `Saldo: <span class="${saldoCls}" style="font-weight:600">${fmt(d.saldo)}</span>`;
+    // v65: mesmo número do cartão "Sobra do mês" (entradas − gastos)
+    const sobraCls = d.sobra >= 0 ? 'pos' : 'neg';
+    meta.innerHTML = `Sobra: <span class="${sobraCls}" style="font-weight:600">${fmt(d.sobra)}</span>`;
   }
 }
 function setupContextBar() {
@@ -9991,6 +10140,19 @@ window.saveDB = function() {
   }
 };
 
+// v65: o "Sobra" do topo e as listas de fixos e rendas recorrentes acompanham
+// qualquer alteração (antes só mudavam ao trocar de mês ou recarregar, e a
+// lista vazia convidava a cadastrar o mesmo fixo duas vezes).
+const _saveDBv64 = window.saveDB;
+window.saveDB = function() {
+  _saveDBv64.apply(this, arguments);
+  clearTimeout(window._v65Refresh);
+  window._v65Refresh = setTimeout(() => {
+    if (typeof currentUser === 'undefined' || !currentUser || !db || !db.events) return;
+    [updateContextBar, renderRecurringExpenses, renderRecurringIncome].forEach(fn => { try { fn(); } catch (e) { /* tela ausente */ } });
+  }, 0);
+};
+
 // Só os backups do usuário logado
 function listBackups() {
   if (typeof currentUser === 'undefined' || !currentUser) return [];
@@ -10425,8 +10587,8 @@ window.renderGastos = function() {
           const typeOrder = { fixo: 0, parc: 1, eventual: 2 };
           g.items.sort((a, b) => {
             // 1º critério: data (mais recente primeiro)
-            const da = a.date ? new Date(a.date).getTime() : 0;
-            const dbb = b.date ? new Date(b.date).getTime() : 0;
+            const da = a.date ? parseLocalDate(a.date).getTime() : 0;
+            const dbb = b.date ? parseLocalDate(b.date).getTime() : 0;
             if (da !== dbb) return dbb - da;
             // 2º: tipo (fixos juntos)
             const to = (typeOrder[a.type] ?? 99) - (typeOrder[b.type] ?? 99);
@@ -10888,7 +11050,7 @@ function renderFutureCommitment() {
 function savePortfolioValue() {
   const inp = document.getElementById('portfolioValueInput');
   if (!inp) return;
-  const v = parseFloat((inp.value || '').toString().replace(',', '.'));
+  const v = parseMoneyBR(inp.value);
   if (!isFinite(v) || v < 0) { toast('Informe um valor de mercado válido', 'error'); return; }
   db.portfolio = { value: v, date: new Date().toISOString() };
   saveDB();
@@ -10921,7 +11083,7 @@ function renderProfitability() {
     <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px">
       <div class="input-group" style="margin:0; flex:1; min-width:200px">
         <label>Valor atual de mercado (R$)</label>
-        <input id="portfolioValueInput" type="number" step="0.01" inputmode="decimal"
+        <input id="portfolioValueInput" type="text" inputmode="decimal"
           placeholder="quanto vale hoje a carteira" value="${hasVal ? value : ''}">
       </div>
       <button class="btn primary" style="min-height:42px" onclick="savePortfolioValue()">Atualizar</button>
@@ -11126,7 +11288,7 @@ function periodLine() {
 // Datas relativas para a atividade recente
 function relativeDay(iso) {
   if (!iso) return '';
-  const d = new Date(iso); const now = new Date();
+  const d = parseLocalDate(iso); const now = new Date();
   const midnight = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
   const days = Math.round((midnight(now) - midnight(d)) / 86400000);
   if (days === 0) return 'Hoje';
@@ -11369,7 +11531,7 @@ function renderRecentActivity() {
   if (!dash) return;
   const cur = getMonthData(currentYear, currentMonth);
   const dated = [...(cur.items || []), ...(cur.aportes || [])].filter(i => i.date)
-    .sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
+    .sort((a, b) => parseLocalDate(b.date) - parseLocalDate(a.date)).slice(0, 5);
 
   let panel = document.getElementById('recentActivity');
   if (!panel) {
@@ -11783,6 +11945,43 @@ function renderRecentActivity() {
     .filterBtn:active, .link-btn:active, .btn-icon:active, #fab:active,
     .bnav-add:active, #quickAddCard .qa-submit:active, .qa-suggestion-chip:active { transform: none; }
   }
+
+  /* ── v65 ── */
+  /* Fechar do assistente com alvo de toque real (era ~15px) */
+  .assistant-header .modal-close {
+    width: 44px; height: 44px; font-size: 1.7rem; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  /* Avisos nunca bloqueiam toques (cobriam o "+" por 3s depois de salvar) */
+  #toastContainer, #toastContainer .toast { pointer-events: none; }
+  #qaDate { width: 100%; margin-bottom: 8px; }
+  @media (max-width: 768px) {
+    /* Assistente em tela cheia ACIMA da barra inferior e dos botões do topo:
+       antes o campo de digitação ficava atrás da barra (tocar abria Gastos). */
+    .assistant-panel { z-index: 150; }
+    .assistant-input-wrap { padding-bottom: calc(18px + env(safe-area-inset-bottom)); }
+    #toastContainer {
+      left: 12px; right: 12px; max-width: none; align-items: center;
+      bottom: calc(88px + env(safe-area-inset-bottom));
+    }
+  }
 </style>
+
+<script>
+// v65: a data sugerida no Adicionar acompanha o mês aberto na tela (a menos
+// que a pessoa tenha escolhido uma data).
+(function () {
+  const orig = window.renderAll;
+  if (typeof orig !== 'function') return;
+  window.renderAll = function () {
+    const r = orig.apply(this, arguments);
+    try {
+      const el = document.getElementById('outDate');
+      if (el && !el.dataset.userSet && typeof currentUser !== 'undefined' && currentUser) el.value = defaultDateForView();
+    } catch (e) { /* formulário ausente */ }
+    return r;
+  };
+})();
+</script>
 </body>
 </html>
