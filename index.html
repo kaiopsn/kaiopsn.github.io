@@ -2637,6 +2637,13 @@
         <h2>Nova Entrada (Renda)</h2>
         <div class="input-group"><label>Data</label><input id="inDate" type="date"></div>
         <div class="input-group"><label>Origem</label><input id="inDesc" placeholder="Ex: Salário, Freela, Reembolso"></div>
+        <div class="input-group"><label>Tipo</label>
+          <select id="inTipo" onchange="document.getElementById('inProvWrap').style.display = this.value ? '' : 'none'">
+            <option value="">Salário e outras entradas</option>
+            <option value="isento">Provento isento (dividendos, FII)</option>
+            <option value="tributavel">Provento tributável (JCP, juros)</option>
+          </select></div>
+        <div class="input-group" id="inProvWrap" style="display:none"><label>De qual investimento</label><select id="inProvClasse"></select></div>
         <div class="input-group"><label>Valor (R$)</label><input id="inVal" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off"></div>
         <div class="checkbox-group">
           <input type="checkbox" id="inRecurring" onchange="toggleIncomeAdvanced()">
@@ -4982,7 +4989,9 @@ function exportTransactionsCSV() {
       const d = getMonthData(year, m);
       const mes = `${String(m + 1).padStart(2, '0')}/${year}`;
       (d.income || []).forEach(it => lines.push([
-        mes, dataBR(it, year, m), 'Entrada', texto(it.desc), texto(''), texto(it.recurring ? 'recorrente' : 'avulsa'),
+        mes, dataBR(it, year, m), it.provento ? 'Provento' : 'Entrada', texto(it.desc),
+        texto(it.provento ? (getInvestClass(it.investClass) || {}).label || '' : ''),
+        texto(it.provento ? (it.provento === 'tributavel' ? 'tributável' : 'isento') : (it.recurring ? 'recorrente' : 'avulsa')),
         texto(''), numero(it.value), texto(''), texto(it.note || '')].join(SEP)));
       [...(d.items || []), ...(d.aportes || [])].forEach(it => lines.push([
         mes, dataBR(it, year, m), it._aporte ? 'Aporte' : 'Gasto', texto(it.desc),
@@ -5356,6 +5365,14 @@ document.addEventListener('click', e => {
       <select id="qaMethod" aria-label="Forma de pagamento"><!-- formas do usuário: rebuildMethodDropdowns() --></select>
       <select id="qaCat" aria-label="Categoria"></select>
     </div>
+    <div data-only="entrada">
+      <select id="qaTipoEntrada" aria-label="Tipo de entrada" onchange="document.getElementById('qaProvClasse').style.display = this.value ? '' : 'none'">
+        <option value="">Salário e outras entradas</option>
+        <option value="isento">Provento isento (dividendos, FII)</option>
+        <option value="tributavel">Provento tributável (JCP, juros)</option>
+      </select>
+      <select id="qaProvClasse" aria-label="De qual investimento" style="display:none"></select>
+    </div>
     <label class="qa-check" data-only="entrada">
       <input type="checkbox" id="qaRecorrente">
       <span>Recebo todo mês <small>salário, aposentadoria, aluguel recebido… — repete a partir desta data</small></span>
@@ -5431,6 +5448,8 @@ function openQuickAdd(mode) {
   if (origemConta) origemConta.checked = true;
   const rec = document.getElementById('qaRecorrente');
   if (rec) rec.checked = false;
+  const tipoEnt = document.getElementById('qaTipoEntrada');
+  if (tipoEnt) { tipoEnt.value = ''; document.getElementById('qaProvClasse').style.display = 'none'; }
 
   // Limpar campos
   document.getElementById('qaDesc').value = '';
@@ -5513,12 +5532,15 @@ async function submitQuickAdd() {
 
   if (_qaMode === 'entrada') {
     ensureYear(ref.y);
+    // v68: provento de investimento (dividendos, JCP, juros)
+    const tipo = document.getElementById('qaTipoEntrada')?.value || '';
+    const extra = tipo ? { provento: tipo, investClass: document.getElementById('qaProvClasse')?.value } : {};
     if (document.getElementById('qaRecorrente')?.checked) {
-      db.recurringIncome.push({ id: Date.now(), desc, value, startYear: ref.y, startMonth: ref.m, date });
+      db.recurringIncome.push({ id: Date.now(), desc, value, startYear: ref.y, startMonth: ref.m, date, ...extra });
       msg = `Entrada mensal: ${desc} — ${fmt(value)} a partir de ${monthsFull[ref.m]}/${ref.y}`;
     } else {
       if (!db.income[key]) db.income[key] = [];
-      db.income[key].push({ id: Date.now(), desc, value, date });
+      db.income[key].push({ id: Date.now(), desc, value, date, ...extra });
       msg = `Entrada salva: ${desc} — ${fmt(value)}${outroMes}`;
     }
   } else if (_qaMode === 'guardar') {
@@ -6128,7 +6150,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v67';
+const APP_VERSION = 'v68';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -6829,6 +6851,12 @@ function sanitizeData(data) {
     const reserva = c => {
       c.reserve = !!c.reserve;
       if (c.opening != null) { const v = safeNum(c.opening, 0); if (v > 0) c.opening = v; else delete c.opening; }
+      if (c.market != null) {
+        const ok = obj(c.market) && Number.isFinite(c.market.value) && c.market.value >= 0 &&
+          typeof c.market.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(c.market.date);
+        if (!ok) delete c.market;
+      }
+      if (c.target != null) { const t = safeNum(c.target, NaN); if (t > 0 && t <= 100) c.target = t; else delete c.target; }
       return c;
     };
     let lista = saneiaLista(Array.isArray(data.investClasses) ? data.investClasses : [], remapClasse, reserva);
@@ -6855,6 +6883,7 @@ function sanitizeData(data) {
       if (isSafeId(id)) it.investClass = id; else delete it.investClass;
     }
     if (it.investType != null && !['fixa', 'variavel'].includes(it.investType)) delete it.investType;
+    if (it.provento != null && !['isento', 'tributavel'].includes(it.provento)) delete it.provento;
     // Início/fim de recorrentes e parcelamentos: sempre inteiros
     ['startYear', 'startMonth'].forEach(f => {
       if (f in it) { const n = safeInt(it[f]); it[f] = n !== null ? n : (f === 'startYear' ? data.years[0] : 0); }
@@ -7711,6 +7740,87 @@ function getCarteira(y, m) {
   return { porClasse, reserva, investimentos, total: reserva + investimentos };
 }
 
+// ── v68 · CARTEIRA A MERCADO, ALOCAÇÃO-ALVO E PROVENTOS ─────────────────
+// Valor de mercado informado por classe: c.market = { value, date }. Depois da
+// data informada, os aportes e resgates da classe entram por cima — o valor
+// não "envelhece" a cada aporte. Sem valor informado, vale o aplicado (custo).
+function fluxoClasseDepois(classId, dataIso) {
+  const d0 = isoDay(dataIso);
+  if (!d0) return 0;
+  const [y0, m0] = d0.split('-').map(Number);
+  const ini = y0 * 12 + (m0 - 1);
+  const f = investFimAtual(), fim = f.y * 12 + f.m;
+  let soma = 0;
+  for (let t = ini; t <= fim && t - ini < 1200; t++) {
+    const y = Math.floor(t / 12), m = t % 12;
+    if (t === ini) {
+      // no mês da atualização, só os aportes lançados com data posterior
+      (getMonthData(y, m).aportes || []).forEach(it => {
+        if (it.investClass === classId && isoDay(it.date) > d0) soma += it.value;
+      });
+    } else {
+      soma += (getMonthData(y, m).porClasse || {})[classId] || 0;
+    }
+  }
+  return soma;
+}
+function getCarteiraMercado() {
+  const f = investFimAtual();
+  const custo = getCarteira(f.y, f.m);
+  const classes = getInvestClasses();
+  const porClasse = {};
+  let temMercado = false;
+  classes.forEach(c => {
+    const aplicado = custo.porClasse[c.id] || 0;
+    const mk = c.market && typeof c.market.value === 'number' ? c.market : null;
+    if (mk) temMercado = true;
+    const mercado = mk ? Math.max(0, mk.value + fluxoClasseDepois(c.id, mk.date)) : aplicado;
+    porClasse[c.id] = { aplicado, mercado, informado: !!mk, data: mk ? mk.date : null };
+  });
+  // Até a v67 havia um valor de mercado só, para a carteira toda
+  const legado = !temMercado && db.portfolio && typeof db.portfolio.value === 'number' && db.portfolio.value > 0 ? db.portfolio : null;
+  let aplicado = 0, mercado = 0, reserva = 0, investimentos = 0;
+  classes.forEach(c => {
+    const p = porClasse[c.id];
+    aplicado += p.aplicado; mercado += p.mercado;
+    if (c.reserve) reserva += p.mercado; else investimentos += p.mercado;
+  });
+  if (legado) mercado = legado.value;
+  return { porClasse, aplicado, mercado, reserva, investimentos, temMercado: temMercado || !!legado, legado };
+}
+// Proventos (dividendos, JCP, juros) recebidos nos últimos `meses` meses vividos.
+function getProventos(meses = 12) {
+  const now = new Date(), fim = now.getFullYear() * 12 + now.getMonth();
+  const r = { total: 0, isento: 0, tributavel: 0, porClasse: {} };
+  for (let t = fim - meses + 1; t <= fim; t++) {
+    (getMonthData(Math.floor(t / 12), t % 12).income || []).forEach(i => {
+      if (!i.provento) return;
+      r.total += i.value;
+      r[i.provento === 'tributavel' ? 'tributavel' : 'isento'] += i.value;
+      if (i.investClass) r.porClasse[i.investClass] = (r.porClasse[i.investClass] || 0) + i.value;
+    });
+  }
+  return r;
+}
+// Como dividir um aporte para aproximar a carteira da alocação-alvo: primeiro
+// completa as classes abaixo do alvo; o que sobrar segue a proporção do alvo.
+function sugerirAporte(valor) {
+  const cm = getCarteiraMercado();
+  const alvo = getInvestClasses().filter(c => safeNum(c.target, 0) > 0);
+  const soma = alvo.reduce((a, c) => a + safeNum(c.target, 0), 0);
+  if (!soma || !(valor > 0)) return [];
+  const base = alvo.reduce((a, c) => a + cm.porClasse[c.id].mercado, 0) + valor;
+  const falta = alvo.map(c => Math.max(0, safeNum(c.target, 0) / soma * base - cm.porClasse[c.id].mercado));
+  const totalFalta = falta.reduce((a, b) => a + b, 0);
+  const partes = alvo.map((c, i) => totalFalta >= valor
+    ? valor * falta[i] / totalFalta
+    : falta[i] + (valor - totalFalta) * safeNum(c.target, 0) / soma);
+  const cent = partes.map(v => Math.round(v * 100) / 100);
+  const dif = Math.round((valor - cent.reduce((a, b) => a + b, 0)) * 100) / 100;
+  if (dif && cent.length) { const i = cent.indexOf(Math.max(...cent)); cent[i] = Math.round((cent[i] + dif) * 100) / 100; }
+  return alvo.map((c, i) => ({ classe: c, valor: cent[i] })).filter(x => x.valor >= 0.01);
+}
+
 // Mantido por compatibilidade: total investido até o mês em exibição.
 function getInvestidoAcumulado() {
   return getCarteira(currentYear, currentMonth).total;
@@ -8455,7 +8565,7 @@ function renderInvest() {
     <div class="card featured" style="padding: 16px 20px;">
       <div class="label">Total investido</div>
       <div class="value anim-num" data-value="${cart.total}" style="font-size: 1.8rem">${fmt(cart.total)}</div>
-      <div class="sub">${temReserva ? 'reserva de emergência + investimentos' : 'soma das suas classes'}</div>
+      <div class="sub">${(() => { const cmk = getCarteiraMercado(); return cmk.temMercado ? `aplicado · a mercado ${fmt(cmk.mercado)}` : (temReserva ? 'reserva de emergência + investimentos' : 'soma das suas classes'); })()}</div>
     </div>
     <div class="card">
       <div class="label">Reserva de emergência</div>
@@ -8697,7 +8807,7 @@ async function deleteInvestClass(id) {
 function rebuildInvestClassDropdowns() {
   const lista = getInvestClasses();
   const opts = lista.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.label)}</option>`).join('');
-  ['outInvestType', 'qaInvestClass'].forEach(id => {
+  ['outInvestType', 'qaInvestClass', 'qaProvClasse', 'inProvClasse'].forEach(id => {
     const sel = document.getElementById(id);
     if (!sel) return;
     const cur = sel.value;
@@ -9127,6 +9237,8 @@ function saveIn() {
 
   // v67: a entrada tem data (o dia em que o dinheiro cai) e vai para o mês dela
   const date = isoDay(document.getElementById('inDate')?.value) || defaultDateForView();
+  const tipoProv = document.getElementById('inTipo')?.value || '';
+  const provExtra = tipoProv ? { provento: tipoProv, investClass: document.getElementById('inProvClasse')?.value } : {};
   const ref = refFromDate(date);
   ensureYear(ref.y);
   if (recurring) {
@@ -9139,7 +9251,7 @@ function saveIn() {
       const [sy, sm] = startRaw.split('-').map(Number);
       startYear = sy; startMonth = sm - 1;
     }
-    const entry = { id: Date.now(), desc, value, startYear, startMonth, date };
+    const entry = { id: Date.now(), desc, value, startYear, startMonth, date, ...provExtra };
     if (endRaw) {
       const [ey, em] = endRaw.split('-').map(Number);
       entry.endYear = ey; entry.endMonth = em - 1;
@@ -9149,7 +9261,7 @@ function saveIn() {
   } else {
     const key = getKey(ref.y, ref.m);
     if (!db.income[key]) db.income[key] = [];
-    db.income[key].push({ id: Date.now(), desc, value, date });
+    db.income[key].push({ id: Date.now(), desc, value, date, ...provExtra });
   }
 
   saveDB();
@@ -9167,6 +9279,8 @@ function saveIn() {
   if (document.getElementById('dashboard').classList.contains('active')) renderDashboard();
   const inDateEl = document.getElementById('inDate');
   if (inDateEl) { inDateEl.value = defaultDateForView(); delete inDateEl.dataset.userSet; }
+  const inTipoEl = document.getElementById('inTipo');
+  if (inTipoEl) { inTipoEl.value = ''; document.getElementById('inProvWrap').style.display = 'none'; }
   toast(recurring ? `Entrada mensal cadastrada a partir de ${monthsFull[ref.m]}/${ref.y}` : `Entrada salva em ${monthsFull[ref.m]}/${ref.y}`, 'success');
 }
 
@@ -11316,7 +11430,10 @@ function renderFutureCommitment() {
     const anchor = document.getElementById('profitabilityPanel') || stats;
     anchor.insertAdjacentElement('afterend', panel);
   }
-  const patrimonio = computePatrimonioTotal();
+  // v68: patrimônio = conta hoje + carteira a mercado (antes só a carteira:
+  // quem tinha pouco investido via um "patrimônio" negativo assustador)
+  const agora = new Date();
+  const patrimonio = getContaExibida(agora.getFullYear(), agora.getMonth()) + getCarteiraMercado().mercado;
   const liquido = patrimonio - fc.total;
   const lCls = liquido >= 0 ? 'pos' : 'neg';
   const rows = fc.list.map(i => `
@@ -11338,7 +11455,7 @@ function renderFutureCommitment() {
       <div class="ytd-card">
         <div class="ytd-label">Patrimônio líquido projetado</div>
         <div class="ytd-value ${lCls}">${fmt(liquido)}</div>
-        <div class="ytd-sub">Patrimônio (${fmt(patrimonio)}) − comprometido</div>
+        <div class="ytd-sub">Conta + carteira (${fmt(patrimonio)}) − parcelas em aberto</div>
       </div>
     </div>
     <div class="table-wrap">
@@ -11368,6 +11485,8 @@ function savePortfolioValue() {
   renderInvest();
   toast('Valor de mercado atualizado', 'success');
 }
+// v68: "Sua carteira" — aplicado × a mercado × rendimento por classe, peso na
+// carteira × alvo, sugestão de como dividir o aporte e proventos.
 function renderProfitability() {
   const stats = document.getElementById('invStats');
   if (!stats) return;
@@ -11378,47 +11497,174 @@ function renderProfitability() {
     panel.className = 'panel';
     stats.insertAdjacentElement('afterend', panel); // logo após os KPIs
   }
-  const invested = computePatrimonioTotal();
-  const pf = db.portfolio || null;
-  const hasVal = pf && typeof pf.value === 'number' && pf.value > 0;
-  const value = hasVal ? pf.value : null;
-  const rend = hasVal ? (value - invested) : null;
-  const pct = (hasVal && invested > 0) ? (rend / invested * 100) : null;
-  const rCls = rend == null ? 'muted' : (rend >= 0 ? 'pos' : 'neg');
-  const sign = (rend != null && rend >= 0) ? '+' : '';
-  const dateTxt = (hasVal && pf.date)
-    ? 'atualizado em ' + new Date(pf.date).toLocaleDateString('pt-BR')
-    : 'ainda não informado';
+  const cm = getCarteiraMercado();
+  const classes = getInvestClasses();
+  const prov = getProventos(12);
+  const pctFmt = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+  const sinal = v => (v > 0 ? '+' : v < 0 ? '−' : '') + fmt(Math.abs(v));
+  const rend = cm.mercado - cm.aplicado;
+  const rendPct = cm.aplicado > 0 ? rend / cm.aplicado * 100 : null;
+  const somaAlvo = classes.reduce((a, c) => a + safeNum(c.target, 0), 0);
+  const rCls = v => v > 0.004 ? 'pos' : v < -0.004 ? 'neg' : '';
+
+  const linhas = classes.map(c => {
+    const p = cm.porClasse[c.id];
+    const r = p.mercado - p.aplicado;
+    const peso = cm.mercado > 0 ? p.mercado / cm.mercado * 100 : 0;
+    const alvo = safeNum(c.target, 0);
+    const desvio = peso - alvo;
+    const desvioTag = alvo > 0
+      ? `<span class="cart-desvio ${Math.abs(desvio) < 1 ? 'ok' : desvio > 0 ? 'acima' : 'abaixo'}">${Math.abs(desvio) < 1 ? 'no alvo' : (desvio > 0 ? '+' : '−') + pctFmt(Math.abs(desvio)).replace('%', ' p.p.')}</span>` : '';
+    const provC = prov.porClasse[c.id] || 0;
+    const sub = [
+      p.informado ? `mercado em ${p.data.split('-').reverse().slice(0, 2).join('/')}` : 'sem valor de mercado',
+      provC > 0 ? `proventos 12m ${fmt(provC)}` : ''
+    ].filter(Boolean).join(' · ');
+    return `<tr>
+      <td><span class="method-row-dot" style="background:${safeColor(c.color)}"></span>${escapeHtml(c.label)}<div class="cart-sub">${sub}</div></td>
+      <td class="table-num">${fmt(p.aplicado)}</td>
+      <td class="table-num">${fmt(p.mercado)}</td>
+      <td class="table-num ${rCls(r)}">${p.informado ? sinal(r) + (p.aplicado > 0 ? `<div class="cart-sub">${(r >= 0 ? '+' : '−') + pctFmt(Math.abs(r / p.aplicado * 100))}</div>` : '') : '—'}</td>
+      <td class="table-num">${pctFmt(peso)}${alvo > 0 ? `<div class="cart-sub">alvo ${pctFmt(alvo)} ${desvioTag}</div>` : ''}</td>
+    </tr>`;
+  }).join('');
+
+  const legadoNota = cm.legado
+    ? `<p class="muted" style="font-size:.82rem;margin:0 0 12px">Você informou um valor de mercado para a carteira toda (${fmt(cm.legado.value)}). Informe por classe para ver o rendimento de cada uma.</p>` : '';
+  const somaNota = somaAlvo > 0 && Math.abs(somaAlvo - 100) >= 0.5
+    ? `<p class="muted" style="font-size:.82rem;margin:8px 0 0">A soma dos alvos está em ${pctFmt(somaAlvo)} — o ideal é 100%.</p>` : '';
+
   panel.innerHTML = `
-    <h2>💹 Rentabilidade <span class="muted" style="font-weight:400; font-size:0.82rem">— quanto seu patrimônio rendeu</span></h2>
-    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px">
-      <div class="input-group" style="margin:0; flex:1; min-width:200px">
-        <label>Valor atual de mercado (R$)</label>
-        <input id="portfolioValueInput" type="text" inputmode="decimal"
-          placeholder="quanto vale hoje a carteira" value="${hasVal ? value : ''}">
+    <div class="cart-head">
+      <h2>Sua carteira <span class="muted" style="font-weight:400; font-size:0.82rem">— quanto vale e quanto rendeu</span></h2>
+      <div class="cart-actions">
+        <button class="btn" onclick="openMercadoModal()">Atualizar valores de mercado</button>
+        <button class="btn" onclick="openAlvoModal()">Alocação-alvo</button>
       </div>
-      <button class="btn primary" style="min-height:42px" onclick="savePortfolioValue()">Atualizar</button>
-      <span class="muted" style="font-size:0.78rem; padding-bottom:10px">${dateTxt}</span>
     </div>
-    <div class="ytd-panel">
+    <div class="ytd-panel cart-cards">
       <div class="ytd-card">
-        <div class="ytd-label">📥 Total investido (líquido)</div>
-        <div class="ytd-value">${fmt(invested)}</div>
-        <div class="ytd-sub">aportes − retiradas</div>
+        <div class="ytd-label">Aplicado</div>
+        <div class="ytd-value">${fmt(cm.aplicado)}</div>
+        <div class="ytd-sub">saldo inicial + aportes − resgates</div>
       </div>
       <div class="ytd-card">
-        <div class="ytd-label">Valor atual</div>
-        <div class="ytd-value">${hasVal ? fmt(value) : '—'}</div>
-        <div class="ytd-sub">${hasVal ? 'valor de mercado informado' : 'informe acima para calcular'}</div>
+        <div class="ytd-label">A mercado</div>
+        <div class="ytd-value">${fmt(cm.mercado)}</div>
+        <div class="ytd-sub">${cm.temMercado ? 'com os valores que você informou' : 'informe os valores de mercado'}</div>
       </div>
       <div class="ytd-card">
         <div class="ytd-label">Rendimento</div>
-        <div class="ytd-value ${rCls}">${rend == null ? '—' : sign + fmt(rend)}</div>
-        <div class="ytd-sub">${pct == null ? 'valor atual − investido' : 'rentabilidade ' + sign + pct.toFixed(1) + '%'}</div>
+        <div class="ytd-value ${rCls(rend)}">${cm.temMercado ? sinal(rend) : '—'}</div>
+        <div class="ytd-sub">${cm.temMercado && rendPct != null ? `${rend >= 0 ? '+' : '−'}${pctFmt(Math.abs(rendPct))} sobre o aplicado` : 'mercado − aplicado'}</div>
       </div>
     </div>
+    ${legadoNota}
+    <div class="table-wrap">
+      <table class="cart-table">
+        <thead><tr><th>Classe</th><th class="table-num-header">Aplicado</th><th class="table-num-header">A mercado</th><th class="table-num-header">Rendimento</th><th class="table-num-header">Na carteira</th></tr></thead>
+        <tbody>${linhas}</tbody>
+      </table>
+    </div>
+    ${somaNota}
+    ${somaAlvo > 0 ? `
+      <div class="rebal">
+        <div class="input-group" style="margin:0;flex:1;min-width:180px"><label>Vou aportar</label>
+          <input id="rebalValor" type="text" inputmode="decimal" placeholder="0,00" onkeydown="if(event.key==='Enter') calcRebalance()"></div>
+        <button class="btn primary" onclick="calcRebalance()">Como dividir</button>
+        <div id="rebalOut" class="rebal-out"></div>
+      </div>`
+    : `<p class="muted" style="font-size:.84rem;margin:12px 0 0">Defina uma <button type="button" class="link-btn" onclick="openAlvoModal()">alocação-alvo</button> para ver os desvios e como dividir o próximo aporte.</p>`}
+    <p class="cart-prov">${prov.total > 0
+      ? `Proventos nos últimos 12 meses: <strong>${fmt(prov.total)}</strong> (isentos ${fmt(prov.isento)} · tributáveis ${fmt(prov.tributavel)})${cm.aplicado > 0 ? ` — ${pctFmt(prov.total / cm.aplicado * 100)} sobre o aplicado` : ''}.`
+      : 'Dividendos, JCP e juros entram em <strong>Adicionar → Entrada</strong>, marcados como provento.'}</p>
   `;
 }
+function calcRebalance() {
+  const out = document.getElementById('rebalOut');
+  const v = readMoney('rebalValor');
+  if (!out) return;
+  if (!Number.isFinite(v) || v <= 0) { out.innerHTML = '<span class="muted">Digite quanto vai aportar, ex.: 9.000,00</span>'; return; }
+  const plano = sugerirAporte(v);
+  out.innerHTML = plano.length
+    ? plano.map(x => `<div><span class="method-row-dot" style="background:${safeColor(x.classe.color)}"></span>${escapeHtml(x.classe.label)} <strong>${fmt(x.valor)}</strong></div>`).join('')
+    : '<span class="muted">Defina a alocação-alvo primeiro.</span>';
+}
+function openMercadoModal() {
+  const cm = getCarteiraMercado();
+  const classes = getInvestClasses();
+  modal.show('Valores de mercado hoje', `
+    <p class="muted" style="margin:0 0 12px;font-size:.88rem">Quanto vale hoje cada aplicação, como aparece na corretora ou no banco. Deixe vazio para usar o valor aplicado.</p>
+    ${classes.map(c => { const p = cm.porClasse[c.id]; return `
+      <div class="input-group"><label>${escapeHtml(c.label)} <small class="muted">· aplicado ${fmt(p.aplicado)}</small></label>
+        <input id="mk_${escapeHtml(c.id)}" type="text" inputmode="decimal" placeholder="${escapeHtml(fmtInput(p.aplicado))}" value="${p.informado ? escapeHtml(fmtInput(p.mercado)) : ''}"></div>`; }).join('')}`, {
+    confirmLabel: 'Salvar',
+    onConfirm: () => {
+      const novos = {};
+      for (const c of classes) {
+        const raw = document.getElementById('mk_' + c.id).value.trim();
+        if (!raw) { novos[c.id] = null; continue; }
+        const v = parseMoneyBR(raw);
+        if (!Number.isFinite(v) || v < 0) { toast(`Valor inválido em ${c.label} — ex.: 12.345,67`, 'error'); return false; }
+        novos[c.id] = v;
+      }
+      const hoje = todayISO();
+      const conferir = [];
+      classes.forEach(c => {
+        if (novos[c.id] == null) { delete c.market; return; }
+        const aplicado = cm.porClasse[c.id].aplicado;
+        if (aplicado > 0 && (novos[c.id] < aplicado * 0.5 || novos[c.id] > aplicado * 2)) conferir.push(c.label);
+        c.market = { value: novos[c.id], date: hoje };
+      });
+      delete db.portfolio;
+      saveDB();
+      renderInvest();
+      toast(conferir.length ? `Salvo. Confira ${conferir.join(', ')}: mais de 50% de diferença do aplicado` : 'Valores de mercado atualizados', conferir.length ? 'warn' : 'success', 4500);
+    }
+  });
+}
+function openAlvoModal() {
+  const cm = getCarteiraMercado();
+  const classes = getInvestClasses();
+  const peso = c => cm.mercado > 0 ? (cm.porClasse[c.id].mercado / cm.mercado * 100) : 0;
+  modal.show('Alocação-alvo', `
+    <p class="muted" style="margin:0 0 12px;font-size:.88rem">Quanto de cada classe você quer ter na carteira. O app mostra o desvio e sugere como dividir os próximos aportes. Deixe vazio as que não entram na conta.</p>
+    ${classes.map(c => `
+      <div class="input-group alvo-row"><label>${escapeHtml(c.label)} <small class="muted">· hoje ${peso(c).toFixed(1).replace('.', ',')}%</small></label>
+        <div class="alvo-input"><input id="al_${escapeHtml(c.id)}" type="text" inputmode="decimal" placeholder="0" value="${safeNum(c.target, 0) > 0 ? escapeHtml(String(c.target).replace('.', ',')) : ''}" oninput="somaAlvoModal()"><span>%</span></div></div>`).join('')}
+    <p id="alvoSoma" class="muted" style="margin:6px 0 0;font-size:.86rem"></p>`, {
+    confirmLabel: 'Salvar',
+    onConfirm: () => {
+      const novos = {};
+      for (const c of classes) {
+        const raw = document.getElementById('al_' + c.id).value.trim();
+        const v = raw ? parseMoneyBR(raw) : 0;
+        if (!Number.isFinite(v) || v < 0 || v > 100) { toast(`Alvo inválido em ${c.label} (0 a 100)`, 'error'); return false; }
+        novos[c.id] = v;
+      }
+      const soma = Object.values(novos).reduce((a, b) => a + b, 0);
+      if (soma > 100.5) { toast(`Os alvos somam ${soma.toFixed(1).replace('.', ',')}% — reduza para 100%`, 'error'); return false; }
+      classes.forEach(c => { if (novos[c.id] > 0) c.target = Math.round(novos[c.id] * 100) / 100; else delete c.target; });
+      saveDB();
+      renderInvest();
+      toast(soma > 0 && Math.abs(soma - 100) >= 0.5 ? `Alvos salvos — somam ${soma.toFixed(1).replace('.', ',')}%` : 'Alocação-alvo salva', 'success');
+    }
+  });
+  setTimeout(somaAlvoModal, 0);
+}
+function somaAlvoModal() {
+  const el = document.getElementById('alvoSoma');
+  if (!el) return;
+  const soma = getInvestClasses().reduce((a, c) => {
+    const v = parseMoneyBR(document.getElementById('al_' + c.id)?.value || '');
+    return a + (Number.isFinite(v) ? v : 0);
+  }, 0);
+  el.textContent = `Soma: ${soma.toFixed(1).replace('.', ',')}%${Math.abs(soma - 100) < 0.5 ? ' ✓' : ' — o ideal é 100%'}`;
+}
+window.openMercadoModal = openMercadoModal;
+window.openAlvoModal = openAlvoModal;
+window.calcRebalance = calcRebalance;
+window.somaAlvoModal = somaAlvoModal;
 (function chainInvestExtras() {
   const orig = window.renderInvest;
   if (typeof orig === 'function') {
@@ -11769,8 +12015,16 @@ function renderHomeExtras() {
 function renderMoneyPanel(cur) {
   const mes = monthsFull[currentMonth].toLowerCase();
   const conta = getContaExibida(currentYear, currentMonth);
-  const cart = getCarteira(currentYear, currentMonth);
+  const custo = getCarteira(currentYear, currentMonth);
+  // v68: do mês atual em diante, a carteira vale o preço de mercado informado
+  const agoraT = new Date().getFullYear() * 12 + new Date().getMonth();
+  const cm = currentYear * 12 + currentMonth >= agoraT ? getCarteiraMercado() : null;
+  const aMercado = !!(cm && cm.temMercado && !cm.legado);
+  const cart = aMercado
+    ? { porClasse: Object.fromEntries(Object.entries(cm.porClasse).map(([id, p]) => [id, p.mercado])), reserva: cm.reserva, investimentos: cm.investimentos, total: cm.mercado }
+    : custo;
   const patr = conta + cart.total;
+  const rendCarteira = aMercado ? cm.mercado - cm.aplicado : 0;
   const atual = ehMesAtual(currentYear, currentMonth);
   const hojeDia = new Date().getDate();
   const faturaAVencer = atual ? faturasPagasEm(currentYear, currentMonth).filter(f => f.dia > hojeDia) : [];
@@ -11797,9 +12051,14 @@ function renderMoneyPanel(cur) {
     : cob.texto;
 
   // Investimentos: as classes com saldo
+  // v68: as maiores primeiro e aviso de quantas ficaram de fora
   const detalhe = classes.filter(c => !c.reserve && (cart.porClasse[c.id] || 0) > 0)
+    .sort((a, b) => cart.porClasse[b.id] - cart.porClasse[a.id])
     .map(c => `${escapeHtml(c.label)} ${fmt(cart.porClasse[c.id])}`);
-  const investSub = detalhe.length ? detalhe.slice(0, 3).join(' · ') : 'Nada aplicado ainda';
+  const resto = detalhe.length - 3;
+  const investSub = detalhe.length
+    ? detalhe.slice(0, 3).join(' · ') + (resto > 0 ? ` · +${resto} ${resto === 1 ? 'classe' : 'classes'}` : '')
+    : 'Nada aplicado ainda';
 
   // Rodapé: o que aconteceu neste mês (sem outra "taxa": a de poupança é uma só)
   let rodape = '';
@@ -11824,7 +12083,7 @@ function renderMoneyPanel(cur) {
       <div class="money-head">
         <div>
           <h2>Onde está seu dinheiro</h2>
-          <div class="money-kicker">Patrimônio total</div>
+          <div class="money-kicker">Patrimônio total${aMercado ? ` · a mercado${Math.abs(rendCarteira) >= 0.005 ? ` (${rendCarteira >= 0 ? '+' : '−'}${fmt(Math.abs(rendCarteira))} de rendimento)` : ''}` : ''}</div>
         </div>
         <div class="money-total">${fmt(patr)}</div>
       </div>
@@ -12302,6 +12561,24 @@ function renderRecentActivity() {
     border: 1px solid var(--border); border-radius: 10px; font-size: .9rem;
   }
   #quickAddCard .qa-origem label:has(input:checked) { border-color: var(--primary); background: var(--primary-tint); }
+  /* v68 · Sua carteira */
+  .cart-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .cart-head h2 { margin: 0; }
+  .cart-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .cart-cards { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 768px) { .cart-cards { grid-template-columns: 1fr; } }
+  .cart-table td .method-row-dot { display: inline-block; margin-right: 8px; vertical-align: 1px; }
+  .cart-sub { font-size: .72rem; color: var(--text-muted); font-weight: 400; margin-top: 2px; }
+  .cart-desvio { display: inline-block; margin-left: 4px; padding: 0 6px; border-radius: 999px; font-size: .68rem; font-weight: 600; }
+  .cart-desvio.ok { background: color-mix(in srgb, var(--pos) 14%, transparent); color: var(--pos); }
+  .cart-desvio.acima { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+  .cart-desvio.abaixo { background: var(--primary-tint); color: var(--primary); }
+  .rebal { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border-soft); }
+  .rebal-out { flex-basis: 100%; display: grid; gap: 6px; font-size: .9rem; }
+  .rebal-out .method-row-dot { display: inline-block; margin-right: 8px; vertical-align: 1px; }
+  .cart-prov { font-size: .84rem; color: var(--text-muted); margin: 14px 0 0; }
+  .alvo-input { display: flex; align-items: center; gap: 8px; }
+  .alvo-input input { max-width: 120px; }
   /* Atalhos de teclado não fazem sentido no celular */
   @media (hover: none) { #quickAddCard .qa-kbd { display: none; } }
   @media (max-width: 768px) {
