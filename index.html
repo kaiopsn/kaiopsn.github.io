@@ -4678,11 +4678,9 @@ function fillInvoicePanels() {
   if (typeof db === 'undefined' || !db) return;
   if (typeof getMonthData !== 'function') return;
 
-  const d = getMonthData(currentYear, currentMonth);
-  const items = d.items || [];
-
-  // Só gera fatura para formas de pagamento do tipo "crédito"
-  const creditItems = items.filter(it => it.method && methodKind(it.method) === 'credit');
+  // v76: a fatura que FECHA no mês exibido (respeita o dia de fechamento)
+  const porFatura = comprasCreditoDoMes(currentYear, currentMonth);
+  const creditItems = Object.values(porFatura).flat();
 
   if (!creditItems.length) {
     ['invoicePanelDash', 'invoicePanelGastos'].forEach(id => {
@@ -4714,7 +4712,7 @@ function fillInvoicePanels() {
     return `
       <div class="card-invoice">
         <div class="card-invoice-header">
-          <span class="card-invoice-title">Fatura ${escapeHtml(label)} — ${monthsFull[currentMonth]}<small class="ci-due">sai da conta em ${String(diaVencimento(m)).padStart(2, '0')}/${String((currentMonth + 1) % 12 + 1).padStart(2, '0')}</small></span>
+          <span class="card-invoice-title">Fatura ${escapeHtml(label)} — ${monthsFull[currentMonth]}<small class="ci-due">${(dt => dt.fecha ? `fecha ${dt.fecha} · sai da conta em ${dt.vence}` : `sai da conta em ${dt.vence}`)(datasFatura(m, currentYear * 12 + currentMonth))}</small></span>
           <span class="card-invoice-total">${fmt(total)}</span>
         </div>
         <div class="card-invoice-items">${rows}</div>
@@ -6213,7 +6211,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v75';
+const APP_VERSION = 'v76';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -6904,6 +6902,7 @@ function sanitizeData(data) {
     const tipo = m => {
       if (!['instant', 'credit', 'invest'].includes(m.kind)) m.kind = 'instant';
       if (m.dueDay != null) { const d = safeInt(m.dueDay); if (d !== null && d >= 1 && d <= 31) m.dueDay = d; else delete m.dueDay; }
+      if (m.closeDay != null) { const d = safeInt(m.closeDay); if (d !== null && d >= 1 && d <= 31) m.closeDay = d; else delete m.closeDay; }
       if (m.conta != null && !isSafeId(m.conta)) delete m.conta;
       return m;
     };
@@ -7742,22 +7741,62 @@ function diaVencimento(metodoId) {
   return Math.min(31, Math.max(1, d));
 }
 
-// Compras no crédito feitas em (y, m), por forma de pagamento.
+// v76 · DIA DE FECHAMENTO. Compra até o fechamento entra na fatura que fecha
+// naquele mês; depois dele, na seguinte. A fatura vence no mesmo mês do
+// fechamento se o vencimento é depois dele (fecha 3, vence 10) ou no mês
+// seguinte (fecha 26, vence 5). Sem fechamento informado: compras do mês
+// vencem no mês seguinte, como antes.
+function diaFechamento(metodoId) {
+  const m = getMethod(normalizeMethod(metodoId));
+  return m && Number.isInteger(m.closeDay) ? Math.min(31, Math.max(1, m.closeDay)) : null;
+}
+// Fatura de uma compra feita no dia `dia` de (y, m): tf = mês (absoluto) em
+// que a fatura fecha, tv = mês em que vence.
+function faturaDaCompra(metodoId, y, m, dia) {
+  const venc = diaVencimento(metodoId), fecha = diaFechamento(metodoId);
+  let tf = y * 12 + m;
+  if (fecha == null) return { fecha: null, venc, tf, tv: tf + 1 };
+  if (dia > Math.min(fecha, new Date(y, m + 1, 0).getDate())) tf += 1;
+  return { fecha, venc, tf, tv: venc > fecha ? tf : tf + 1 };
+}
+// Compras no crédito dos meses [t0, t1] com a fatura de cada uma
+function comprasCreditoComFatura(t0, t1) {
+  const out = [];
+  for (let t = t0; t <= t1; t++) {
+    const y = Math.floor(t / 12), m = t % 12, ult = new Date(y, m + 1, 0).getDate();
+    (getMonthData(y, m).items || []).forEach(it => {
+      if (methodKind(it.method) !== 'credit') return;
+      const s = isoDay(it.date);
+      const dia = s ? Math.min(ult, Number(s.slice(8, 10)) || 1) : 1;
+      out.push({ it, metodo: it.method, y, m, dia, ...faturaDaCompra(it.method, y, m, dia) });
+    });
+  }
+  return out;
+}
+// Itens da fatura que FECHA em (y, m), por forma de pagamento.
 function comprasCreditoDoMes(y, m) {
-  const por = {};
-  (getMonthData(y, m).items || []).forEach(i => {
-    if (methodKind(i.method) !== 'credit') return;
-    (por[i.method] = por[i.method] || []).push(i);
-  });
+  const alvo = y * 12 + m, por = {};
+  comprasCreditoComFatura(alvo - 1, alvo).filter(c => c.tf === alvo)
+    .forEach(c => { (por[c.metodo] = por[c.metodo] || []).push(c.it); });
   return por;
 }
-// Faturas PAGAS em (y, m) = compras no crédito do mês anterior.
+// Faturas PAGAS em (y, m): as que vencem nesse mês.
 function faturasPagasEm(y, m) {
-  const t = y * 12 + m - 1, py = Math.floor(t / 12), pm = t % 12;
-  return Object.entries(comprasCreditoDoMes(py, pm)).map(([metodo, itens]) => ({
-    metodo, compraY: py, compraM: pm, dia: diaVencimento(metodo), itens, conta: contaDoMetodo(metodo),
-    valor: itens.reduce((a, b) => a + b.value, 0)
+  const alvo = y * 12 + m, por = {};
+  comprasCreditoComFatura(alvo - 2, alvo).filter(c => c.tv === alvo)
+    .forEach(c => { (por[c.metodo] = por[c.metodo] || []).push(c); });
+  return Object.entries(por).map(([metodo, cs]) => ({
+    metodo, compraY: Math.floor(cs[0].tf / 12), compraM: cs[0].tf % 12, fechaDia: cs[0].fecha,
+    dia: diaVencimento(metodo), itens: cs.map(c => c.it), conta: contaDoMetodo(metodo),
+    valor: cs.reduce((a, c) => a + c.it.value, 0)
   }));
+}
+// Datas de uma fatura que fecha no mês absoluto tf: "dd/mm" de fechamento e vencimento
+function datasFatura(metodoId, tf) {
+  const venc = diaVencimento(metodoId), fecha = diaFechamento(metodoId);
+  const dm = (t, d) => `${String(Math.min(d, new Date(Math.floor(t / 12), t % 12 + 1, 0).getDate())).padStart(2, '0')}/${String(t % 12 + 1).padStart(2, '0')}`;
+  const tv = fecha == null ? tf + 1 : (venc > fecha ? tf : tf + 1);
+  return { fecha: fecha == null ? null : dm(tf, fecha), vence: dm(tv, venc) };
 }
 
 // ── v73 · VÁRIAS CONTAS ──────────────────────────────────────────────────
@@ -9359,7 +9398,7 @@ function renderPaymentMethods() {
         <span class="method-row-dot" style="background:${escapeHtml(m.color)}"></span>
         <div class="method-row-main">
           <div class="method-row-name">${escapeHtml(m.label)}</div>
-          <div class="method-row-meta">${escapeHtml(kind)} · ${usos} lançamento${usos === 1 ? '' : 's'}</div>
+          <div class="method-row-meta">${escapeHtml(kind)}${m.kind === 'credit' ? ` · ${m.closeDay ? `fecha dia ${m.closeDay} · ` : ''}vence dia ${diaVencimento(m.id)}` : ''} · ${usos} lançamento${usos === 1 ? '' : 's'}</div>
         </div>
         <div class="method-row-actions">
           <button class="btn-icon" title="Editar" onclick="openMethodModal(${jsArg(m.id)})">✎</button>
@@ -9382,7 +9421,9 @@ function openMethodModal(id) {
     <div class="input-group"><label>Tipo</label><select id="mtKind" onchange="document.getElementById('mtDueWrap').style.display = this.value === 'credit' ? '' : 'none'">${kinds}</select></div>
     <div class="input-group" id="mtDueWrap" style="display:${atual && atual.kind === 'credit' ? '' : 'none'}"><label>Dia de vencimento da fatura</label>
       <input id="mtDue" type="number" min="1" max="31" inputmode="numeric" placeholder="${DIA_VENCIMENTO_PADRAO}" value="${atual && atual.dueDay ? atual.dueDay : ''}">
-      <small class="muted" style="display:block;margin-top:4px;font-size:0.75rem">As compras de um mês saem da sua conta nesse dia do mês seguinte.</small></div>
+      <label style="margin-top:10px">Dia de fechamento (opcional)</label>
+      <input id="mtClose" type="number" min="1" max="31" inputmode="numeric" placeholder="ex.: 3" value="${atual && atual.closeDay ? atual.closeDay : ''}">
+      <small class="muted" style="display:block;margin-top:4px;font-size:0.75rem">Compras depois do fechamento vão para a fatura seguinte. Sem fechamento, as compras de um mês vencem no mês seguinte.</small></div>
     ${getContas().length > 1 ? `<div class="input-group"><label>Conta de onde o dinheiro sai</label>
       <select id="mtConta">${getContas().map(c => `<option value="${escapeHtml(c.id)}" ${contaValida(atual && atual.conta) === c.id ? 'selected' : ''}>${escapeHtml(c.nome)}</option>`).join('')}</select>
       <small class="muted" style="display:block;margin-top:4px;font-size:0.75rem">No cartão de crédito, é a conta que paga a fatura.</small></div>` : ''}
@@ -9401,10 +9442,13 @@ function openMethodModal(id) {
 
       const dueRaw = parseInt(document.getElementById('mtDue')?.value, 10);
       const dueDay = kind === 'credit' && dueRaw >= 1 && dueRaw <= 31 ? dueRaw : null;
+      const closeRaw = parseInt(document.getElementById('mtClose')?.value, 10);   // v76
+      const closeDay = kind === 'credit' && closeRaw >= 1 && closeRaw <= 31 ? closeRaw : null;
       const contaSel = document.getElementById('mtConta')?.value;   // v73
       if (atual) {
         atual.label = label; atual.kind = kind; atual.color = color;
         if (dueDay) atual.dueDay = dueDay; else delete atual.dueDay;
+        if (closeDay) atual.closeDay = closeDay; else delete atual.closeDay;
         if (contaSel) atual.conta = contaSel;
       } else {
         // ID estável derivado do nome; é ele que fica gravado nos lançamentos.
@@ -9414,6 +9458,7 @@ function openMethodModal(id) {
         while (getMethods().some(m => m.id === novo)) novo = `${base}-${i++}`;
         const nova = { id: novo, label, color, kind };
         if (dueDay) nova.dueDay = dueDay;
+        if (closeDay) nova.closeDay = closeDay;
         if (contaSel) nova.conta = contaSel;
         db.paymentMethods.push(nova);
       }
@@ -13251,7 +13296,9 @@ function computeRadar() {
     if (v.tipo === 'fatura') add({
       id: `fat:${v.f.metodo}:${Y}-${M}`, ritmo: 'hoje', nivel: 'aviso', icone: '📅',
       titulo: `Fatura ${escapeHtml(methodLabel(v.f.metodo))} ${quando}`,
-      texto: `${fmt(v.f.valor)} das compras de ${monthsFull[v.f.compraM].toLowerCase()} saem da sua conta.`
+      texto: v.f.fechaDia
+        ? `${fmt(v.f.valor)} da fatura que fechou em ${datasFatura(v.f.metodo, v.f.compraY * 12 + v.f.compraM).fecha} saem da sua conta.`
+        : `${fmt(v.f.valor)} das compras de ${monthsFull[v.f.compraM].toLowerCase()} saem da sua conta.`
     });
     else add({
       id: `venc:${v.it.id}:${Y}-${M}`, ritmo: 'hoje', nivel: 'aviso', icone: '📅',
@@ -14697,15 +14744,19 @@ function ansFatura(t, n) {
   if (!cartoes.length) return 'Você não tem cartão de crédito cadastrado. Crie em <strong>Categorias e pagamentos</strong> com o tipo "Cartão de crédito".';
   const citado = cartoes.filter(m => normTok(m.label + ' ' + m.id).split(/[^a-z0-9]+/).some(w => w.length >= 3 && !['credito', 'cartao'].includes(w) && new RegExp('\\b' + w + '\\b').test(n)));
   if (citado.length) cartoes = citado;
-  const prox = monthsFull[(M + 1) % 12].toLowerCase();
-  const compras = comprasCreditoDoMes(Y, M);
   const aPagar = faturasPagasEm(Y, M);
   return cartoes.map(m => {
-    const atual = (compras[m.id] || []).reduce((s, i) => s + i.value, 0);
+    // v76: a fatura ABERTA é a que fecha a seguir (respeita o dia de fechamento)
+    const fecha = diaFechamento(m.id);
+    const tfAberta = fecha != null && D > Math.min(fecha, new Date(Y, M + 1, 0).getDate()) ? Y * 12 + M + 1 : Y * 12 + M;
+    const abertas = comprasCreditoDoMes(Math.floor(tfAberta / 12), tfAberta % 12);
+    const atual = (abertas[m.id] || []).reduce((s, i) => s + i.value, 0);
+    const dt = datasFatura(m.id, tfAberta);
     const pg = aPagar.find(f => f.metodo === m.id);
-    const venc = diaVencimento(m.id);
-    const partes = [`Fatura de ${mes}: <span class="num">${fmt(atual)}</span> até agora — vence dia ${venc} de ${prox}`];
-    if (pg) partes.push(pg.dia >= D ? `A pagar este mês: ${fmt(pg.valor)} no dia ${pg.dia}` : `A de ${monthsFull[pg.compraM].toLowerCase()} (${fmt(pg.valor)}) venceu dia ${pg.dia}`);
+    const partes = [dt.fecha
+      ? `Fatura aberta (fecha ${dt.fecha}): <span class="num">${fmt(atual)}</span> até agora — vence ${dt.vence}`
+      : `Fatura de ${mes}: <span class="num">${fmt(atual)}</span> até agora — vence ${dt.vence}`];
+    if (pg) partes.push(pg.dia >= D ? `A pagar este mês: ${fmt(pg.valor)} no dia ${pg.dia}` : `A anterior (${fmt(pg.valor)}) venceu dia ${pg.dia}`);
     return `<strong>${escapeHtml(m.label)}</strong><br>${assistLista(partes)}`;
   }).join('<br><br>');
 }
