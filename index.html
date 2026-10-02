@@ -6213,7 +6213,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v74';
+const APP_VERSION = 'v75';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -14631,6 +14631,261 @@ window.extratoMudouConta = extratoMudouConta;
 window.extratoInverter = extratoInverter;
 window.extratoAcao = extratoAcao;
 window.extratoCat = extratoCat;
+</script>
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// v75 · ASSISTENTE MAIS ESPERTO — responde o que as pessoas realmente
+// perguntam, com os mesmos números da tela: quanto posso gastar, quanto
+// tenho (por conta), patrimônio, fatura, assinaturas, o que vence, reserva,
+// como vou fechar o mês, taxa de poupança, gastos de hoje/semana, desafio,
+// alertas e rendimento. Antes, quase tudo virava o "resumo do mês".
+// ══════════════════════════════════════════════════════════════════════
+const assistHoje = () => { const h = new Date(); return { h, Y: h.getFullYear(), M: h.getMonth(), D: h.getDate(), mes: monthsFull[h.getMonth()].toLowerCase() }; };
+const assistLista = arr => arr.map(x => `• ${x}`).join('<br>');
+function contaCitada(n) {
+  return getContas().find(c => normTok(c.nome).split(/[^a-z0-9]+/).some(w => w.length >= 3 && !['conta', 'banco', 'principal'].includes(w) && new RegExp('\\b' + w + '\\b').test(n)));
+}
+
+function ansPossoGastar() {
+  const { Y, M, D, mes } = assistHoje();
+  const d = getMonthData(Y, M);
+  if (!d.entradas && !d.gastos) return `Ainda não tenho entradas nem gastos de ${mes}. Registre o salário em <strong>+ → Entrada</strong> e eu calculo quanto sobra para gastar.`;
+  const comOrc = (db.categories || []).filter(c => c.budget > 0);
+  const porCat = groupByCat(d.items);
+  const base = comOrc.length
+    ? comOrc.reduce((a, c) => a + c.budget, 0) - comOrc.reduce((a, c) => a + (porCat[c.name] || 0), 0)
+    : d.entradas - d.gastos - d.investido;
+  const dias = new Date(Y, M + 1, 0).getDate() - D + 1;
+  const regra = comOrc.length ? 'pelos seus orçamentos' : 'entradas − gastos − o que você investiu';
+  if (base <= 0) return tom(
+    `Pelas contas de ${mes}, não sobra nada para gastar: faltam ${fmt(Math.abs(base))} (${regra}).`,
+    `Hmm, ${mes} já está no vermelho em ${fmt(Math.abs(base))} (${regra}). Hora de segurar a carteira.`);
+  const conta = getContaExibida(Y, M);
+  return `Você pode gastar <span class="num">${fmt(base)}</span> até o fim de ${mes} — <strong>${fmt(base / dias)} por dia</strong> nos próximos ${dias} dia${dias === 1 ? '' : 's'} (${regra}).`
+    + (conta < base ? `<br>Atenção: na conta hoje há ${fmt(conta)}.` : '');
+}
+function ansConta(t, n) {
+  const { Y, M, D, mes } = assistHoje();
+  const a = getSaldoAnchor();
+  if (a._default) return 'Você ainda não me disse quanto tem na conta. Informe o saldo de hoje em <strong>Configurações → Suas contas</strong> e eu acompanho daí pra frente.';
+  const c = contaCitada(n);
+  if (c) {
+    const hoje = getSaldoAcumulado(Y, M, D, c.id), fim = getSaldoAcumulado(Y, M, undefined, c.id);
+    return `Hoje você tem <span class="num">${fmt(hoje)}</span> no ${escapeHtml(c.nome)}${Math.abs(fim - hoje) >= 0.005 ? `; no fim de ${mes}, a previsão é ${fmt(fim)}` : ''}.`;
+  }
+  const hoje = getSaldoAcumulado(Y, M, D), fim = getSaldoAcumulado(Y, M);
+  const cs = getContas();
+  const fatura = faturasPagasEm(Y, M).filter(f => f.dia > D).reduce((s, f) => s + f.valor, 0);
+  return `Hoje você tem <span class="num">${fmt(hoje)}</span> em conta`
+    + (cs.length > 1 ? `:<br>${assistLista(cs.map(x => `${escapeHtml(x.nome)}: ${fmt(getSaldoAcumulado(Y, M, D, x.id))}`))}<br>` : '. ')
+    + (Math.abs(fim - hoje) >= 0.005 ? `No fim de ${mes}, a previsão é ${fmt(fim)}${fatura > 0 ? `, depois de pagar ${fmt(fatura)} de fatura` : ''}.` : '');
+}
+function ansPatrimonio() {
+  const { Y, M, D } = assistHoje();
+  const conta = getSaldoAcumulado(Y, M, D);
+  const cm = getCarteiraMercado();
+  const total = conta + cm.mercado;
+  return `Seu patrimônio é <span class="num">${fmt(total)}</span>:<br>${assistLista([
+    `Em conta: ${fmt(conta)}`,
+    `Reserva de emergência: ${fmt(cm.reserva)}`,
+    `Investimentos: ${fmt(cm.investimentos)}`
+  ])}${cm.temMercado && !cm.legado ? `<br>A carteira está a preço de mercado: ${cm.mercado - cm.aplicado >= 0 ? '+' : '−'}${fmt(Math.abs(cm.mercado - cm.aplicado))} sobre o aplicado.` : ''}`;
+}
+function ansFatura(t, n) {
+  const { Y, M, D, mes } = assistHoje();
+  let cartoes = getMethods().filter(m => m.kind === 'credit');
+  if (!cartoes.length) return 'Você não tem cartão de crédito cadastrado. Crie em <strong>Categorias e pagamentos</strong> com o tipo "Cartão de crédito".';
+  const citado = cartoes.filter(m => normTok(m.label + ' ' + m.id).split(/[^a-z0-9]+/).some(w => w.length >= 3 && !['credito', 'cartao'].includes(w) && new RegExp('\\b' + w + '\\b').test(n)));
+  if (citado.length) cartoes = citado;
+  const prox = monthsFull[(M + 1) % 12].toLowerCase();
+  const compras = comprasCreditoDoMes(Y, M);
+  const aPagar = faturasPagasEm(Y, M);
+  return cartoes.map(m => {
+    const atual = (compras[m.id] || []).reduce((s, i) => s + i.value, 0);
+    const pg = aPagar.find(f => f.metodo === m.id);
+    const venc = diaVencimento(m.id);
+    const partes = [`Fatura de ${mes}: <span class="num">${fmt(atual)}</span> até agora — vence dia ${venc} de ${prox}`];
+    if (pg) partes.push(pg.dia >= D ? `A pagar este mês: ${fmt(pg.valor)} no dia ${pg.dia}` : `A de ${monthsFull[pg.compraM].toLowerCase()} (${fmt(pg.valor)}) venceu dia ${pg.dia}`);
+    return `<strong>${escapeHtml(m.label)}</strong><br>${assistLista(partes)}`;
+  }).join('<br><br>');
+}
+function ansAssinaturas() {
+  const { h } = assistHoje();
+  const as = radarAssinaturas(h);
+  const itens = as.detectadas.map(x => ({ d: x.desc, v: x.valor, f: 'detectada' })).concat(as.cadastradas.map(r => ({ d: r.desc, v: r.value, f: 'gasto fixo' })));
+  if (!itens.length) return 'Não achei cobranças que se repetem todo mês com o mesmo valor. Se tiver assinaturas, cadastre como gasto fixo na categoria Assinaturas.';
+  const total = itens.reduce((s, x) => s + x.v, 0);
+  return `${tom('Suas assinaturas e cobranças que se repetem', 'Assinaturas — lembra de todas?')}: <span class="num">${fmt(total)}/mês</span> (${fmt(total * 12)} por ano).<br>${assistLista(itens.map(x => `${escapeHtml(x.d)}: ${fmt(x.v)} <span class="muted">(${x.f})</span>`))}`;
+}
+function ansVencimentos() {
+  const { h, D } = assistHoje();
+  const v = radarAVencer(h);
+  if (!v.length) return 'Nada vencendo nos próximos 5 dias entre os gastos fixos com data e as faturas.';
+  return `Nos próximos 5 dias:<br>${assistLista(v.map(x => {
+    const quando = x.dia === D ? 'hoje' : x.dia === D + 1 ? 'amanhã' : `dia ${x.dia}`;
+    return x.tipo === 'fatura' ? `Fatura ${escapeHtml(methodLabel(x.f.metodo))}: ${fmt(x.f.valor)} — ${quando}` : `${escapeHtml(x.it.desc)}: ${fmt(x.it.value)} — ${quando}`;
+  }))}`;
+}
+function ansReserva() {
+  const { Y, M } = assistHoje();
+  if (!getInvestClasses().some(c => c.reserve)) return 'Você ainda não marcou uma classe como reserva de emergência. Faça isso em <strong>Investimentos → Suas classes</strong>.';
+  const cm = getCarteiraMercado();
+  const cob = coberturaReserva(cm.reserva, Y, M);
+  return `Reserva de emergência: <span class="num">${fmt(cm.reserva)}</span>. ${cob.texto}${cob.cv.valor > 0 ? ` (custo de vida de ${fmt(cob.cv.valor)}/mês)` : ''}.`;
+}
+function ansProjecao() {
+  const { h, Y, M, mes } = assistHoje();
+  const pj = radarProjecao(h);
+  if (!pj) return `Ainda é cedo para prever ${mes} — volte a partir do dia 3 ou registre suas entradas e gastos.`;
+  const fim = getSaldoAcumulado(Y, M);
+  return (pj.sobra >= 0
+    ? tom(`No ritmo atual, ${mes} fecha com sobra de <span class="num pos">${fmt(pj.sobra)}</span>`, `Nesse ritmo, sobram <span class="num pos">${fmt(pj.sobra)}</span> em ${mes}. Bonito!`)
+    : tom(`No ritmo atual, os gastos passam as entradas em <span class="num neg">${fmt(-pj.sobra)}</span>`, `Nesse ritmo, o mês acaba antes do dinheiro (faltam <span class="num neg">${fmt(-pj.sobra)}</span>)`))
+    + `.<br>${assistLista([`Gastos previstos: ${fmt(pj.projGastos)}`, `Entradas: ${fmt(pj.entradas)}`, `Gasto do dia a dia: ${fmt(pj.ritmoDia)} por dia`, `Conta no fim do mês: ${fmt(fim)}`])}`;
+}
+function ansPoupanca() {
+  const { Y, M, mes } = assistHoje();
+  const d = getMonthData(Y, M), ano = computeYTD(Y, M);
+  const tm = d.entradas > 0 ? Math.round(d.sobra / d.entradas * 100) : null;
+  return `Taxa de poupança — do que entrou, quanto não foi gasto:<br>${assistLista([
+    `${monthsFull[M]}: ${tm == null ? 'sem entradas ainda' : `${tm}% (${fmt(d.sobra)})`}`,
+    `${Y} até ${mes}: ${ano.taxa == null ? 'sem entradas ainda' : `${Math.round(ano.taxa)}% (${fmt(ano.sobra)})`}`
+  ])}${d.investido > 0 ? `<br>Em ${mes} você investiu ${fmt(d.investido)}.` : ''}`;
+}
+function ansGastoPeriodo(t, n) {
+  const { h } = assistHoje();
+  const hoje = isoDay(h);
+  let ini = hoje, fim = hoje, rotulo = 'hoje';
+  if (/ontem/.test(n)) { ini = fim = somaDias(hoje, -1); rotulo = 'ontem'; }
+  else if (/semana/.test(n)) { ini = somaDias(hoje, -((h.getDay() + 6) % 7)); rotulo = 'esta semana (desde segunda)'; }
+  const itens = desafioLancamentos(ini, fim, false).map(x => x.it);
+  if (!itens.length) return `Nenhum gasto do dia a dia ${rotulo}.`;
+  const total = itens.reduce((s, i) => s + i.value, 0);
+  const maiores = [...itens].sort((a, b) => b.value - a.value).slice(0, 3);
+  return `Você gastou <span class="num">${fmt(total)}</span> ${rotulo} em ${itens.length} lançamento${itens.length === 1 ? '' : 's'} (fixos e parcelas não entram):<br>${assistLista(maiores.map(i => `${escapeHtml(i.desc)}: ${fmt(i.value)}`))}`;
+}
+function ansDesafio() {
+  const D = desafiosDB();
+  if (D.ativo) { const pr = progressoDesafio(D.ativo, new Date()); return `Desafio da semana: <strong>${escapeHtml(D.ativo.titulo)}</strong><br>${pr.texto}`; }
+  const sq = sequenciaDesafios();
+  return `Você não tem desafio ativo agora.${sq.vencidos ? ` Já venceu ${sq.vencidos}.` : ''} Veja a sugestão da semana na <strong>Início</strong>.`;
+}
+function ansAlertas() {
+  const al = alertasDB();
+  if (!al.length) return 'Você ainda não tem alertas. Peça assim: <em>me avise se delivery passar de 300</em>.';
+  const h = new Date();
+  return `Seus alertas:<br>${assistLista(al.map(a => `${descreverAlerta(a)} — ${a.ativo === false ? 'pausado' : avaliarAlerta(a, h).length ? '<strong>disparado</strong>' : 'tudo certo'}`))}`;
+}
+function ansRendimento() {
+  const cm = getCarteiraMercado();
+  if (!cm.temMercado) return `Você tem ${fmt(cm.aplicado)} aplicados. Para eu calcular o rendimento, informe os valores de mercado em <strong>Investimentos → Sua carteira</strong>.`;
+  const r = cm.mercado - cm.aplicado;
+  return `Sua carteira vale <span class="num">${fmt(cm.mercado)}</span> a mercado para ${fmt(cm.aplicado)} aplicados: <strong>${r >= 0 ? '+' : '−'}${fmt(Math.abs(r))}</strong>${cm.aplicado > 0 ? ` (${r >= 0 ? '+' : '−'}${(Math.abs(r) / cm.aplicado * 100).toFixed(1).replace('.', ',')}%)` : ''}.<br><span class="muted">Comparar com o CDI precisaria da taxa do mercado, que o app não busca (ele funciona offline).</span>`;
+}
+function ansAjuda() {
+  return `Pergunte do seu jeito. Alguns exemplos:<br>${assistLista([
+    '<em>quanto posso gastar?</em> · <em>quanto tenho?</em> · <em>qual meu patrimônio?</em>',
+    '<em>quanto vem a fatura?</em> · <em>o que vence esta semana?</em> · <em>quais minhas assinaturas?</em>',
+    '<em>como vou fechar o mês?</em> · <em>quanto economizei?</em> · <em>minha reserva cobre quantos meses?</em>',
+    '<em>quanto gastei hoje / esta semana / com delivery?</em> · <em>maiores gastos</em>',
+    'Para lançar: <em>gastei 32 no ifood</em> · <em>recebi 3.200 de salário</em>',
+    'Para vigiar: <em>me avise se delivery passar de 300</em>'
+  ])}`;
+}
+// "maiores gastos", "com o que mais gasto" (do mês citado ou do atual)
+function mesCitado(n) {
+  const i = monthsFull.findIndex(m => new RegExp('\\b' + normTok(m) + '\\b').test(n));
+  return i >= 0 ? i : null;
+}
+function ansMaiores(t, n) {
+  const { Y, M } = assistHoje();
+  const mc = mesCitado(n);
+  const m = mc != null ? mc : M, y = mc != null && mc > M ? Y - 1 : Y;
+  const d = getMonthData(y, m), mes = monthsFull[m].toLowerCase();
+  if (!d.items.length) return `Nenhum gasto em ${mes} ainda.`;
+  const cats = Object.entries(groupByCat(d.items)).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  const itens = [...d.items].sort((a, b) => b.value - a.value).slice(0, 3);
+  return `Onde mais foi dinheiro em ${mes}:<br>${assistLista(cats.map(([c, v]) => `${escapeHtml(c)}: ${fmt(v)} (${Math.round(v / d.gastos * 100)}%)`))}<br><br>Maiores gastos:<br>${assistLista(itens.map(i => `${escapeHtml(i.desc)}: ${fmt(i.value)}`))}`;
+}
+// "quanto gastei com delivery" → categoria pelo sinônimo
+function ansCategoriaSinonimo(t, n) {
+  const m = /(?:gastei|gasto|gastos|gastando)\s+(?:com|em|no|na|de)\s+(.+?)\??$/.exec(n);
+  if (!m) return null;
+  if (typeof detectCategory === 'function' && detectCategory(n)) return null;   // o assistente antigo já resolve
+  const cat = autoCategorize(m[1]);
+  return cat ? ansSpent(n, null, null, cat) : null;
+}
+
+const ASSIST_INTENCOES = [
+  [/^(ajuda|help|socorro)\b|o que (voce|vc) (sabe|faz|pode)|como (te )?uso|o que posso (te )?perguntar/, ansAjuda],
+  [/(posso|da pra|consigo|ainda (posso|da)) gastar|livre (pra|para) gastar|quanto (ainda )?(me )?sobra (pra|para) gastar/, ansPossoGastar],
+  [/maior(es)? gastos?|com o que (eu )?mais gast|onde (eu )?mais gast|top gastos|em que (eu )?mais gast/, ansMaiores],
+  [/patrimonio|quanto (eu )?tenho (no total|ao todo|de tudo)|meu total/, ansPatrimonio],
+  [/fatura|cartao de credito/, ansFatura],
+  [/assinatura|cobrancas? (que se repetem|recorrentes)/, ansAssinaturas],
+  [/\bvenc|\ba pagar\b|contas (pra|para) pagar|o que (eu )?(tenho|preciso) (que |pra |para )?pagar|boleto/, ansVencimentos],
+  [/reserva|emergencia|quantos meses (a reserva|ela) cobre/, ansReserva],
+  [/(como|quanto) (vou|vai|eu vou) fechar|fechar o mes|projecao|no ritmo atual|vou (ficar|fechar) no (azul|vermelho)|previsao do mes/, ansProjecao],
+  [/taxa de poupanca|quanto (eu )?(economizei|poupei)|estou economizando|quanto (eu )?guardei/, ansPoupanca],
+  [/gastei (hoje|ontem|essa semana|esta semana|nesta semana|na semana)|gastos? (de |da )?(hoje|ontem|semana)/, ansGastoPeriodo],
+  [/\bdesafio/, ansDesafio],
+  [/^(meus |quais )?(os |sao )?(meus )?alertas|alertas (ativos|configurados)/, ansAlertas],
+  [/rendimento|rentabilidade|quanto (rendeu|rende)|\bcdi\b/, ansRendimento],
+  [/quanto (eu )?tenho|\bsaldo\b|dinheiro em conta|tenho (na|no|em) /, ansConta],
+];
+const ASSIST_CONHECIDO = /compar|\bvs\b|versus|\bmaior|\btop\b|menor|menos|medi[ao]|invest|\bmeta|objetivo|entrada|ganhei|renda|salario|recebi|resumo|geral|quanto|gastei|gasto|\boi\b|\bola\b|categoria|mes|ano/;
+function responderAssistente(text) {
+  const n = normTok(text).replace(/[?!.]+$/, '').trim();
+  const sin = ansCategoriaSinonimo(text, n);
+  if (sin) return sin;
+  for (const [rx, fn] of ASSIST_INTENCOES) if (rx.test(n)) return fn(text, n);
+  return null;
+}
+(function chatEsperto() {
+  const orig = window.processQuestion;
+  const novo = function (text) {
+    const n = normTok(text);
+    // pedidos de alerta e lançamentos ("gastei 32 no ifood") seguem o caminho deles
+    if (typeof interpretarPedidoAlerta === 'function' && interpretarPedidoAlerta(text)) return orig(text);
+    if (typeof VERBO_LANC !== 'undefined' && VERBO_LANC.test(n) && parseLancamentoTexto(text).valor) return orig(text);
+    // várias perguntas de uma vez: "quanto posso gastar e quanto tenho"
+    const partes = text.split(/\s+e\s+|;|\?\s+/i).map(x => x.trim()).filter(x => x.length > 3);
+    if (partes.length > 1) {
+      const rs = partes.map(responderAssistente);
+      if (rs.every(Boolean)) return rs.map((r, i) => `<strong>${escapeHtml(partes[i])}</strong><br>${r}`).join('<br><br>');
+    }
+    try {
+      const r = responderAssistente(text);
+      if (r) return r;
+    } catch (e) { console.warn('[assistente]', e); }
+    if (!ASSIST_CONHECIDO.test(n)) return `Não entendi essa. ${ansAjuda()}`;
+    return orig(text);
+  };
+  window.processQuestion = novo;
+  processQuestion = novo;
+})();
+
+// Sugestões montadas a partir dos dados da pessoa
+function sugestoesAssistente() {
+  const s = ['Quanto posso gastar?', 'Quanto tenho?'];
+  if (getMethods().some(m => m.kind === 'credit')) s.push('Quanto vem a fatura?');
+  s.push('Como vou fechar o mês?', 'O que vence esta semana?', 'Quanto gastei esta semana?');
+  if (getInvestClasses().some(c => c.reserve)) s.push('Minha reserva cobre quantos meses?');
+  s.push('Quais minhas assinaturas?');
+  const meta = (db.goals || [])[0];
+  if (meta) s.push(`Como está a meta ${meta.name}?`.slice(0, 50));
+  s.push('Gastei 25 no almoço hoje', 'Me avise se delivery passar de 300', 'O que você sabe fazer?');
+  return s;
+}
+(function () {
+  const novo = function () {
+    const el = document.getElementById('assistantSuggestions');
+    if (!el) return;
+    el.innerHTML = sugestoesAssistente().map(x => `<span class="suggestion" onclick="askQuestion(${jsArg(x)})">${escapeHtml(x)}</span>`).join('');
+  };
+  window.renderSuggestions = novo;
+  renderSuggestions = novo;
+})();
 </script>
 </body>
 </html>
