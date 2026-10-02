@@ -2822,6 +2822,17 @@
     </div>
 
     <div class="panel">
+      <h2>Lançar mais rápido</h2>
+      <ul class="muted" style="font-size: 0.88rem; margin: 0; padding-left: 18px; line-height: 1.6;">
+        <li>No <strong>+</strong>, escreva do seu jeito: <em>uber 23,40 nubank ontem</em>, <em>geladeira 3.480 em 12x</em>, <em>recebi salário 3.200 todo mês</em>, <em>guardei 200 na caixinha</em>.</li>
+        <li>No <strong>assistente</strong>: <em>gastei 32 no ifood</em> — ele confirma antes de lançar.</li>
+        <li><strong>Android</strong> (app instalado): em qualquer app, toque em Compartilhar → FinanceApp. Serve para a notificação de compra do banco.</li>
+        <li><strong>iPhone</strong>: no app Atalhos, crie um atalho que abre <code id="linkLancar">…?lancar=</code> seguido do texto ditado.</li>
+        <li>Segure o ícone do app para <strong>Novo gasto</strong> ou <strong>Nova entrada</strong>.</li>
+      </ul>
+    </div>
+
+    <div class="panel">
       <h2>Dinheiro em conta</h2>
       <p class="muted" style="font-size: 0.88rem; margin-bottom: 14px;">
         Diga quanto você tem em conta hoje, como aparece no app do banco. Daqui pra frente o app soma as entradas e desconta os gastos à vista, os aportes e as faturas do cartão no dia do vencimento — o saldo nunca zera na virada do mês.
@@ -4544,7 +4555,7 @@ function fillMethodPanels() {
 // tem. Antes as regras apontavam para nomes que não existem nas categorias
 // padrão ("Transporte" em vez de "Uber/transporte") e Netflix caía em "Contas".
 const AUTO_CAT_RULES = [
-  [/\bifood\b|rappi|99\s?food|uber\s*eats|burger|mc\s?donald|\bbk\b|sushi|pizza|restaur|lanch|hamb[uú]r|a[cç]a[ií]|padaria|cafeteria|starbucks/i, ['IFood/restaurante', 'Restaurante', 'Alimentação']],
+  [/\bifood\b|rappi|99\s?food|uber\s*eats|burger|mc\s?donald|\bbk\b|sushi|pizza|restaur|lanch|hamb[uú]r|a[cç]a[ií]|padaria|cafeteria|caf[eé](?![a-z])|starbucks|almo[cç]o|jantar|lanche/i, ['IFood/restaurante', 'Restaurante', 'Alimentação']],
   [/gasolin|combust|etanol|\bposto\b|shell|ipiranga|petrobr/i, ['Gasolina', 'Uber/transporte', 'Transporte']],
   [/\buber\b|\b99\b|\b99pop\b|t[aá]xi|cabify|estaciona|ped[aá]gio|metr[oô]|[oô]nibus|\btrem\b|bilhete [uú]nico/i, ['Uber/transporte', 'Transporte']],
   [/mercado|mercadinho|supermerc|atacad|assa[ií]|carrefour|\bextra\b|p[aã]o de a[cç][uú]car|hortifr|feira|a[cç]ougue/i, ['Mercado', 'Alimentação']],
@@ -4556,7 +4567,7 @@ const AUTO_CAT_RULES = [
   [/\bbar\b|boteco|cerveja|chopp|balada|cinema|\bshow\b|teatro|ingresso|\bgame|steam|playstation|xbox|nintendo|viagem|hotel|airbnb/i, ['Lazer']],
   [/barb|cabel|sal[aã]o|esmalt|manicure|cosm[eé]t|maquiag|perfum/i, ['Beleza']],
   [/renner|riachuelo|\bc&a\b|\bcea\b|zara|shein|hering|roupa|camis|cal[cç]a|vestido|t[eê]nis|sapato|nike|adidas/i, ['Roupa']],
-  [/pichau|kabum|magazine|magalu|americanas|mercado livre|monitor|teclado|mouse|\bcabo\b|fone|celular|notebook|carregador/i, ['Eletrônicos']],
+  [/pichau|kabum|magazine|magalu|americanas|mercado livre|geladeira|fog[aã]o|micro-?ondas|m[aá]quina de lavar|lava-?lou[cç]a|televis|\btv\b|monitor|teclado|mouse|\bcabo\b|fone|celular|notebook|carregador/i, ['Eletrônicos']],
   [/claude|chatgpt|openai|github|\baws\b|google cloud|dom[ií]nio|hostgator|vercel|netlify|cursor/i, ['Desenvolvimento']],
   [/presente|anivers[aá]rio/i, ['Presentes']],
 ];
@@ -5353,6 +5364,11 @@ document.addEventListener('click', e => {
       <span>Adicionar</span>
       <button class="qa-close" onclick="closeQuickAdd()" aria-label="Fechar">×</button>
     </h3>
+    <!-- v70: escreva do seu jeito — o formulário abaixo é preenchido para conferir -->
+    <div class="qa-texto">
+      <input id="qaTexto" type="text" placeholder="Escreva do seu jeito: uber 23,40 nubank ontem" autocomplete="off" aria-label="Lançar por texto" oninput="qaAplicarTexto()">
+      <div id="qaTextoResumo" class="qa-texto-resumo" aria-live="polite"></div>
+    </div>
     <!-- v67: o "+" registra gasto, entrada ou dinheiro guardado -->
     <div class="qa-tabs" role="tablist" aria-label="Tipo de lançamento">
       <button type="button" role="tab" data-qa="gasto" onclick="qaSetMode('gasto')">Gasto</button>
@@ -5459,17 +5475,20 @@ function openQuickAdd(mode) {
   document.getElementById('qaDesc').value = '';
   document.getElementById('qaValue').value = '';
   document.getElementById('qaSuggestions').innerHTML = '';
+  const qaTexto = document.getElementById('qaTexto');
+  if (qaTexto) { qaTexto.value = ''; document.getElementById('qaTextoResumo').innerHTML = ''; }
+  window._qaTexto = null;
   qaSetMode(typeof mode === 'string' ? mode : 'gasto');
 
   overlay.classList.add('show');
-  setTimeout(() => document.getElementById('qaDesc').focus(), 100);
+  setTimeout(() => (document.getElementById('qaTexto') || document.getElementById('qaDesc')).focus(), 100);
 
   // Sugestões inline conforme digita
   const descEl = document.getElementById('qaDesc');
   descEl.oninput = () => updateQASuggestions(descEl.value);
 
   // Enter salva, Esc fecha
-  ['qaDesc', 'qaValue', 'qaCat', 'qaMethod', 'qaDate', 'qaInvestClass'].forEach(id => {
+  ['qaTexto', 'qaDesc', 'qaValue', 'qaCat', 'qaMethod', 'qaDate', 'qaInvestClass'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.onkeydown = (e) => {
       if (e.key === 'Enter') { e.preventDefault(); submitQuickAdd(); }
@@ -5566,9 +5585,18 @@ async function submitQuickAdd() {
     if (!cat) { document.getElementById('qaCat').focus(); return toast('Escolha a categoria', 'error'); }
     if (document.getElementById('qaCat').dataset.userSet) aprenderCategoria(desc, cat);   // v69
     ensureYear(ref.y);
-    if (!db.events[key]) db.events[key] = [];
-    db.events[key].push({ id: Date.now(), desc, value, cat, method, type: 'eventual', date });
-    msg = `Salvo: ${desc} — ${fmt(value)}${outroMes}`;
+    const doTexto = window._qaTexto || {};   // v70: parcelas e "todo mês" escritos no texto
+    if (doTexto.parcelas >= 2) {
+      db.installments.push({ id: Date.now(), desc, value, cat, method, startYear: ref.y, startMonth: ref.m, total: doTexto.parcelas, date });
+      msg = `Parcelado: ${desc} — ${doTexto.parcelas}× de ${fmt(value)}`;
+    } else if (doTexto.recorrente) {
+      db.recurringExpenses.push({ id: Date.now(), desc, value, cat, method, type: 'fixo', startYear: ref.y, startMonth: ref.m, date });
+      msg = `Gasto fixo: ${desc} — ${fmt(value)} todo mês a partir de ${monthsFull[ref.m]}/${ref.y}`;
+    } else {
+      if (!db.events[key]) db.events[key] = [];
+      db.events[key].push({ id: Date.now(), desc, value, cat, method, type: 'eventual', date });
+      msg = `Salvo: ${desc} — ${fmt(value)}${outroMes}`;
+    }
   }
   saveDB();
 
@@ -6155,7 +6183,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v69';
+const APP_VERSION = 'v70';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -7955,6 +7983,8 @@ function setContaHoje() {
 
 // Mostra o estado atual do ponto de partida no painel de Configurações.
 function updateContaHojeHint() {
+  const ll = document.getElementById('linkLancar');
+  if (ll && typeof linkLancarRapido === 'function') ll.textContent = linkLancarRapido();
   const hint = document.getElementById('contaHojeHint');
   const inp = document.getElementById('contaHoje');
   const a = getSaldoAnchor();
@@ -12584,6 +12614,14 @@ function renderRecentActivity() {
     border: 1px solid var(--border); border-radius: 10px; font-size: .9rem;
   }
   #quickAddCard .qa-origem label:has(input:checked) { border-color: var(--primary); background: var(--primary-tint); }
+  /* v70 · Lançar por texto */
+  #quickAddCard .qa-texto { margin-bottom: 12px; }
+  #quickAddCard #qaTexto { margin-bottom: 6px; border-color: var(--primary); background: var(--surface); }
+  .qa-texto-resumo { font-size: .8rem; color: var(--text-muted); display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; min-height: 18px; }
+  .qa-texto-resumo span { background: var(--primary-tint); color: var(--primary); border-radius: 999px; padding: 1px 8px; font-weight: 600; }
+  .chat-acoes { display: inline-flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .chat-btn { border: 0; border-radius: 999px; padding: 7px 14px; font: inherit; font-size: .84rem; font-weight: 600; cursor: pointer; background: var(--primary); color: #fff; }
+  .chat-btn.sec { background: var(--bg-soft); color: var(--text); }
   /* v69 · Radar */
   .radar { padding-bottom: 14px; }
   .radar-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
@@ -13003,6 +13041,317 @@ window.renderRadar = renderRadar;
     try { renderRadar(); } catch (e) { console.warn('[radar]', e); }
   };
 })();
+</script>
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// v70 · LANÇAR POR TEXTO — "uber 23,40 nubank ontem" vira um lançamento.
+// O mesmo leitor serve o campo do "+", o assistente ("gastei 30 no mercado"),
+// o compartilhar para o app (Android) e o link ?lancar= (Atalhos do iPhone).
+// É a resposta local ao "lance pelo WhatsApp" do Pierre: nada sai do aparelho.
+// ══════════════════════════════════════════════════════════════════════
+const normTok = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+function parseLancamentoTexto(texto, hoje = new Date()) {
+  const original = String(texto || '').replace(/\s+/g, ' ').trim();
+  const mencionaCredito = /cart[aã]o|cr[eé]dito/i.test(original);
+  // Notificação de banco: tira o "juridiquês" antes de ler
+  const bruto = original
+    .replace(/\b(compra|transa[cç][aã]o|pagamento)\s+(aprovad[ao]|realizad[ao]|efetuad[ao])\b/gi, ' ')
+    .replace(/\b(no|com o)\s+(seu\s+)?cart[aã]o(\s+de\s+cr[eé]dito|\s+de\s+d[eé]bito)?(\s+(com\s+)?final|\s+terminado\s+em)?(\s+\d{4})?\b/gi, ' ')
+    .replace(/\bfinal\s+\d{4}\b/gi, ' ').replace(/\bno\s+valor\s+de\b/gi, ' ').replace(/[*•|]/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+  const toks = bruto.replace(/^\+\s*/, '+ ').split(' ').filter(Boolean).map(o => ({ o, n: normTok(o).replace(/[.,;:!?]+$/, ''), usado: false }));
+  if (toks[0] && toks[0].o === '+') toks[0].usado = true;   // "+ freela 1.500" = entrada
+  const CONECT = new Set(['no', 'na', 'nos', 'nas', 'em', 'de', 'do', 'da', 'pelo', 'pela', 'com', 'via', 'pra', 'para', 'o', 'a', 'ao', 'por', 'um', 'uma']);
+  const usa = i => {
+    toks[i].usado = true;
+    if (i > 0 && CONECT.has(toks[i - 1].n) && !toks[i - 1].usado) toks[i - 1].usado = true;
+  };
+  const Y = hoje.getFullYear(), M = hoje.getMonth(), D = hoje.getDate();
+
+  // 1. Tipo: verbo manda; sem verbo, o substantivo dá a pista
+  const V_ENTRADA = new Set(['recebi', 'recebeu', 'ganhei', 'entrou', 'caiu', 'recebido', 'recebida']);
+  const V_GUARDAR = new Set(['guardei', 'apliquei', 'investi', 'aportei', 'poupei']);
+  const V_GASTO = new Set(['gastei', 'paguei', 'comprei', 'torrei']);
+  let tipo = null;
+  toks.forEach(t => {
+    if (V_ENTRADA.has(t.n)) { tipo = tipo || 'entrada'; t.usado = true; }
+    else if (V_GUARDAR.has(t.n)) { tipo = tipo || 'guardar'; t.usado = true; }
+    else if (V_GASTO.has(t.n)) { tipo = tipo || 'gasto'; t.usado = true; }
+  });
+  if (!tipo && /^\+/.test(bruto)) tipo = 'entrada';
+  if (!tipo && toks.some(t => /^(salario|freela|freelance|reembolso|dividendos?|proventos?|bonus|renda|13o)$/.test(t.n))) tipo = 'entrada';
+  if (!tipo && toks.some(t => /^(aporte|caixinha|poupanca|tesouro|cdb)$/.test(t.n))) tipo = 'guardar';
+  tipo = tipo || 'gasto';
+
+  // 2. Parcelas: "12x", "12x de 290", "em 12 vezes"
+  let parcelas = null, parcelaDe = false;
+  toks.forEach((t, i) => {
+    if (t.usado || parcelas) return;
+    const m = /^(\d{1,2})x$/.exec(t.n);
+    const solto = /^\d{1,2}$/.test(t.n) && toks[i + 1] && ['x', 'vezes', 'parcelas'].includes(toks[i + 1].n);
+    if (!m && !solto) return;
+    parcelas = Number(m ? m[1] : t.n);
+    usa(i);
+    let j = i + 1;
+    if (solto) { toks[j].usado = true; j++; }
+    if (toks[j] && toks[j].n === 'de') { parcelaDe = true; toks[j].usado = true; }
+  });
+  if (parcelas != null && (parcelas < 2 || parcelas > 72)) parcelas = null;
+
+  // 3. Data: hoje, ontem, anteontem, 12/09(/2026), dia 5, dia da semana
+  let data = null;
+  const DIAS = ['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado'];
+  toks.forEach((t, i) => {
+    if (t.usado || data) return;
+    let dt = null;
+    if (t.n === 'hoje') dt = new Date(Y, M, D);
+    else if (t.n === 'ontem') dt = new Date(Y, M, D - 1);
+    else if (t.n === 'anteontem') dt = new Date(Y, M, D - 2);
+    else if (/^\d{1,2}\/\d{1,2}(\/\d{2,4})?$/.test(t.n)) {
+      const [d, m, a] = t.n.split('/').map(Number);
+      const ano = a ? (a < 100 ? 2000 + a : a) : Y;
+      if (m >= 1 && m <= 12 && d >= 1 && d <= new Date(ano, m, 0).getDate()) dt = new Date(ano, m - 1, d);
+    } else if (t.n === 'dia' && toks[i + 1] && /^\d{1,2}$/.test(toks[i + 1].n)) {
+      const d = Number(toks[i + 1].n);
+      if (d >= 1 && d <= new Date(Y, M + 1, 0).getDate()) { dt = new Date(Y, M, d); toks[i + 1].usado = true; }
+    } else {
+      const w = DIAS.findIndex(dn => t.n === dn || t.n === dn + '-feira');
+      if (w >= 0) dt = new Date(Y, M, D - ((hoje.getDay() - w + 7) % 7));
+    }
+    if (dt) { data = isoDay(dt); usa(i); }
+  });
+
+  // 4. Recorrência: "todo mês", "mensal"
+  let recorrente = false;
+  toks.forEach((t, i) => {
+    if (t.usado) return;
+    if (t.n === 'mensal' || t.n === 'mensalmente') { recorrente = true; usa(i); }
+    else if (t.n === 'todo' && toks[i + 1] && toks[i + 1].n === 'mes') { recorrente = true; usa(i); toks[i + 1].usado = true; }
+    else if (t.n === 'todos' && toks[i + 1] && toks[i + 1].n === 'os' && toks[i + 2] && toks[i + 2].n === 'meses') {
+      recorrente = true; usa(i); toks[i + 1].usado = true; toks[i + 2].usado = true;
+    }
+  });
+
+  // 5. Valor: com R$, vírgula decimal ou "reais" vence; empate fica com o último
+  let valor = null, idxValor = -1, prio = -1;
+  toks.forEach((t, i) => {
+    if (t.usado) return;
+    let s = t.o.replace(/[;:!?]+$/, '').replace(/\.$/, '');
+    let rs = false;
+    if (/^r\$/i.test(s)) { rs = true; s = s.slice(2); }
+    const prevRs = i > 0 && /^r\$$/i.test(toks[i - 1].o);
+    const k = /^\d+(,\d+)?k$/i.test(s);
+    if (!k && !/^\d[\d.,]*$/.test(s)) return;
+    if (i > 0 && toks[i - 1].n === 'dia') return;
+    const prox = toks[i + 1] ? toks[i + 1].n : '';
+    let v = k ? parseMoneyBR(s.slice(0, -1)) * 1000 : parseMoneyBR(s);
+    if (!Number.isFinite(v) || v <= 0) return;
+    if (prox === 'mil') v *= 1000;
+    const p = (rs || prevRs ? 3 : 0) + (/,\d{1,2}$/.test(s) ? 2 : 0) + (prox === 'reais' || prox === 'real' || prox === 'mil' || k ? 2 : 0);
+    if (p >= prio) { prio = p; valor = Math.round(v * 100) / 100; idxValor = i; }
+  });
+  if (idxValor >= 0) {
+    usa(idxValor);
+    if (idxValor > 0 && /^r\$$/i.test(toks[idxValor - 1].o)) toks[idxValor - 1].usado = true;
+    const pr = toks[idxValor + 1];
+    if (pr && ['reais', 'real', 'mil'].includes(pr.n)) pr.usado = true;
+  }
+
+  // 6. Forma de pagamento (só para gasto): nome da forma, ou crédito/débito/dinheiro
+  let metodo = null;
+  if (tipo === 'gasto') {
+    const GENERICAS = new Set(['credito', 'cartao', 'debito', 'conta', 'banco', 'de', 'do', 'da']);
+    const formas = getMethods().filter(m => m.kind !== 'invest');
+    const palavras = m => normTok(m.label + ' ' + m.id).split(/[^a-z0-9]+/).filter(w => w && !GENERICAS.has(w));
+    toks.forEach((t, i) => {
+      if (t.usado || metodo || t.n.length < 2) return;
+      const m = formas.find(f => palavras(f).includes(t.n));
+      if (m) { metodo = m.id; usa(i); }
+    });
+    if (!metodo) {
+      const acha = w => toks.findIndex(t => !t.usado && t.n === w);
+      const iDeb = acha('debito'), iDin = acha('dinheiro');
+      if (iDeb >= 0) { metodo = (formas.find(f => /debito/.test(normTok(f.label))) || formas.find(f => f.kind === 'instant') || {}).id || null; usa(iDeb); }
+      else if (iDin >= 0) { metodo = (formas.find(f => /dinheiro|especie/.test(normTok(f.label))) || {}).id || null; if (metodo) usa(iDin); }
+      else if (mencionaCredito || acha('credito') >= 0 || acha('cartao') >= 0) {
+        metodo = (formas.find(f => f.kind === 'credit') || {}).id || null;
+        ['credito', 'cartao'].forEach(w => { const j = acha(w); if (j >= 0) usa(j); });
+      }
+    }
+  }
+
+  // 7. Onde guardar: classe citada ou a reserva de emergência
+  let classe = null;
+  if (tipo === 'guardar') {
+    const cls = getInvestClasses();
+    toks.forEach(t => {
+      if (classe) return;
+      const c = cls.find(c => normTok(c.label).split(/[^a-z0-9]+/).filter(w => w.length >= 3 && !['renda', 'fixa', 'variavel'].includes(w)).includes(t.n));
+      if (c) classe = c.id;
+    });
+    classe = classe || (cls.find(c => c.reserve) || cls[0] || {}).id || null;
+  }
+
+  // 8. O que sobrou é a descrição
+  const resto = toks.filter(t => !t.usado).map(t => t.o.replace(/[;:!?]+$/, ''));
+  while (resto.length && CONECT.has(normTok(resto[0]))) resto.shift();
+  while (resto.length && CONECT.has(normTok(resto[resto.length - 1]))) resto.pop();
+  let desc = resto.join(' ').trim();
+  desc = desc ? desc.charAt(0).toUpperCase() + desc.slice(1) : '';
+  const categoria = tipo === 'gasto' && desc ? autoCategorize(desc) : null;
+  if (!desc) desc = tipo === 'entrada' ? 'Entrada' : tipo === 'guardar' ? 'Guardado' : (categoria || 'Gasto');
+  const valorParcela = parcelas && valor ? (parcelaDe ? valor : Math.round(valor / parcelas * 100) / 100) : null;
+  return { texto: original, tipo, desc: desc.slice(0, 80), valor, data, metodo, categoria, parcelas, valorParcela, recorrente, classe };
+}
+
+function dataCurta(iso) {
+  const h = todayISO(), o = isoDay(new Date(Date.now() - 864e5));
+  if (!iso || iso === h) return 'hoje';
+  if (iso === o) return 'ontem';
+  return iso.split('-').reverse().slice(0, 2).join('/');
+}
+function resumoLancamento(p) {
+  const TIPO = { gasto: 'Gasto', entrada: 'Entrada', guardar: 'Guardar' };
+  const valorTxt = !p.valor ? '' : p.parcelas
+    ? `${p.parcelas}× de ${fmt(p.valorParcela)} (total ${fmt(p.valorParcela * p.parcelas)})` : fmt(p.valor);
+  return [
+    TIPO[p.tipo], escapeHtml(p.desc), valorTxt,
+    p.tipo === 'gasto' && p.metodo ? escapeHtml(methodLabel(p.metodo)) : '',
+    dataCurta(p.data), p.recorrente ? 'todo mês' : '',
+    p.tipo === 'gasto' && p.categoria ? escapeHtml(p.categoria) : '',
+    p.tipo === 'guardar' && p.classe ? escapeHtml((getInvestClass(p.classe) || {}).label || '') : ''
+  ].filter(Boolean);
+}
+
+// Campo "Escreva do seu jeito" do "+": preenche o formulário para conferir
+function qaAplicarTexto() {
+  const el = document.getElementById('qaTexto'), res = document.getElementById('qaTextoResumo');
+  if (!el || !res) return;
+  const txt = el.value.trim();
+  if (!txt) { window._qaTexto = null; res.innerHTML = ''; return; }
+  const p = parseLancamentoTexto(txt);
+  window._qaTexto = p;
+  if (typeof _qaMode !== 'undefined' && _qaMode !== p.tipo) qaSetMode(p.tipo);
+  document.getElementById('qaDesc').value = p.desc;
+  document.getElementById('qaValue').value = p.valor ? fmtInput(p.parcelas ? p.valorParcela : p.valor) : '';
+  document.getElementById('qaDate').value = p.data || defaultDateForView();
+  if (p.tipo === 'gasto') {
+    const met = document.getElementById('qaMethod');
+    if (p.metodo && [...met.options].some(o => o.value === p.metodo)) met.value = p.metodo;
+    const cat = document.getElementById('qaCat');
+    delete cat.dataset.userSet;
+    updateQASuggestions(p.desc);
+  }
+  if (p.tipo === 'entrada') document.getElementById('qaRecorrente').checked = !!p.recorrente;
+  if (p.tipo === 'guardar' && p.classe) document.getElementById('qaInvestClass').value = p.classe;
+  res.innerHTML = p.valor
+    ? `Entendi: ${resumoLancamento(p).map(x => `<span>${x}</span>`).join('')}`
+    : 'Falta o valor — ex.: <em>uber 23,40 nubank ontem</em>';
+}
+
+// Grava um lançamento entendido (usado pelo assistente)
+function registrarLancamento(p) {
+  const date = p.data || todayISO();
+  const ref = refFromDate(date);
+  ensureYear(ref.y);
+  const key = getKey(ref.y, ref.m);
+  const id = Date.now();
+  if (p.tipo === 'entrada') {
+    if (p.recorrente) db.recurringIncome.push({ id, desc: p.desc, value: p.valor, startYear: ref.y, startMonth: ref.m, date });
+    else (db.income[key] = db.income[key] || []).push({ id, desc: p.desc, value: p.valor, date });
+  } else if (p.tipo === 'guardar') {
+    (db.events[key] = db.events[key] || []).push({ id, desc: p.desc, value: p.valor, cat: '', method: formaInvestimento(), type: 'eventual', date, investClass: p.classe });
+  } else {
+    const metodo = p.metodo || (getMethods().find(m => m.kind !== 'invest') || {}).id;
+    const base = { id, desc: p.desc, cat: p.categoria, method: metodo, date };
+    if (p.parcelas) db.installments.push({ ...base, value: p.valorParcela, startYear: ref.y, startMonth: ref.m, total: p.parcelas });
+    else if (p.recorrente) db.recurringExpenses.push({ ...base, value: p.valor, type: 'fixo', startYear: ref.y, startMonth: ref.m });
+    else (db.events[key] = db.events[key] || []).push({ ...base, value: p.valor, type: 'eventual' });
+  }
+  saveDB();
+  if (typeof renderGastos === 'function') renderGastos();
+  if (typeof fillIncomePanels === 'function') fillIncomePanels();
+  if (document.getElementById('dashboard')?.classList.contains('active')) renderDashboard();
+}
+
+// Assistente: "gastei 30 no mercado" → confirma antes de lançar
+const VERBO_LANC = /^\s*(gastei|paguei|comprei|torrei|recebi|ganhei|guardei|apliquei|investi|aportei|poupei)\b/;
+function respostaLancamentoChat(p) {
+  window._lancChat = p;
+  const semCat = p.tipo === 'gasto' && !p.categoria;
+  return `${semCat ? 'Entendi, só falta a categoria:' : 'Lanço assim?'}<br>${resumoLancamento(p).map(x => `<strong>${x}</strong>`).join(' · ')}<br>
+    <span class="chat-acoes">${semCat ? '' : '<button type="button" class="chat-btn" onclick="confirmarLancamentoChat()">Lançar</button>'}<button type="button" class="chat-btn sec" onclick="ajustarLancamentoChat()">${semCat ? 'Escolher categoria' : 'Ajustar'}</button></span>`;
+}
+function confirmarLancamentoChat() {
+  const p = window._lancChat;
+  if (!p) return;
+  window._lancChat = null;
+  registrarLancamento(p);
+  appendMsg(`Pronto, lancei: ${resumoLancamento(p).map(x => `<strong>${x}</strong>`).join(' · ')}.`, 'bot');
+  toast('Lançado pelo assistente', 'success');
+}
+function ajustarLancamentoChat() {
+  const p = window._lancChat;
+  if (!p) return;
+  window._lancChat = null;
+  openQuickAdd(p.tipo);
+  const el = document.getElementById('qaTexto');
+  el.value = p.texto;
+  qaAplicarTexto();
+}
+(function chatLancamento() {
+  const orig = window.processQuestion;
+  const novo = function (text) {
+    if (VERBO_LANC.test(normTok(text))) {
+      const p = parseLancamentoTexto(text);
+      if (p.valor) return respostaLancamentoChat(p);
+    }
+    return orig(text);
+  };
+  window.processQuestion = novo;
+  processQuestion = novo;
+  if (typeof SUGGESTIONS !== 'undefined' && Array.isArray(SUGGESTIONS)) SUGGESTIONS.unshift('Gastei 25 no almoço hoje');
+})();
+
+// Compartilhar para o app (Android, app instalado), atalhos do ícone e ?lancar=
+(function lerCompartilhado() {
+  try {
+    const q = new URLSearchParams(location.search);
+    const texto = (q.get('lancar') || [q.get('title'), q.get('text')].filter(Boolean).join(' ')).trim().slice(0, 300);
+    const acao = q.get('acao');
+    if (!texto && !acao) return;
+    sessionStorage.setItem('financeapp_lancar', JSON.stringify({ texto, acao }));
+    history.replaceState(null, '', location.pathname + location.hash);   // o texto não fica na barra
+  } catch (e) { /* sem sessionStorage: ignora */ }
+})();
+function abrirCompartilhadoPendente() {
+  let p = null;
+  try { p = JSON.parse(sessionStorage.getItem('financeapp_lancar') || 'null'); } catch (e) { p = null; }
+  if (!p || typeof currentUser === 'undefined' || !currentUser) return;
+  try { sessionStorage.removeItem('financeapp_lancar'); } catch (e) {}
+  openQuickAdd(['entrada', 'guardar'].includes(p.acao) ? p.acao : 'gasto');
+  if (p.texto) { document.getElementById('qaTexto').value = p.texto; qaAplicarTexto(); }
+}
+(function () {
+  const orig = window.hideLoginScreen;
+  if (typeof orig === 'function') {
+    window.hideLoginScreen = function () { const r = orig.apply(this, arguments); setTimeout(abrirCompartilhadoPendente, 400); return r; };
+    hideLoginScreen = window.hideLoginScreen;
+  }
+  window.addEventListener('load', () => {
+    setTimeout(abrirCompartilhadoPendente, 700);
+    const ll = document.getElementById('linkLancar');
+    if (ll) ll.textContent = linkLancarRapido();
+  });
+})();
+function linkLancarRapido() {
+  return location.origin + location.pathname + '?lancar=';
+}
+window.qaAplicarTexto = qaAplicarTexto;
+window.confirmarLancamentoChat = confirmarLancamentoChat;
+window.ajustarLancamentoChat = ajustarLancamentoChat;
+window.parseLancamentoTexto = parseLancamentoTexto;
 </script>
 </body>
 </html>

@@ -27,5 +27,38 @@
       "purpose": "maskable"
     }
   ],
-  "scope": "./"
+  "scope": "./",
+  "share_target": {
+    "action": "./",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  },
+  "shortcuts": [
+    {
+      "name": "Novo gasto",
+      "short_name": "Gasto",
+      "url": "./?acao=gasto",
+      "icons": [
+        {
+          "src": "icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Nova entrada",
+      "short_name": "Entrada",
+      "url": "./?acao=entrada",
+      "icons": [
+        {
+          "src": "icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ]
 }
