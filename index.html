@@ -2644,6 +2644,7 @@
             <option value="tributavel">Provento tributável (JCP, juros)</option>
           </select></div>
         <div class="input-group" id="inProvWrap" style="display:none"><label>De qual investimento</label><select id="inProvClasse"></select></div>
+        <div class="input-group in-conta-wrap"><label>Entrou em qual conta</label><select id="inConta"></select></div>
         <div class="input-group"><label>Valor (R$)</label><input id="inVal" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off"></div>
         <div class="checkbox-group">
           <input type="checkbox" id="inRecurring" onchange="toggleIncomeAdvanced()">
@@ -2850,16 +2851,18 @@
       </ul>
     </div>
 
-    <div class="panel">
-      <h2>Dinheiro em conta</h2>
-      <p class="muted" style="font-size: 0.88rem; margin-bottom: 14px;">
-        Diga quanto você tem em conta hoje, como aparece no app do banco. Daqui pra frente o app soma as entradas e desconta os gastos à vista, os aportes e as faturas do cartão no dia do vencimento — o saldo nunca zera na virada do mês.
-      </p>
-      <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-        <input id="contaHoje" type="text" inputmode="decimal" placeholder="1500,00" style="max-width: 200px;">
-        <button class="btn primary" onclick="setContaHoje()">Salvar saldo de hoje</button>
+    <div class="panel" id="contasPanel">
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 6px;">
+        <h2 style="margin: 0;">Suas contas</h2>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button class="btn" onclick="openTransferenciaModal()">Transferir</button>
+          <button class="btn primary" onclick="openContaModal()">+ Nova conta</button>
+        </div>
       </div>
-      <p class="muted" id="contaHojeHint" style="font-size: 0.8rem; margin-top: 10px;"></p>
+      <p class="muted" style="font-size: 0.86rem; margin: 0 0 12px;">
+        Diga quanto tem hoje em cada conta, como aparece no app do banco. Daqui pra frente o app soma as entradas e desconta os gastos à vista, os aportes e as faturas no dia do vencimento. Em <strong>Categorias e pagamentos</strong>, ligue cada forma de pagamento à conta de onde o dinheiro sai.
+      </p>
+      <div id="contasList"></div>
     </div>
 
     <div class="panel">
@@ -5021,6 +5024,10 @@ function exportTransactionsCSV() {
     for (let m = 0; m <= lim; m++) {
       const d = getMonthData(year, m);
       const mes = `${String(m + 1).padStart(2, '0')}/${year}`;
+      (db.transferencias || []).filter(t => { const r = refFromDate(t.date); return r.y === year && r.m === m; }).forEach(t => lines.push([
+        mes, dataBR(t, year, m), 'Transferência', texto(t.desc || 'Entre contas'),
+        texto(`${(getConta(t.de) || {}).nome || ''} → ${(getConta(t.para) || {}).nome || ''}`), texto(''), texto(''),
+        numero(t.valor), texto(''), texto('')].join(SEP)));
       (d.income || []).forEach(it => lines.push([
         mes, dataBR(it, year, m), it.provento ? 'Provento' : 'Entrada', texto(it.desc),
         texto(it.provento ? (getInvestClass(it.investClass) || {}).label || '' : ''),
@@ -5411,6 +5418,7 @@ document.addEventListener('click', e => {
       </select>
       <select id="qaProvClasse" aria-label="De qual investimento" style="display:none"></select>
     </div>
+    <div data-only="entrada guardar" class="qa-conta-wrap"><select id="qaConta" aria-label="Conta"></select></div>
     <label class="qa-check" data-only="entrada">
       <input type="checkbox" id="qaRecorrente">
       <span>Recebo todo mês <small>salário, aposentadoria, aluguel recebido… — repete a partir desta data</small></span>
@@ -5452,7 +5460,7 @@ function qaSetMode(mode) {
     b.setAttribute('aria-selected', on ? 'true' : 'false');
   });
   document.querySelectorAll('#quickAddCard [data-only]').forEach(el => {
-    el.style.display = el.dataset.only === _qaMode ? '' : 'none';
+    el.style.display = el.dataset.only.split(' ').includes(_qaMode) ? '' : 'none';
   });
   const t = QA_TEXTOS[_qaMode];
   document.getElementById('qaDesc').placeholder = t.desc;
@@ -5482,6 +5490,7 @@ function openQuickAdd(mode) {
   metSel.innerHTML = formas.map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.label)}</option>`).join('');
   if (formas.some(m => m.id === anterior)) metSel.value = anterior;
   if (typeof rebuildInvestClassDropdowns === 'function') rebuildInvestClassDropdowns();
+  if (typeof rebuildContaSelects === 'function') { rebuildContaSelects(); document.getElementById('qaConta').value = getContas()[0].id; }
   const origemConta = document.querySelector('input[name="qaOrigem"][value="conta"]');
   if (origemConta) origemConta.checked = true;
   const rec = document.getElementById('qaRecorrente');
@@ -5576,6 +5585,7 @@ async function submitQuickAdd() {
     // v68: provento de investimento (dividendos, JCP, juros)
     const tipo = document.getElementById('qaTipoEntrada')?.value || '';
     const extra = tipo ? { provento: tipo, investClass: document.getElementById('qaProvClasse')?.value } : {};
+    if (getContas().length > 1) extra.conta = document.getElementById('qaConta')?.value;   // v73
     if (document.getElementById('qaRecorrente')?.checked) {
       db.recurringIncome.push({ id: Date.now(), desc, value, startYear: ref.y, startMonth: ref.m, date, ...extra });
       msg = `Entrada mensal: ${desc} — ${fmt(value)} a partir de ${monthsFull[ref.m]}/${ref.y}`;
@@ -5594,7 +5604,9 @@ async function submitQuickAdd() {
     } else {
       ensureYear(ref.y);
       if (!db.events[key]) db.events[key] = [];
-      db.events[key].push({ id: Date.now(), desc, value, cat: '', method: formaInvestimento(), type: 'eventual', date, investClass: classe.id });
+      const aporte = { id: Date.now(), desc, value, cat: '', method: formaInvestimento(), type: 'eventual', date, investClass: classe.id };
+      if (getContas().length > 1) aporte.conta = document.getElementById('qaConta')?.value;   // v73
+      db.events[key].push(aporte);
       msg = `Guardado em ${classe.label}: ${fmt(value)}${outroMes} — saiu da conta, não é gasto`;
     }
   } else {
@@ -6201,7 +6213,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v72';
+const APP_VERSION = 'v73';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -6892,6 +6904,7 @@ function sanitizeData(data) {
     const tipo = m => {
       if (!['instant', 'credit', 'invest'].includes(m.kind)) m.kind = 'instant';
       if (m.dueDay != null) { const d = safeInt(m.dueDay); if (d !== null && d >= 1 && d <= 31) m.dueDay = d; else delete m.dueDay; }
+      if (m.conta != null && !isSafeId(m.conta)) delete m.conta;
       return m;
     };
     let lista = saneiaLista(Array.isArray(data.paymentMethods) ? data.paymentMethods : [], remapMetodo, tipo);
@@ -6935,6 +6948,7 @@ function sanitizeData(data) {
     }
     if (it.investType != null && !['fixa', 'variavel'].includes(it.investType)) delete it.investType;
     if (it.provento != null && !['isento', 'tributavel'].includes(it.provento)) delete it.provento;
+    if (it.conta != null && !isSafeId(it.conta)) delete it.conta;
     // Início/fim de recorrentes e parcelamentos: sempre inteiros
     ['startYear', 'startMonth'].forEach(f => {
       if (f in it) { const n = safeInt(it[f]); it[f] = n !== null ? n : (f === 'startYear' ? data.years[0] : 0); }
@@ -7013,13 +7027,36 @@ function sanitizeData(data) {
   });
 
   passo('dinheiro em conta', () => {
-    const s = data.saldoConfig;
-    if (s == null) return;
-    if (!obj(s) || typeof s.anchorKey !== 'string' || !/^\d{4}-\d{1,2}$/.test(s.anchorKey)) { data.saldoConfig = null; return; }
-    ['openingValue', 'targetValue', 'value'].forEach(f => {
-      if (f in s && !(typeof s[f] === 'number' && Number.isFinite(s[f]))) delete s[f];
-    });
-    if ('anchorDate' in s && !(typeof s.anchorDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s.anchorDate))) delete s.anchorDate;
+    const saneiaAncora = s => {
+      if (s == null) return null;
+      if (!obj(s) || typeof s.anchorKey !== 'string' || !/^\d{4}-\d{1,2}$/.test(s.anchorKey)) return null;
+      ['openingValue', 'targetValue', 'value'].forEach(f => {
+        if (f in s && !(typeof s[f] === 'number' && Number.isFinite(s[f]))) delete s[f];
+      });
+      if ('anchorDate' in s && !(typeof s.anchorDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s.anchorDate))) delete s.anchorDate;
+      if ('ts' in s && !(typeof s.ts === 'number' && Number.isFinite(s.ts))) delete s.ts;
+      return s;
+    };
+    data.saldoConfig = saneiaAncora(data.saldoConfig);
+    // v73: contas e transferências
+    if (data.contas != null) {
+      const usados = new Set((Array.isArray(data.contas) ? data.contas : []).filter(c => obj(c) && isSafeId(c.id)).map(c => String(c.id)));
+      const vistos = new Set();
+      data.contas = (Array.isArray(data.contas) ? data.contas : []).filter(obj).slice(0, 20).map((c, i) => {
+        let id = isSafeId(c.id) && !vistos.has(String(c.id)) ? c.id : slug(c.nome || 'conta', usados);
+        vistos.add(String(id));
+        return { id, nome: typeof c.nome === 'string' && c.nome.trim() ? c.nome.trim().slice(0, 40) : 'Conta',
+                 cor: safeColor(c.cor, METHOD_PALETTE[i % METHOD_PALETTE.length]), ancora: saneiaAncora(c.ancora) };
+      });
+      if (!data.contas.length) data.contas = [{ ...CONTA_PADRAO, ancora: null }];
+    }
+    if (data.transferencias != null) {
+      data.transferencias = (Array.isArray(data.transferencias) ? data.transferencias : []).filter(t => obj(t)
+        && typeof t.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(t.date) && isSafeId(t.de) && isSafeId(t.para)
+        && Number.isFinite(safeNum(t.valor, NaN)) && safeNum(t.valor, 0) > 0).slice(-2000)
+        .map(t => ({ id: isSafeId(t.id) ? t.id : proxId++, date: t.date, de: t.de, para: t.para, valor: safeNum(t.valor, 0),
+                     desc: typeof t.desc === 'string' ? t.desc.slice(0, 80) : '' }));
+    }
   });
 
   passo('diversos', () => {
@@ -7177,6 +7214,12 @@ function migrate(data) {
   }
 
   migrateV65(data);
+  // v73: a conta única vira "Conta principal" com o mesmo ponto de partida
+  if (!Array.isArray(data.contas) || !data.contas.length) {
+    data.contas = [{ ...CONTA_PADRAO, ancora: data.saldoConfig || null }];
+    data.saldoConfig = null;
+  }
+  if (!Array.isArray(data.transferencias)) data.transferencias = [];
   return sanitizeData(data);
 }
 
@@ -7711,40 +7754,67 @@ function comprasCreditoDoMes(y, m) {
 function faturasPagasEm(y, m) {
   const t = y * 12 + m - 1, py = Math.floor(t / 12), pm = t % 12;
   return Object.entries(comprasCreditoDoMes(py, pm)).map(([metodo, itens]) => ({
-    metodo, compraY: py, compraM: pm, dia: diaVencimento(metodo), itens,
+    metodo, compraY: py, compraM: pm, dia: diaVencimento(metodo), itens, conta: contaDoMetodo(metodo),
     valor: itens.reduce((a, b) => a + b.value, 0)
   }));
 }
 
-// Movimentos da CONTA em (y, m): { valor (+ entra / − sai), dia do mês }.
-function getFluxosConta(y, m) {
+// ── v73 · VÁRIAS CONTAS ──────────────────────────────────────────────────
+// db.contas = [{ id, nome, cor, ancora }] — ancora = ponto de partida da conta
+// (mesmo formato do antigo db.saldoConfig). A 1ª é a principal: recebe o que
+// não diz a conta. Formas de pagamento têm `conta` (de onde o dinheiro sai;
+// no crédito, quem paga a fatura); entradas e aportes podem ter `conta`.
+// Transferências (db.transferencias) movem dinheiro entre contas sem ser gasto.
+const CONTA_PADRAO = { id: 'principal', nome: 'Conta principal', cor: '#6D5EF6' };
+function getContas() {
+  if (typeof db !== 'undefined' && db && Array.isArray(db.contas) && db.contas.length) return db.contas;
+  return [{ ...CONTA_PADRAO, ancora: (typeof db !== 'undefined' && db && db.saldoConfig) || null }];
+}
+function getConta(id) { return getContas().find(c => c.id === id) || null; }
+function contaValida(id) { const cs = getContas(); return cs.some(c => c.id === id) ? id : cs[0].id; }
+function contaDoMetodo(metodoId) { const m = getMethod(normalizeMethod(metodoId)); return contaValida(m && m.conta); }
+
+// Movimentos da CONTA em (y, m): { valor (+ entra / − sai), dia do mês, conta }.
+// Sem `contaId`, devolve os de todas as contas.
+function getFluxosConta(y, m, contaId) {
   const d = getMonthData(y, m);
   const ultimo = new Date(y, m + 1, 0).getDate();
   const dia = it => {
     const s = isoDay(it && it.date);   // recorrentes e parcelas repetem no dia da data original
     return s ? Math.min(ultimo, Number(s.slice(8, 10)) || 1) : 1;
   };
+  const principal = getContas()[0].id;
+  const criado = id => (typeof id === 'number' && id > 1e12 && id < 1e13) ? id : 0;   // ms da criação
   const f = [];
-  (d.income || []).forEach(i => f.push({ valor: i.value, dia: dia(i) }));
-  (d.items || []).forEach(i => { if (methodKind(i.method) !== 'credit') f.push({ valor: -i.value, dia: dia(i) }); });
-  (d.aportes || []).forEach(i => f.push({ valor: -i.value, dia: dia(i) }));
+  (d.income || []).forEach(i => f.push({ valor: i.value, dia: dia(i), conta: contaValida(i.conta), criado: criado(i.id) }));
+  (d.items || []).forEach(i => { if (methodKind(i.method) !== 'credit') f.push({ valor: -i.value, dia: dia(i), conta: contaDoMetodo(i.method), criado: criado(i.id) }); });
+  (d.aportes || []).forEach(i => f.push({ valor: -i.value, dia: dia(i), conta: i.conta ? contaValida(i.conta) : contaDoMetodo(i.method), criado: criado(i.id) }));
   const aba = (d.investido || 0) - (d.aportesLancados || 0);   // aba Investimentos, sem data
-  if (Math.abs(aba) >= 0.005) f.push({ valor: -aba, dia: 1 });
-  faturasPagasEm(y, m).forEach(ft => f.push({ valor: -ft.valor, dia: Math.min(ultimo, ft.dia), fatura: ft }));
-  return f;
+  if (Math.abs(aba) >= 0.005) f.push({ valor: -aba, dia: 1, conta: principal });
+  faturasPagasEm(y, m).forEach(ft => f.push({ valor: -ft.valor, dia: Math.min(ultimo, ft.dia), fatura: ft, conta: ft.conta }));
+  (Array.isArray(db.transferencias) ? db.transferencias : []).forEach(t => {
+    const s = isoDay(t.date);
+    if (!s) return;
+    const [ty, tm] = s.split('-').map(Number);
+    if (ty !== y || tm - 1 !== m) return;
+    const de = contaValida(t.de), para = contaValida(t.para), dd = Math.min(ultimo, Number(s.slice(8, 10)) || 1);
+    if (de === para) return;
+    f.push({ valor: -t.valor, dia: dd, conta: de, transferencia: t, criado: criado(t.id) });
+    f.push({ valor: t.valor, dia: dd, conta: para, transferencia: t, criado: criado(t.id) });
+  });
+  return contaId == null ? f : f.filter(x => x.conta === contaId);
 }
-// Variação da conta no mês inteiro (caixa).
-function saldoCaixaMes(y, m) {
-  return getFluxosConta(y, m).reduce((a, x) => a + x.valor, 0);
+// Variação da(s) conta(s) no mês inteiro (caixa).
+function saldoCaixaMes(y, m, contaId) {
+  return getFluxosConta(y, m, contaId).reduce((a, x) => a + x.valor, 0);
 }
 
-// Ponto de partida normalizado: { ay, am, dia, valor, anchorKey }.
+// Ponto de partida normalizado de UMA conta: { ay, am, dia, valor, anchorKey }.
 // dia = até que dia do mês os lançamentos já estão no valor (0 = nenhum).
-function getSaldoAnchor() {
-  const cfg = db.saldoConfig;
+function ancoraNormalizada(cfg, contaId) {
   if (cfg && typeof cfg.anchorDate === 'string' && typeof cfg.value === 'number') {
     const [y, m, d] = cfg.anchorDate.split('-').map(Number);
-    return { ay: y, am: m - 1, dia: d, valor: cfg.value, anchorKey: getKey(y, m - 1) };
+    return { ay: y, am: m - 1, dia: d, valor: cfg.value, anchorKey: getKey(y, m - 1), ts: typeof cfg.ts === 'number' ? cfg.ts : null };
   }
   // Formatos antigos (até a v65): saldo no INÍCIO / FIM do mês-âncora.
   if (cfg && cfg.anchorKey && typeof cfg.openingValue === 'number') {
@@ -7753,12 +7823,24 @@ function getSaldoAnchor() {
   }
   if (cfg && cfg.anchorKey && typeof cfg.targetValue === 'number') {
     const [ay, am] = cfg.anchorKey.split('-').map(Number);
-    return { ay, am, dia: 0, valor: cfg.targetValue - saldoCaixaMes(ay, am), anchorKey: cfg.anchorKey, _legado: true };
+    return { ay, am, dia: 0, valor: cfg.targetValue - saldoCaixaMes(ay, am, contaId), anchorKey: cfg.anchorKey, _legado: true };
   }
   // Padrão: R$ 0 hoje.
   const now = new Date();
   return { ay: now.getFullYear(), am: now.getMonth(), dia: now.getDate(), valor: 0,
            anchorKey: getKey(now.getFullYear(), now.getMonth()), _default: true };
+}
+// Com `contaId`: o ponto de partida dela. Sem: visão geral — a âncora mais
+// antiga, a soma dos valores e se alguma conta ainda está no formato antigo.
+function getSaldoAnchor(contaId) {
+  if (contaId != null) {
+    const c = getConta(contaId) || getContas()[0];
+    return ancoraNormalizada(c.ancora, c.id);
+  }
+  const as = getContas().map(c => ancoraNormalizada(c.ancora, c.id));
+  const min = as.reduce((a, b) => (a.ay * 12 + a.am) <= (b.ay * 12 + b.am) ? a : b);
+  return { ay: min.ay, am: min.am, dia: min.dia, valor: as.reduce((t, a) => t + a.valor, 0), anchorKey: min.anchorKey,
+           _default: as.every(a => a._default), _legado: as.some(a => a._legado) };
 }
 
 // Posição de (y, m) vs. ponto de partida: <0 antes, 0 na âncora, >0 depois.
@@ -7775,16 +7857,30 @@ function sumSaldoRange(ay, am, y, m) {
 }
 
 // "Dinheiro em conta" ao FIM de (y, m) — ou até o dia `ateDia` desse mês.
-// Antes do ponto de partida devolve o próprio ponto de partida.
-function getSaldoAcumulado(y, m, ateDia) {
-  const a = getSaldoAnchor();
-  const ini = a.ay * 12 + a.am, alvo = y * 12 + m;
-  if (alvo < ini) return a.valor;
-  let total = a.valor;
+// Sem `contaId`, soma todas as contas (cada uma a partir do próprio ponto de
+// partida). Antes do ponto de partida, a conta vale o próprio ponto de partida.
+function getSaldoAcumulado(y, m, ateDia, contaId) {
+  const contas = contaId != null ? [getConta(contaId) || getContas()[0]] : getContas();
+  const anc = {};
+  let total = 0, ini = Infinity;
+  contas.forEach(c => {
+    const a = ancoraNormalizada(c.ancora, c.id);
+    anc[c.id] = a;
+    total += a.valor;
+    ini = Math.min(ini, a.ay * 12 + a.am);
+  });
+  const alvo = y * 12 + m;
   for (let t = ini; t <= alvo && t - ini < 1200; t++) {
     getFluxosConta(Math.floor(t / 12), t % 12).forEach(f => {
-      if (t === ini && f.dia <= a.dia) return;                     // já está no valor informado
-      if (t === alvo && ateDia != null && f.dia > ateDia) return;  // ainda vai acontecer
+      const a = anc[f.conta];
+      if (!a) return;
+      const ta = a.ay * 12 + a.am;
+      // Já está no valor informado — exceto o que foi LANÇADO depois da calibração,
+      // no próprio dia (v73: antes uma compra da tarde, lançada depois de
+      // calibrar de manhã, era ignorada; e transferências no dia sumiam do total)
+      const depoisDaCalibracao = a.ts && f.dia === a.dia && f.criado > a.ts;
+      if (t < ta || (t === ta && f.dia <= a.dia && !depoisDaCalibracao)) return;
+      if (t === alvo && ateDia != null && f.dia > ateDia) return;   // ainda vai acontecer
       total += f.valor;
     });
   }
@@ -7795,8 +7891,8 @@ function ehMesAtual(y, m) {
   const now = new Date();
   return y === now.getFullYear() && m === now.getMonth();
 }
-function getContaExibida(y, m) {
-  return ehMesAtual(y, m) ? getSaldoAcumulado(y, m, new Date().getDate()) : getSaldoAcumulado(y, m);
+function getContaExibida(y, m, contaId) {
+  return ehMesAtual(y, m) ? getSaldoAcumulado(y, m, new Date().getDate(), contaId) : getSaldoAcumulado(y, m, undefined, contaId);
 }
 
 // Último mês JÁ VIVIDO de um ano (−1 = ano todo no futuro). Base para separar
@@ -8027,41 +8123,171 @@ function parseMoneyBR(str) {
   return neg ? -n : n;
 }
 
-function setContaHoje() {
-  const el = document.getElementById('contaHoje');
-  const v = parseMoneyBR(el.value);
-  if (!Number.isFinite(v)) { toast('Digite um valor válido, ex.: 1500,00', 'warn'); return; }
-  // v66: guarda o valor e o DIA. Lançamentos com data até hoje já estão nesse
-  // valor; só os posteriores (e as faturas que ainda vão vencer) mexem na conta.
+// Compatibilidade: "Salvar saldo de hoje" = ajustar a conta principal
+function setContaHoje() { ajustarSaldoConta(getContas()[0].id); }
+function contasDB() {
+  if (!Array.isArray(db.contas) || !db.contas.length) db.contas = [{ ...CONTA_PADRAO, ancora: db.saldoConfig || null }];
+  return db.contas;
+}
+function ajustarSaldoConta(id) {
+  const c = contasDB().find(x => x.id === id);
+  if (!c) return;
   const now = new Date();
-  db.saldoConfig = { anchorKey: getKey(now.getFullYear(), now.getMonth()), anchorDate: todayISO(), value: v };
+  const atual = getSaldoAcumulado(now.getFullYear(), now.getMonth(), now.getDate(), c.id);
+  modal.show(`Saldo de hoje — ${c.nome}`, `
+    <p class="muted" style="margin:0 0 12px;font-size:.88rem">Quanto aparece hoje no app do banco. Lançamentos com data até hoje já estão nesse valor; daqui pra frente o app soma e desconta.</p>
+    <div class="input-group"><label>Saldo hoje (R$)</label>
+      <input id="ctSaldo" type="text" inputmode="decimal" value="${escapeHtml(fmtInput(atual))}"></div>`, {
+    confirmLabel: 'Salvar saldo',
+    onConfirm: () => {
+      const v = readMoney('ctSaldo');
+      if (!Number.isFinite(v)) { toast('Digite um valor, ex.: 1.500,00', 'error'); return false; }
+      c.ancora = { anchorKey: getKey(now.getFullYear(), now.getMonth()), anchorDate: todayISO(), value: v, ts: Date.now() };
+      depoisDeMudarContas();
+      toast(`Saldo de ${c.nome} salvo`, 'success');
+    }
+  });
+}
+function openContaModal(id) {
+  const c = id != null ? contasDB().find(x => x.id === id) : null;
+  const cor = c ? c.cor : METHOD_PALETTE[(contasDB().length + 2) % METHOD_PALETTE.length];
+  modal.show(c ? 'Editar conta' : 'Nova conta', `
+    <div class="input-group"><label>Nome</label><input id="ctNome" maxlength="40" placeholder="Ex: Itaú, Nubank, Inter, Carteira" value="${c ? escapeHtml(c.nome) : ''}"></div>
+    <div class="input-group"><label>Cor</label><input id="ctCor" type="color" value="${escapeHtml(safeColor(cor))}" style="height:40px"></div>
+    ${c ? '' : `<div class="input-group"><label>Quanto tem nela hoje (R$)</label><input id="ctSaldoNovo" type="text" inputmode="decimal" placeholder="0,00"></div>`}`, {
+    confirmLabel: c ? 'Salvar' : 'Criar conta',
+    onConfirm: () => {
+      const nome = document.getElementById('ctNome').value.trim().slice(0, 40);
+      if (!nome) { toast('Dê um nome à conta', 'error'); return false; }
+      if (contasDB().some(x => x !== c && x.nome.toLowerCase() === nome.toLowerCase())) { toast('Já existe uma conta com esse nome', 'error'); return false; }
+      const cor = document.getElementById('ctCor').value;
+      if (c) { c.nome = nome; c.cor = cor; }
+      else {
+        const raw = document.getElementById('ctSaldoNovo').value.trim();
+        const v = raw ? parseMoneyBR(raw) : 0;
+        if (!Number.isFinite(v)) { toast('Saldo inválido, ex.: 1.500,00', 'error'); return false; }
+        let base = nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'conta';
+        let novo = base, i = 2;
+        while (contasDB().some(x => x.id === novo)) novo = `${base}-${i++}`;
+        const now = new Date();
+        contasDB().push({ id: novo, nome, cor, ancora: { anchorKey: getKey(now.getFullYear(), now.getMonth()), anchorDate: todayISO(), value: v, ts: Date.now() } });
+      }
+      depoisDeMudarContas();
+      toast(c ? 'Conta atualizada' : 'Conta criada — ligue as formas de pagamento a ela em Categorias e pagamentos', 'success', 4500);
+    }
+  });
+}
+async function excluirConta(id) {
+  const cs = contasDB();
+  const c = cs.find(x => x.id === id);
+  if (!c || cs.length <= 1) return toast('Mantenha ao menos uma conta', 'warn');
+  const principal = cs.find(x => x.id !== id);
+  const ok = await confirmDialog(`Excluir a conta "${c.nome}"? As formas de pagamento e entradas ligadas a ela passam para "${principal.nome}" e as transferências dela são apagadas.`);
+  if (!ok) return;
+  db.contas = cs.filter(x => x.id !== id);
+  getMethods().forEach(m => { if (m.conta === id) delete m.conta; });
+  const solta = it => { if (it && it.conta === id) delete it.conta; };
+  Object.values(db.income || {}).forEach(a => (a || []).forEach(solta));
+  (db.recurringIncome || []).forEach(solta);
+  Object.values(db.events || {}).forEach(a => (a || []).forEach(solta));
+  db.transferencias = (db.transferencias || []).filter(t => t.de !== id && t.para !== id);
+  depoisDeMudarContas();
+  toast('Conta excluída', 'success');
+}
+function openTransferenciaModal() {
+  const cs = contasDB();
+  if (cs.length < 2) return toast('Crie uma segunda conta para transferir', 'info');
+  const opts = sel => cs.map(c => `<option value="${escapeHtml(c.id)}" ${c.id === sel ? 'selected' : ''}>${escapeHtml(c.nome)}</option>`).join('');
+  modal.show('Transferir entre contas', `
+    <p class="muted" style="margin:0 0 12px;font-size:.86rem">Dinheiro que só muda de conta: não é gasto nem entrada.</p>
+    <div class="input-group"><label>De</label><select id="trDe">${opts(cs[0].id)}</select></div>
+    <div class="input-group"><label>Para</label><select id="trPara">${opts(cs[1].id)}</select></div>
+    <div class="input-group"><label>Valor (R$)</label><input id="trValor" type="text" inputmode="decimal" placeholder="0,00"></div>
+    <div class="input-group"><label>Data</label><input id="trData" type="date" value="${todayISO()}"></div>
+    <div class="input-group"><label>Descrição (opcional)</label><input id="trDesc" maxlength="80" placeholder="Ex: guardar para a fatura"></div>`, {
+    confirmLabel: 'Transferir',
+    onConfirm: () => {
+      const de = document.getElementById('trDe').value, para = document.getElementById('trPara').value;
+      const v = readMoney('trValor'), date = isoDay(document.getElementById('trData').value) || todayISO();
+      if (de === para) { toast('Escolha contas diferentes', 'error'); return false; }
+      if (!Number.isFinite(v) || v <= 0) { toast('Digite o valor, ex.: 500,00', 'error'); return false; }
+      if (!Array.isArray(db.transferencias)) db.transferencias = [];
+      db.transferencias.push({ id: Date.now(), date, de, para, valor: v, desc: document.getElementById('trDesc').value.trim().slice(0, 80) });
+      ensureYear(refFromDate(date).y);
+      depoisDeMudarContas();
+      toast(`${fmt(v)} de ${getConta(de).nome} para ${getConta(para).nome}`, 'success');
+    }
+  });
+}
+async function excluirTransferencia(id) {
+  const ok = await confirmDialog('Excluir esta transferência?');
+  if (!ok) return;
+  db.transferencias = (db.transferencias || []).filter(t => t.id !== id);
+  depoisDeMudarContas();
+}
+function depoisDeMudarContas() {
   saveDB();
   updateContaHojeHint();
-  if (typeof renderDashboard === 'function' &&
-      document.getElementById('dashboard')?.classList.contains('active')) renderDashboard();
-  toast('Saldo salvo — a conta segue a partir de hoje', 'success');
+  if (typeof rebuildContaSelects === 'function') rebuildContaSelects();
+  if (document.getElementById('dashboard')?.classList.contains('active') && typeof renderDashboard === 'function') renderDashboard();
+}
+// Selects de conta nos formulários (só aparecem com 2 contas ou mais)
+function rebuildContaSelects() {
+  const cs = getContas();
+  const opts = cs.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.nome)}</option>`).join('');
+  ['qaConta', 'inConta'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const cur = el.value;
+    el.innerHTML = opts;
+    if (cs.some(c => c.id === cur)) el.value = cur;
+  });
+  document.body.classList.toggle('uma-conta', cs.length <= 1);
 }
 
-// Mostra o estado atual do ponto de partida no painel de Configurações.
+// Painel "Suas contas" em Configurações
 function updateContaHojeHint() {
   const ll = document.getElementById('linkLancar');
   if (ll && typeof linkLancarRapido === 'function') ll.textContent = linkLancarRapido();
-  const hint = document.getElementById('contaHojeHint');
-  const inp = document.getElementById('contaHoje');
-  const a = getSaldoAnchor();
-  const now = new Date();
-  const hoje = getSaldoAcumulado(now.getFullYear(), now.getMonth(), now.getDate());
-  if (a._default) {
-    if (hint) hint.textContent = 'A conta começa em R$ 0,00 hoje. Informe seu saldo real para ela bater com o extrato do banco.';
-  } else if (a._legado) {
-    if (hint) hint.textContent = `Desde a v66 as compras no cartão saem da conta quando a fatura é paga, e não no dia da compra. Confira o saldo do seu banco e salve de novo — hoje o app calcula ${fmt(hoje)}.`;
-    if (inp && !inp.value) inp.value = fmtInput(hoje);
-  } else {
-    const [y, m, d] = db.saldoConfig.anchorDate.split('-');
-    if (hint) hint.textContent = `Ponto de partida: ${fmt(a.valor)} em ${d}/${m}/${y}. Hoje a conta está em ${fmt(hoje)}. Salve de novo sempre que quiser conferir com o extrato.`;
-    if (inp && !inp.value) inp.value = fmtInput(hoje);
-  }
+  const el = document.getElementById('contasList');
+  if (!el || typeof db === 'undefined' || !db || !db.events) return;
+  const now = new Date(), Y = now.getFullYear(), M = now.getMonth(), D = now.getDate();
+  const cs = getContas();
+  let total = 0;
+  const linhas = cs.map((c, i) => {
+    const a = ancoraNormalizada(c.ancora, c.id);
+    const hoje = getSaldoAcumulado(Y, M, D, c.id);
+    total += hoje;
+    const info = a._default ? 'saldo ainda não informado'
+      : a._legado ? 'confira o saldo — desde a v66 o cartão sai da conta quando a fatura é paga'
+      : `ponto de partida ${fmt(a.valor)} em ${c.ancora.anchorDate.split('-').reverse().join('/')}`;
+    const formas = getMethods().filter(m => contaDoMetodo(m.id) === c.id).map(m => escapeHtml(m.label)).join(', ');
+    return `<div class="method-row conta-row">
+      <span class="method-row-dot" style="background:${safeColor(c.cor)}"></span>
+      <div class="method-row-main">
+        <div class="method-row-name">${escapeHtml(c.nome)}${i === 0 && cs.length > 1 ? '<span class="aporte-tag">principal</span>' : ''}</div>
+        <div class="method-row-meta">${info}${formas ? ` · ${formas}` : ''}</div>
+      </div>
+      <div class="conta-saldo ${hoje < 0 ? 'neg' : ''}">${fmt(hoje)}</div>
+      <div class="method-row-actions">
+        <button class="btn" onclick="ajustarSaldoConta(${jsArg(c.id)})">Ajustar saldo</button>
+        <button class="btn-icon" title="Editar" onclick="openContaModal(${jsArg(c.id)})">✎</button>
+        ${cs.length > 1 ? `<button class="btn-icon" title="Excluir" onclick="excluirConta(${jsArg(c.id)})">✕</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+  const trs = (db.transferencias || []).slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')).slice(0, 5);
+  el.innerHTML = linhas
+    + (cs.length > 1 ? `<div class="contas-total">Total em conta hoje <strong>${fmt(total)}</strong></div>` : '')
+    + (trs.length ? `<div class="contas-transf"><div class="radar-ritmo">Últimas transferências</div>${trs.map(t => `
+        <div class="transf-row"><span>${ddmm(t.date)} · ${escapeHtml((getConta(t.de) || {}).nome || '—')} → ${escapeHtml((getConta(t.para) || {}).nome || '—')}${t.desc ? ` · ${escapeHtml(t.desc)}` : ''}</span>
+          <span>${fmt(t.valor)} <button class="btn-icon" title="Excluir" onclick="excluirTransferencia(${jsArg(t.id)})">✕</button></span></div>`).join('')}</div>` : '');
 }
+window.ajustarSaldoConta = ajustarSaldoConta;
+window.openContaModal = openContaModal;
+window.excluirConta = excluirConta;
+window.openTransferenciaModal = openTransferenciaModal;
+window.excluirTransferencia = excluirTransferencia;
 
 // ============== DASHBOARD ==============
 function renderDashboard() {
@@ -9156,6 +9382,9 @@ function openMethodModal(id) {
     <div class="input-group" id="mtDueWrap" style="display:${atual && atual.kind === 'credit' ? '' : 'none'}"><label>Dia de vencimento da fatura</label>
       <input id="mtDue" type="number" min="1" max="31" inputmode="numeric" placeholder="${DIA_VENCIMENTO_PADRAO}" value="${atual && atual.dueDay ? atual.dueDay : ''}">
       <small class="muted" style="display:block;margin-top:4px;font-size:0.75rem">As compras de um mês saem da sua conta nesse dia do mês seguinte.</small></div>
+    ${getContas().length > 1 ? `<div class="input-group"><label>Conta de onde o dinheiro sai</label>
+      <select id="mtConta">${getContas().map(c => `<option value="${escapeHtml(c.id)}" ${contaValida(atual && atual.conta) === c.id ? 'selected' : ''}>${escapeHtml(c.nome)}</option>`).join('')}</select>
+      <small class="muted" style="display:block;margin-top:4px;font-size:0.75rem">No cartão de crédito, é a conta que paga a fatura.</small></div>` : ''}
     <div class="input-group"><label>Cor</label>
       <input id="mtColor" type="color" value="${escapeHtml(cor)}" style="height:40px"></div>
     ${atual ? `<p class="muted" style="font-size:0.8rem;margin:0">Renomear é seguro: os ${countMethodUsage(atual.id)} lançamentos desta forma continuam ligados a ela.</p>` : ''}
@@ -9171,16 +9400,21 @@ function openMethodModal(id) {
 
       const dueRaw = parseInt(document.getElementById('mtDue')?.value, 10);
       const dueDay = kind === 'credit' && dueRaw >= 1 && dueRaw <= 31 ? dueRaw : null;
+      const contaSel = document.getElementById('mtConta')?.value;   // v73
       if (atual) {
         atual.label = label; atual.kind = kind; atual.color = color;
         if (dueDay) atual.dueDay = dueDay; else delete atual.dueDay;
+        if (contaSel) atual.conta = contaSel;
       } else {
         // ID estável derivado do nome; é ele que fica gravado nos lançamentos.
         let base = label.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
           .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'forma';
         let novo = base, i = 2;
         while (getMethods().some(m => m.id === novo)) novo = `${base}-${i++}`;
-        db.paymentMethods.push(dueDay ? { id: novo, label, color, kind, dueDay } : { id: novo, label, color, kind });
+        const nova = { id: novo, label, color, kind };
+        if (dueDay) nova.dueDay = dueDay;
+        if (contaSel) nova.conta = contaSel;
+        db.paymentMethods.push(nova);
       }
       saveDB();
       renderPaymentMethods();
@@ -9350,6 +9584,7 @@ function saveIn() {
   const date = isoDay(document.getElementById('inDate')?.value) || defaultDateForView();
   const tipoProv = document.getElementById('inTipo')?.value || '';
   const provExtra = tipoProv ? { provento: tipoProv, investClass: document.getElementById('inProvClasse')?.value } : {};
+  if (getContas().length > 1 && document.getElementById('inConta')?.value) provExtra.conta = document.getElementById('inConta').value;   // v73
   const ref = refFromDate(date);
   ensureYear(ref.y);
   if (recurring) {
@@ -12204,7 +12439,9 @@ function renderMoneyPanel(cur) {
       <div class="money-bar" role="img" aria-label="Conta ${Math.round(pct(conta))}%, reserva ${Math.round(pct(cart.reserva))}%, investimentos ${Math.round(pct(cart.investimentos))}%">
         ${seg(conta, 'var(--primary)')}${temReserva ? seg(cart.reserva, corReserva) : ''}${seg(cart.investimentos, 'var(--accent)')}
       </div>
-      ${linha('var(--primary)', 'Em conta', conta, contaSub, '', conta < 0)}
+      ${linha('var(--primary)', 'Em conta', conta, contaSub, getContas().length > 1
+        ? `<div class="money-contas">${getContas().map(c => { const v = getContaExibida(currentYear, currentMonth, c.id);
+            return `<span><i style="background:${safeColor(c.cor)}"></i>${escapeHtml(c.nome)} <b class="${v < 0 ? 'neg' : ''}">${fmt(v)}</b></span>`; }).join('')}</div>` : '', conta < 0)}
       ${temReserva ? linha(corReserva, 'Reserva de emergência', cart.reserva, reservaSub,
           cart.reserva > 0 && gastoMedio > 0
             ? `<div class="money-prog"><span style="width:${reservaProg * 100}%;background:${corReserva}"></span></div>` : '') : ''}
@@ -12675,6 +12912,16 @@ function renderRecentActivity() {
     border: 1px solid var(--border); border-radius: 10px; font-size: .9rem;
   }
   #quickAddCard .qa-origem label:has(input:checked) { border-color: var(--primary); background: var(--primary-tint); }
+  /* v73 · Várias contas */
+  body.uma-conta .qa-conta-wrap, body.uma-conta .in-conta-wrap { display: none !important; }
+  .conta-row { flex-wrap: wrap; }
+  .conta-saldo { font-weight: 700; font-variant-numeric: tabular-nums; margin-left: auto; white-space: nowrap; }
+  .contas-total { display: flex; justify-content: space-between; padding: 10px 2px 0; font-size: .9rem; border-top: 1px solid var(--border-soft); margin-top: 6px; }
+  .contas-transf { margin-top: 14px; }
+  .transf-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: .84rem; padding: 4px 0; flex-wrap: wrap; }
+  .money-contas { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; font-size: .78rem; color: var(--text-muted); }
+  .money-contas i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; }
+  .money-contas b { color: var(--text); font-weight: 600; }
   /* v72 · Alertas personalizados */
   .radar-head .radar-novo { margin-left: auto; font-size: .82rem; }
   .radar-acoes .radar-link { font-size: .8rem; padding: 0; text-decoration: underline; text-underline-offset: 2px; min-height: 0; }
@@ -13278,6 +13525,17 @@ function parseLancamentoTexto(texto, hoje = new Date()) {
     classe = classe || (cls.find(c => c.reserve) || cls[0] || {}).id || null;
   }
 
+  // 7b. Conta (entrada e guardar): "recebi salário no itaú"
+  let conta = null;
+  if (tipo !== 'gasto' && getContas().length > 1) {
+    const GEN = new Set(['conta', 'banco', 'principal', 'corrente', 'poupanca']);
+    toks.forEach((t, i) => {
+      if (t.usado || conta) return;
+      const c = getContas().find(c => normTok(c.nome).split(/[^a-z0-9]+/).filter(w => w.length >= 3 && !GEN.has(w)).includes(t.n));
+      if (c) { conta = c.id; usa(i); }
+    });
+  }
+
   // 8. O que sobrou é a descrição
   const resto = toks.filter(t => !t.usado).map(t => t.o.replace(/[;:!?]+$/, ''));
   while (resto.length && CONECT.has(normTok(resto[0]))) resto.shift();
@@ -13287,7 +13545,7 @@ function parseLancamentoTexto(texto, hoje = new Date()) {
   const categoria = tipo === 'gasto' && desc ? autoCategorize(desc) : null;
   if (!desc) desc = tipo === 'entrada' ? 'Entrada' : tipo === 'guardar' ? 'Guardado' : (categoria || 'Gasto');
   const valorParcela = parcelas && valor ? (parcelaDe ? valor : Math.round(valor / parcelas * 100) / 100) : null;
-  return { texto: original, tipo, desc: desc.slice(0, 80), valor, data, metodo, categoria, parcelas, valorParcela, recorrente, classe };
+  return { texto: original, tipo, desc: desc.slice(0, 80), valor, data, metodo, categoria, parcelas, valorParcela, recorrente, classe, conta };
 }
 
 function dataCurta(iso) {
@@ -13330,6 +13588,7 @@ function qaAplicarTexto() {
   }
   if (p.tipo === 'entrada') document.getElementById('qaRecorrente').checked = !!p.recorrente;
   if (p.tipo === 'guardar' && p.classe) document.getElementById('qaInvestClass').value = p.classe;
+  if (p.conta && document.getElementById('qaConta')) document.getElementById('qaConta').value = p.conta;
   res.innerHTML = p.valor
     ? `Entendi: ${resumoLancamento(p).map(x => `<span>${x}</span>`).join('')}`
     : 'Falta o valor — ex.: <em>uber 23,40 nubank ontem</em>';
@@ -13343,10 +13602,11 @@ function registrarLancamento(p) {
   const key = getKey(ref.y, ref.m);
   const id = Date.now();
   if (p.tipo === 'entrada') {
-    if (p.recorrente) db.recurringIncome.push({ id, desc: p.desc, value: p.valor, startYear: ref.y, startMonth: ref.m, date });
-    else (db.income[key] = db.income[key] || []).push({ id, desc: p.desc, value: p.valor, date });
+    const extraConta = p.conta ? { conta: p.conta } : {};
+    if (p.recorrente) db.recurringIncome.push({ id, desc: p.desc, value: p.valor, startYear: ref.y, startMonth: ref.m, date, ...extraConta });
+    else (db.income[key] = db.income[key] || []).push({ id, desc: p.desc, value: p.valor, date, ...extraConta });
   } else if (p.tipo === 'guardar') {
-    (db.events[key] = db.events[key] || []).push({ id, desc: p.desc, value: p.valor, cat: '', method: formaInvestimento(), type: 'eventual', date, investClass: p.classe });
+    (db.events[key] = db.events[key] || []).push({ id, desc: p.desc, value: p.valor, cat: '', method: formaInvestimento(), type: 'eventual', date, investClass: p.classe, ...(p.conta ? { conta: p.conta } : {}) });
   } else {
     const metodo = p.metodo || (getMethods().find(m => m.kind !== 'invest') || {}).id;
     const base = { id, desc: p.desc, cat: p.categoria, method: metodo, date };
@@ -14007,6 +14267,18 @@ window.excluirAlerta = excluirAlerta;
 window.confirmarAlertaChat = confirmarAlertaChat;
 window.ajustarAlertaChat = ajustarAlertaChat;
 window.renderAlertasList = renderAlertasList;
+</script>
+<script>
+// v73: painel de contas e selects de conta acompanham qualquer redesenho
+(function () {
+  const orig = window.renderAll;
+  if (typeof orig !== 'function') return;
+  window.renderAll = function () {
+    const r = orig.apply(this, arguments);
+    try { rebuildContaSelects(); updateContaHojeHint(); } catch (e) { /* sem tela */ }
+    return r;
+  };
+})();
 </script>
 </body>
 </html>
