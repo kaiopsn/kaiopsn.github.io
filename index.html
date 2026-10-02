@@ -2822,6 +2822,15 @@
     </div>
 
     <div class="panel">
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 6px;">
+        <h2 style="margin: 0;">Seus alertas</h2>
+        <button class="btn primary" onclick="openAlertaModal()">+ Novo alerta</button>
+      </div>
+      <p class="muted" style="font-size: 0.86rem; margin: 0 0 12px;">Avisos sob medida que aparecem no Radar da Início. Também dá para pedir ao assistente: <em>me avise se delivery passar de 300</em>.</p>
+      <div id="alertasList"></div>
+    </div>
+
+    <div class="panel">
       <h2>Jeito do app</h2>
       <p class="muted" style="font-size: 0.88rem; margin-bottom: 12px;">Como o Radar e os desafios falam com você.</p>
       <select id="tomSelect" onchange="setTom(this.value)" style="max-width: 280px;">
@@ -4564,7 +4573,7 @@ function fillMethodPanels() {
 // tem. Antes as regras apontavam para nomes que não existem nas categorias
 // padrão ("Transporte" em vez de "Uber/transporte") e Netflix caía em "Contas".
 const AUTO_CAT_RULES = [
-  [/\bifood\b|rappi|99\s?food|uber\s*eats|burger|mc\s?donald|\bbk\b|sushi|pizza|restaur|lanch|hamb[uú]r|a[cç]a[ií]|padaria|cafeteria|caf[eé](?![a-z])|starbucks|almo[cç]o|jantar|lanche/i, ['IFood/restaurante', 'Restaurante', 'Alimentação']],
+  [/\bifood\b|delivery|rappi|99\s?food|uber\s*eats|burger|mc\s?donald|\bbk\b|sushi|pizza|restaur|lanch|hamb[uú]r|a[cç]a[ií]|padaria|cafeteria|caf[eé](?![a-z])|starbucks|almo[cç]o|jantar|lanche/i, ['IFood/restaurante', 'Restaurante', 'Alimentação']],
   [/gasolin|combust|etanol|\bposto\b|shell|ipiranga|petrobr/i, ['Gasolina', 'Uber/transporte', 'Transporte']],
   [/\buber\b|\b99\b|\b99pop\b|t[aá]xi|cabify|estaciona|ped[aá]gio|metr[oô]|[oô]nibus|\btrem\b|bilhete [uú]nico/i, ['Uber/transporte', 'Transporte']],
   [/mercado|mercadinho|supermerc|atacad|assa[ií]|carrefour|\bextra\b|p[aã]o de a[cç][uú]car|hortifr|feira|a[cç]ougue/i, ['Mercado', 'Alimentação']],
@@ -6192,7 +6201,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v71';
+const APP_VERSION = 'v72';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -7025,6 +7034,21 @@ function sanitizeData(data) {
         if (k.length <= 60 && typeof data.catAprendidas[k] === 'string') ca[k] = data.catAprendidas[k];
       });
       data.catAprendidas = ca;
+    }
+    // v72: alertas personalizados
+    if (data.alertas != null) {
+      const TIPOS_AL = ['limite_categoria', 'forma_pagamento', 'total_mes', 'gasto_acima', 'palavra', 'saldo_minimo'];
+      data.alertas = (Array.isArray(data.alertas) ? data.alertas : []).filter(a => obj(a) && TIPOS_AL.includes(a.tipo)).slice(0, 50).map((a, i) => {
+        const pr = obj(a.params) ? a.params : {};
+        const params = {};
+        const v = safeNum(pr.valor, NaN);
+        if (Number.isFinite(v) && v > 0) params.valor = v;
+        if (typeof pr.cat === 'string') params.cat = pr.cat.slice(0, 60);
+        if (isSafeId(pr.metodo)) params.metodo = pr.metodo;
+        if (typeof pr.termo === 'string') params.termo = pr.termo.slice(0, 30);
+        params.periodo = pr.periodo === 'semana' ? 'semana' : 'mes';
+        return { id: isSafeId(a.id) ? a.id : proxId++, tipo: a.tipo, params, ativo: a.ativo !== false };
+      });
     }
     // v71: preferências e desafios
     if (data.prefs != null) data.prefs = obj(data.prefs) && data.prefs.tom === 'humor' ? { tom: 'humor' } : { tom: 'direto' };
@@ -12651,6 +12675,11 @@ function renderRecentActivity() {
     border: 1px solid var(--border); border-radius: 10px; font-size: .9rem;
   }
   #quickAddCard .qa-origem label:has(input:checked) { border-color: var(--primary); background: var(--primary-tint); }
+  /* v72 · Alertas personalizados */
+  .radar-head .radar-novo { margin-left: auto; font-size: .82rem; }
+  .radar-acoes .radar-link { font-size: .8rem; padding: 0; text-decoration: underline; text-underline-offset: 2px; min-height: 0; }
+  .radar-tag { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-size: .64rem; font-weight: 700;
+    letter-spacing: .03em; text-transform: uppercase; vertical-align: 2px; background: var(--primary-tint); color: var(--primary); }
   /* v71 · Desafios */
   .desafio-head { display: flex; align-items: center; justify-content: space-between; gap: 6px 10px; margin-bottom: 10px; flex-wrap: wrap; }
   .desafio-head h2 { margin: 0 !important; }
@@ -13029,7 +13058,7 @@ function renderRadar() {
       <div class="radar-corpo">
         <div class="radar-titulo">${x.titulo}</div>
         <div class="radar-texto">${x.texto}</div>
-        ${x.acoes ? `<div class="radar-acoes">${x.acoes.map(a => `<button type="button" class="btn" onclick="${a.fn}">${escapeHtml(a.rotulo)}</button>`).join('')}</div>` : ''}
+        ${x.acoes ? `<div class="radar-acoes">${x.acoes.map(a => `<button type="button" class="${a.link ? 'link-btn radar-link' : 'btn'}" onclick="${a.fn}">${escapeHtml(a.rotulo)}</button>`).join('')}</div>` : ''}
       </div>
       <button type="button" class="radar-x" title="Dispensar" aria-label="Dispensar aviso" onclick="radarIgnorar(${jsArg(x.id)})">×</button>
     </div>`;
@@ -13040,7 +13069,7 @@ function renderRadar() {
   }).join('');
   const extras = itens.length - MAX;
   panel.innerHTML = `
-    <div class="radar-head"><h2>Radar</h2><span class="radar-sub">${itens.length ? 'o que merece sua atenção' : 'de olho nos seus lançamentos'}</span></div>
+    <div class="radar-head"><h2>Radar</h2><span class="radar-sub">${itens.length ? 'o que merece sua atenção' : 'de olho nos seus lançamentos'}</span><button type="button" class="link-btn radar-novo" onclick="openAlertaModal()">+ Criar alerta</button></div>
     ${itens.length ? grupos : `<p class="radar-ok">${tom('Nada fora do normal por aqui. Aviso quando aparecer cobrança repetida, gasto fora do padrão ou conta para vencer.', 'Tudo calmo por aqui. Se aparecer gasto esquisito, eu dedo-duro na hora.')}</p>`}
     ${extras > 0 ? `<button type="button" class="link-btn radar-mais" onclick="document.getElementById('radarPanel').classList.toggle('aberto'); renderRadar()">${panel.classList.contains('aberto') ? 'Mostrar menos' : `Mostrar mais ${extras}`}</button>` : ''}`;
   // Número no ícone do app (quando instalado e o sistema permite)
@@ -13686,6 +13715,298 @@ window.renderDesafio = renderDesafio;
     try { renderDesafio(); } catch (e) { console.warn('[desafio]', e); }
   };
 })();
+</script>
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// v72 · ALERTAS PERSONALIZADOS — os "seus agentes". A pessoa define o que
+// quer vigiar; os avisos aparecem no Radar com o selo "seu alerta".
+// Cria em Configurações, pelo Radar ou pedindo ao assistente.
+// ══════════════════════════════════════════════════════════════════════
+const ALERTA_TIPOS = {
+  limite_categoria: 'Gasto numa categoria passar de um valor',
+  forma_pagamento: 'Gasto num cartão ou forma de pagamento passar de um valor',
+  total_mes: 'Gastos do mês passarem de um valor',
+  gasto_acima: 'Qualquer gasto acima de um valor',
+  palavra: 'Gasto com uma palavra na descrição',
+  saldo_minimo: 'Dinheiro em conta abaixo de um valor',
+};
+function alertasDB() {
+  if (!Array.isArray(db.alertas)) db.alertas = [];
+  return db.alertas;
+}
+function descreverAlerta(a) {
+  const P = a.params || {};
+  const per = P.periodo === 'semana' ? 'na semana' : 'no mês';
+  switch (a.tipo) {
+    case 'limite_categoria': return `${escapeHtml(P.cat)} passar de ${fmt(P.valor)} ${per}`;
+    case 'forma_pagamento': return `Gastos no ${escapeHtml(methodLabel(P.metodo))} passarem de ${fmt(P.valor)} no mês`;
+    case 'total_mes': return `Gastos do mês passarem de ${fmt(P.valor)}`;
+    case 'gasto_acima': return `Qualquer gasto acima de ${fmt(P.valor)}`;
+    case 'palavra': return `Gasto com "${escapeHtml(P.termo)}" na descrição`;
+    case 'saldo_minimo': return `Dinheiro em conta abaixo de ${fmt(P.valor)}`;
+  }
+  return '';
+}
+
+// Gastos (sem aportes) do período: mês atual inteiro ou últimos 7 dias
+function alertaItensPeriodo(periodo, hoje) {
+  if (periodo === 'semana') {
+    const h = isoDay(hoje), ini = somaDias(h, -6);
+    return desafioLancamentos(ini, h, false).map(x => x.it);
+  }
+  return getMonthData(hoje.getFullYear(), hoje.getMonth()).items;
+}
+
+// Estado de um alerta agora: { nivel, titulo, texto, chaves } ou lista de ocorrências
+function avaliarAlerta(a, hoje) {
+  const P = a.params || {};
+  const Y = hoje.getFullYear(), M = hoje.getMonth(), D = hoje.getDate();
+  const semanaKey = somaDias(isoDay(hoje), -((hoje.getDay() + 6) % 7));   // segunda-feira da semana
+  const per = P.periodo === 'semana' ? 'nos últimos 7 dias' : `em ${monthsFull[M].toLowerCase()}`;
+  const limiteVal = (total, rotulo, plural) => {
+    if (total >= P.valor) return [{ chave: 'estouro', nivel: 'alerta', titulo: tom(`${rotulo} ${plural ? 'passaram' : 'passou'} de ${fmt(P.valor)}`, `${rotulo} ${plural ? 'furaram' : 'furou'} o teto de ${fmt(P.valor)}`), texto: `${fmt(total)} ${per}.` }];
+    if (total >= P.valor * 0.8) return [{ chave: '80', nivel: 'aviso', titulo: `${rotulo} em ${Math.round(total / P.valor * 100)}% do seu limite`, texto: `${fmt(total)} de ${fmt(P.valor)} ${per}.` }];
+    return [];
+  };
+  const periodoKey = P.periodo === 'semana' ? semanaKey : `${Y}-${M}`;
+  let out = [];
+  if (a.tipo === 'limite_categoria') {
+    const total = alertaItensPeriodo(P.periodo, hoje).filter(i => i.cat === P.cat).reduce((s, i) => s + i.value, 0);
+    out = limiteVal(total, escapeHtml(P.cat)).map(x => ({ ...x, id: `al:${a.id}:${periodoKey}:${x.chave}` }));
+  } else if (a.tipo === 'forma_pagamento') {
+    const total = alertaItensPeriodo('mes', hoje).filter(i => i.method === P.metodo).reduce((s, i) => s + i.value, 0);
+    out = limiteVal(total, `Gastos no ${escapeHtml(methodLabel(P.metodo))}`, true).map(x => ({ ...x, id: `al:${a.id}:${Y}-${M}:${x.chave}` }));
+  } else if (a.tipo === 'total_mes') {
+    const gastos = getMonthData(Y, M).gastos;
+    out = limiteVal(gastos, 'Gastos do mês', true).map(x => ({ ...x, id: `al:${a.id}:${Y}-${M}:${x.chave}` }));
+    const pj = radarProjecao(hoje);
+    if (!out.length && pj && pj.projGastos >= P.valor) out.push({
+      id: `al:${a.id}:${Y}-${M}:ritmo`, nivel: 'aviso',
+      titulo: tom(`No ritmo atual, os gastos passam de ${fmt(P.valor)}`, `Nesse ritmo, o teto de ${fmt(P.valor)} não aguenta`),
+      texto: `Previsão de ${fmt(pj.projGastos)} em ${monthsFull[M].toLowerCase()}; até agora ${fmt(gastos)}.`
+    });
+  } else if (a.tipo === 'gasto_acima') {
+    const h = isoDay(hoje);
+    desafioLancamentos(somaDias(h, -6), h, false).filter(x => x.it.value >= P.valor).forEach(x => out.push({
+      id: `al:${a.id}:${x.it.id}`, nivel: 'aviso',
+      titulo: tom(`Gasto acima de ${fmt(P.valor)}`, `Gastão à vista: acima de ${fmt(P.valor)}`),
+      texto: `<strong>${escapeHtml(x.it.desc)}</strong>: ${fmt(x.it.value)} em ${ddmm(x.d)}.`
+    }));
+  } else if (a.tipo === 'palavra') {
+    const h = isoDay(hoje), termo = normTok(P.termo);
+    if (termo) desafioLancamentos(somaDias(h, -29), h, false).filter(x => normTok(x.it.desc).includes(termo)).forEach(x => out.push({
+      id: `al:${a.id}:${x.it.id}`, nivel: 'alerta',
+      titulo: tom(`Gasto com "${escapeHtml(P.termo)}"`, `Olha o "${escapeHtml(P.termo)}" aí de novo`),
+      texto: `<strong>${escapeHtml(x.it.desc)}</strong>: ${fmt(x.it.value)} em ${ddmm(x.d)}.`
+    }));
+  } else if (a.tipo === 'saldo_minimo') {
+    const hojeConta = getSaldoAcumulado(Y, M, D), fim = getSaldoAcumulado(Y, M);
+    if (hojeConta < P.valor) out.push({
+      id: `al:${a.id}:${isoDay(hoje)}:hoje`, nivel: 'alerta',
+      titulo: tom(`Conta abaixo de ${fmt(P.valor)}`, `A conta tá no osso: abaixo de ${fmt(P.valor)}`),
+      texto: `Hoje: ${fmt(hojeConta)}.`
+    });
+    else if (fim < P.valor) out.push({
+      id: `al:${a.id}:${Y}-${M}:fim`, nivel: 'aviso',
+      titulo: `No fim de ${monthsFull[M].toLowerCase()}, a conta fica abaixo de ${fmt(P.valor)}`,
+      texto: `Previsão: ${fmt(fim)} depois dos lançamentos e faturas que ainda vêm.`
+    });
+  }
+  return out;
+}
+function avaliarAlertas(hoje) {
+  const itens = [];
+  alertasDB().filter(a => a.ativo !== false).forEach(a => {
+    try {
+      avaliarAlerta(a, hoje).forEach(x => itens.push({
+        id: x.id, ritmo: 'hoje', nivel: x.nivel, icone: x.nivel === 'alerta' ? '🚨' : '⚠️',
+        titulo: `${x.titulo}<span class="radar-tag">seu alerta</span>`, texto: x.texto,
+        acoes: [{ rotulo: 'Editar alerta', fn: `openAlertaModal(${jsArg(a.id)})`, link: true }]
+      }));
+    } catch (e) { console.warn('[alerta]', e); }
+  });
+  return itens;
+}
+
+// Os alertas entram no Radar (e no número do ícone do app)
+(function () {
+  const orig = window.computeRadar;
+  if (typeof orig !== 'function') return;
+  const novo = function () {
+    const base = orig.apply(this, arguments);
+    const ign = (db.radar && db.radar.ignorados) || {};
+    const extra = avaliarAlertas(new Date()).filter(x => !ign[x.id]);
+    const peso = { alerta: 0, aviso: 1, info: 2 };
+    return extra.concat(base).sort((a, b) => peso[a.nivel] - peso[b.nivel]);
+  };
+  window.computeRadar = novo;
+  computeRadar = novo;
+})();
+
+// Lista em Configurações
+function renderAlertasList() {
+  const el = document.getElementById('alertasList');
+  if (!el || typeof db === 'undefined' || !db || !db.events) return;
+  const lista = alertasDB();
+  if (!lista.length) {
+    el.innerHTML = '<p class="muted" style="font-size:.86rem;margin:0">Nenhum alerta ainda. Exemplos: delivery acima de R$ 300 no mês, qualquer compra acima de R$ 500, gasto com "aposta", conta abaixo de R$ 200.</p>';
+    return;
+  }
+  const hoje = new Date();
+  el.innerHTML = lista.map(a => {
+    const agora = a.ativo === false ? [] : avaliarAlerta(a, hoje);
+    const status = a.ativo === false ? 'pausado' : agora.length ? `<span class="${agora.some(x => x.nivel === 'alerta') ? 'neg' : ''}">disparado agora</span>` : 'tudo certo';
+    return `<div class="method-row">
+      <span class="method-row-dot" style="background:${a.ativo === false ? 'var(--border)' : 'var(--primary)'}"></span>
+      <div class="method-row-main">
+        <div class="method-row-name">${descreverAlerta(a)}</div>
+        <div class="method-row-meta">${status}</div>
+      </div>
+      <div class="method-row-actions">
+        <button class="btn-icon" title="${a.ativo === false ? 'Ativar' : 'Pausar'}" onclick="alternarAlerta(${jsArg(a.id)})">${a.ativo === false ? '▶' : '❚❚'}</button>
+        <button class="btn-icon" title="Editar" onclick="openAlertaModal(${jsArg(a.id)})">✎</button>
+        <button class="btn-icon" title="Excluir" onclick="excluirAlerta(${jsArg(a.id)})">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+function depoisDeMudarAlertas() {
+  saveDB();
+  renderAlertasList();
+  if (typeof renderRadar === 'function') renderRadar();
+}
+function alternarAlerta(id) {
+  const a = alertasDB().find(x => x.id === id);
+  if (!a) return;
+  a.ativo = a.ativo === false;
+  depoisDeMudarAlertas();
+}
+async function excluirAlerta(id) {
+  const a = alertasDB().find(x => x.id === id);
+  if (!a) return;
+  const ok = await confirmDialog(`Excluir o alerta "${descreverAlerta(a).replace(/<[^>]+>/g, '')}"?`);
+  if (!ok) return;
+  db.alertas = alertasDB().filter(x => x.id !== id);
+  depoisDeMudarAlertas();
+  toast('Alerta excluído', 'success');
+}
+
+function openAlertaModal(id, preset) {
+  const atual = id != null ? alertasDB().find(x => x.id === id) : null;
+  const base = atual || preset || { tipo: 'limite_categoria', params: {} };
+  const P = base.params || {};
+  const cats = (db.categories || []).map(c => `<option value="${escapeHtml(c.name)}" ${c.name === P.cat ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('');
+  const formas = getMethods().filter(m => m.kind !== 'invest').map(m => `<option value="${escapeHtml(m.id)}" ${m.id === P.metodo ? 'selected' : ''}>${escapeHtml(m.label)}</option>`).join('');
+  const show = t => (t.split(' ').includes(base.tipo) ? '' : 'display:none');
+  modal.show(atual ? 'Editar alerta' : 'Novo alerta', `
+    <div class="input-group"><label>Me avise quando</label>
+      <select id="alTipo" onchange="alertaModalTipo(this.value)">${Object.entries(ALERTA_TIPOS).map(([k, v]) => `<option value="${k}" ${k === base.tipo ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+    <div class="input-group al-campo" data-tipos="limite_categoria" style="${show('limite_categoria')}"><label>Categoria</label><select id="alCat">${cats}</select></div>
+    <div class="input-group al-campo" data-tipos="forma_pagamento" style="${show('forma_pagamento')}"><label>Cartão ou forma de pagamento</label><select id="alMetodo">${formas}</select></div>
+    <div class="input-group al-campo" data-tipos="palavra" style="${show('palavra')}"><label>Palavra na descrição</label>
+      <input id="alTermo" type="text" maxlength="30" placeholder="ex.: aposta, bet, cigarro" value="${escapeHtml(P.termo || '')}"></div>
+    <div class="input-group al-campo" data-tipos="limite_categoria forma_pagamento total_mes gasto_acima saldo_minimo" style="${show('limite_categoria forma_pagamento total_mes gasto_acima saldo_minimo')}">
+      <label>Valor (R$)</label><input id="alValor" type="text" inputmode="decimal" placeholder="0,00" value="${P.valor ? escapeHtml(fmtInput(P.valor)) : ''}"></div>
+    <div class="input-group al-campo" data-tipos="limite_categoria" style="${show('limite_categoria')}"><label>Período</label>
+      <select id="alPeriodo"><option value="mes" ${P.periodo !== 'semana' ? 'selected' : ''}>No mês</option><option value="semana" ${P.periodo === 'semana' ? 'selected' : ''}>Nos últimos 7 dias</option></select></div>
+    <p class="muted" style="font-size:.8rem;margin:4px 0 0">O aviso aparece no Radar da Início — a 80% do limite e quando passar.</p>`, {
+    confirmLabel: atual ? 'Salvar' : 'Criar alerta',
+    onConfirm: () => {
+      const tipo = document.getElementById('alTipo').value;
+      const params = {};
+      if (tipo === 'palavra') {
+        const termo = document.getElementById('alTermo').value.trim();
+        if (termo.length < 2) { toast('Escreva a palavra (2 letras ou mais)', 'error'); return false; }
+        params.termo = termo.slice(0, 30);
+      } else {
+        const v = readMoney('alValor');
+        if (!Number.isFinite(v) || v <= 0) { toast('Digite um valor, ex.: 300,00', 'error'); return false; }
+        params.valor = v;
+      }
+      if (tipo === 'limite_categoria') { params.cat = document.getElementById('alCat').value; params.periodo = document.getElementById('alPeriodo').value === 'semana' ? 'semana' : 'mes'; }
+      if (tipo === 'forma_pagamento') params.metodo = document.getElementById('alMetodo').value;
+      if (atual) { atual.tipo = tipo; atual.params = params; }
+      else alertasDB().push({ id: Date.now(), tipo, params, ativo: true });
+      depoisDeMudarAlertas();
+      toast(atual ? 'Alerta atualizado' : 'Alerta criado — ele aparece no Radar quando disparar', 'success');
+    }
+  });
+}
+function alertaModalTipo(tipo) {
+  document.querySelectorAll('#modalBox .al-campo').forEach(el => {
+    el.style.display = el.dataset.tipos.split(' ').includes(tipo) ? '' : 'none';
+  });
+}
+
+// Assistente: "me avise se delivery passar de 300" → confirma e cria
+function interpretarPedidoAlerta(texto) {
+  const n = normTok(texto);
+  if (!/^(me )?avis[ae]|^quero (ser )?avisad|^(crie|criar|cria) (um )?alerta/.test(n)) return null;
+  const valor = parseLancamentoTexto(texto).valor;
+  const periodo = /semana/.test(n) ? 'semana' : 'mes';
+  if (/\b(conta|saldo)\b/.test(n) && /(abaixo|menos|cair|ficar)/.test(n) && valor) return { tipo: 'saldo_minimo', params: { valor } };
+  if (/(qualquer|toda|cada) (gasto|compra)|(gasto|compra|lancamento)s? (acima|maior|mais) (de|que)/.test(n) && valor) return { tipo: 'gasto_acima', params: { valor } };
+  if (!valor) {
+    const m = /(?:gasto|compra|lancamento)s? (?:com|de|tipo)\s+["']?([a-z0-9 ]{2,30}?)["']?\s*$/.exec(n) || /(?:aparecer|tiver|houver)\s+["']?([a-z0-9]{2,30})["']?/.exec(n);
+    if (m && m[1].trim().length >= 2) return { tipo: 'palavra', params: { termo: m[1].trim() } };
+    return { erro: true };
+  }
+  const GEN = new Set(['credito', 'cartao', 'debito', 'conta', 'banco']);
+  const forma = getMethods().filter(f => f.kind !== 'invest').find(f => normTok(f.label + ' ' + f.id).split(/[^a-z0-9]+/).some(w => w.length >= 3 && !GEN.has(w) && new RegExp('\\b' + w + '\\b').test(n)));
+  if (forma && /(fatura|cartao|gasto|passar)/.test(n)) return { tipo: 'forma_pagamento', params: { metodo: forma.id, valor } };
+  const nomeCat = (db.categories || []).find(c => normTok(c.name).split(/[^a-z0-9]+/).some(w => w.length >= 3 && new RegExp('\\b' + w + '\\b').test(n)));
+  const resto = n.replace(/^(me )?avis[ae]\s+(se|quando|de)?\s*/, '').replace(/passar.*$/, '').trim();
+  const cat = nomeCat ? nomeCat.name : (resto ? autoCategorize(resto) : null);
+  if (cat) return { tipo: 'limite_categoria', params: { cat, valor, periodo } };
+  if (/(gasto|gastos|gastar|total)/.test(n)) return { tipo: 'total_mes', params: { valor } };
+  return { erro: true };
+}
+function respostaPedidoAlerta(a) {
+  if (a.erro) return `Não entendi o alerta. Alguns jeitos de pedir:<br>• me avise se delivery passar de 300<br>• me avise se o nubank passar de 1.500<br>• me avise de qualquer compra acima de 500<br>• me avise se aparecer gasto com aposta<br>• me avise se a conta ficar abaixo de 200<br>Ou crie em Configurações → Seus alertas.`;
+  window._alertaChat = a;
+  return `Crio este alerta?<br><strong>${descreverAlerta(a)}</strong><br>
+    <span class="chat-acoes"><button type="button" class="chat-btn" onclick="confirmarAlertaChat()">Criar alerta</button><button type="button" class="chat-btn sec" onclick="ajustarAlertaChat()">Ajustar</button></span>`;
+}
+function confirmarAlertaChat() {
+  const a = window._alertaChat;
+  if (!a) return;
+  window._alertaChat = null;
+  alertasDB().push({ id: Date.now(), tipo: a.tipo, params: a.params, ativo: true });
+  depoisDeMudarAlertas();
+  appendMsg(`Pronto, vou ficar de olho: <strong>${descreverAlerta(a)}</strong>. Quando disparar, aparece no Radar da Início.`, 'bot');
+  toast('Alerta criado', 'success');
+}
+function ajustarAlertaChat() {
+  const a = window._alertaChat;
+  if (!a) return;
+  window._alertaChat = null;
+  openAlertaModal(null, a);
+}
+(function chatAlerta() {
+  const orig = window.processQuestion;
+  const novo = function (text) {
+    const a = interpretarPedidoAlerta(text);
+    return a ? respostaPedidoAlerta(a) : orig(text);
+  };
+  window.processQuestion = novo;
+  processQuestion = novo;
+})();
+(function () {
+  const orig = window.renderAll;
+  if (typeof orig !== 'function') return;
+  window.renderAll = function () {
+    const r = orig.apply(this, arguments);
+    try { renderAlertasList(); } catch (e) { /* sem tela */ }
+    return r;
+  };
+})();
+window.openAlertaModal = openAlertaModal;
+window.alertaModalTipo = alertaModalTipo;
+window.alternarAlerta = alternarAlerta;
+window.excluirAlerta = excluirAlerta;
+window.confirmarAlertaChat = confirmarAlertaChat;
+window.ajustarAlertaChat = ajustarAlertaChat;
+window.renderAlertasList = renderAlertasList;
 </script>
 </body>
 </html>
