@@ -2822,6 +2822,15 @@
     </div>
 
     <div class="panel">
+      <h2>Jeito do app</h2>
+      <p class="muted" style="font-size: 0.88rem; margin-bottom: 12px;">Como o Radar e os desafios falam com você.</p>
+      <select id="tomSelect" onchange="setTom(this.value)" style="max-width: 280px;">
+        <option value="direto">Direto ao ponto</option>
+        <option value="humor">Bem-humorado</option>
+      </select>
+    </div>
+
+    <div class="panel">
       <h2>Lançar mais rápido</h2>
       <ul class="muted" style="font-size: 0.88rem; margin: 0; padding-left: 18px; line-height: 1.6;">
         <li>No <strong>+</strong>, escreva do seu jeito: <em>uber 23,40 nubank ontem</em>, <em>geladeira 3.480 em 12x</em>, <em>recebi salário 3.200 todo mês</em>, <em>guardei 200 na caixinha</em>.</li>
@@ -6183,7 +6192,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v70';
+const APP_VERSION = 'v71';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -7016,6 +7025,34 @@ function sanitizeData(data) {
         if (k.length <= 60 && typeof data.catAprendidas[k] === 'string') ca[k] = data.catAprendidas[k];
       });
       data.catAprendidas = ca;
+    }
+    // v71: preferências e desafios
+    if (data.prefs != null) data.prefs = obj(data.prefs) && data.prefs.tom === 'humor' ? { tom: 'humor' } : { tom: 'direto' };
+    if (data.desafios != null) {
+      const dz = obj(data.desafios) ? data.desafios : {};
+      const dataOk = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+      const TIPOS = ['sem_categoria', 'reduzir_categoria', 'dias_sem_gasto', 'teto_diario', 'guardar'];
+      const limpaParams = pr => {
+        const o = {};
+        if (obj(pr)) {
+          if (typeof pr.cat === 'string') o.cat = pr.cat.slice(0, 60);
+          ['limite', 'meta', 'valor'].forEach(k => { const v = safeNum(pr[k], NaN); if (Number.isFinite(v) && v > 0) o[k] = v; });
+        }
+        return o;
+      };
+      const texto = v => typeof v === 'string' ? v.slice(0, 300) : '';
+      const ativoOk = a => obj(a) && TIPOS.includes(a.tipo) && dataOk(a.inicio) && dataOk(a.fim);
+      data.desafios = {
+        ativo: ativoOk(dz.ativo) ? { tipo: dz.ativo.tipo, params: limpaParams(dz.ativo.params), titulo: texto(dz.ativo.titulo), desc: texto(dz.ativo.desc), inicio: dz.ativo.inicio, fim: dz.ativo.fim } : null,
+        historico: (Array.isArray(dz.historico) ? dz.historico : []).filter(obj).slice(-100)
+          .map(h => ({ tipo: TIPOS.includes(h.tipo) ? h.tipo : '', titulo: texto(h.titulo), inicio: dataOk(h.inicio) ? h.inicio : '', fim: dataOk(h.fim) ? h.fim : '', venceu: !!h.venceu, texto: '' })),
+        ultimoResultado: null,
+        pausadoAte: dataOk(dz.pausadoAte) ? dz.pausadoAte : null
+      };
+      if (obj(dz.ultimoResultado)) {
+        const u = dz.ultimoResultado;
+        data.desafios.ultimoResultado = { tipo: TIPOS.includes(u.tipo) ? u.tipo : '', titulo: texto(u.titulo), venceu: !!u.venceu, texto: '' };
+      }
     }
     if (data.radar != null) {
       const ig = {};
@@ -12614,6 +12651,21 @@ function renderRecentActivity() {
     border: 1px solid var(--border); border-radius: 10px; font-size: .9rem;
   }
   #quickAddCard .qa-origem label:has(input:checked) { border-color: var(--primary); background: var(--primary-tint); }
+  /* v71 · Desafios */
+  .desafio-head { display: flex; align-items: center; justify-content: space-between; gap: 6px 10px; margin-bottom: 10px; flex-wrap: wrap; }
+  .desafio-head h2 { margin: 0 !important; }
+  .desafio-chip { font-size: .74rem; font-weight: 600; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); padding: 3px 10px; border-radius: 999px; }
+  .desafio-card { padding: 14px 16px; border-radius: 14px; background: var(--surface-warm); border: 1px solid var(--border-soft); }
+  .desafio-card.sugestao { border-style: dashed; border-color: var(--primary); }
+  .desafio-card.venceu { border-color: var(--pos); background: color-mix(in srgb, var(--pos) 8%, var(--surface)); }
+  .desafio-card.falhou { border-color: var(--border); }
+  .desafio-titulo { font-weight: 700; font-size: .98rem; }
+  .desafio-texto { color: var(--text-muted); font-size: .86rem; margin-top: 4px; line-height: 1.45; }
+  .desafio-barra { height: 8px; border-radius: 999px; background: var(--bg-soft); overflow: hidden; margin-top: 12px; }
+  .desafio-barra span { display: block; height: 100%; background: linear-gradient(90deg, var(--primary), var(--accent)); border-radius: 999px; }
+  .desafio-status { font-size: .84rem; font-weight: 600; margin-top: 6px; }
+  .desafio-acoes { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+  .desafio-acoes .link-btn { font-size: .84rem; }
   /* v70 · Lançar por texto */
   #quickAddCard .qa-texto { margin-bottom: 12px; }
   #quickAddCard #qaTexto { margin-bottom: 6px; border-color: var(--primary); background: var(--surface); }
@@ -12892,13 +12944,13 @@ function computeRadar() {
 
   radarDuplicadas(hoje).forEach(([a, b]) => add({
     id: `dup:${Math.min(a.id, b.id)}:${Math.max(a.id, b.id)}`, ritmo: 'hoje', nivel: 'alerta', icone: '👯',
-    titulo: 'Cobrança repetida?',
+    titulo: tom('Cobrança repetida?', 'Pagou duas vezes ou a fome veio em dobro?'),
     texto: `<strong>${escapeHtml(b.desc)}</strong> de ${fmt(b.value)} aparece em ${dt(isoDay(a.date))} e ${dt(isoDay(b.date))}.`,
     acoes: [{ rotulo: 'Excluir a repetida', fn: `radarExcluir(${jsArg(b.id)})` }]
   }));
   radarForaDoPadrao(hoje).forEach(x => add({
     id: `fora:${x.it.id}`, ritmo: 'hoje', nivel: 'aviso', icone: '🔥',
-    titulo: 'Gasto fora do seu padrão',
+    titulo: tom('Gasto fora do seu padrão', 'Esse aqui saiu da curva'),
     texto: `<strong>${escapeHtml(x.it.desc)}</strong>: ${fmt(x.it.value)} em ${escapeHtml(x.it.cat)} — ${x.vezes.toFixed(1).replace('.', ',')}× o seu gasto típico na categoria (${fmt(x.med)}).`
   }));
   radarAVencer(hoje).forEach(v => {
@@ -12917,22 +12969,26 @@ function computeRadar() {
   });
   radarOrcamento(hoje).forEach(o => add({
     id: `orc:${o.c.name}:${Y}-${M}:${o.pct >= 1 ? 'estouro' : '80'}`, ritmo: 'hoje', nivel: o.pct >= 1 ? 'alerta' : 'aviso', icone: o.pct >= 1 ? '🚨' : '⚠️',
-    titulo: o.pct >= 1 ? `Orçamento de ${escapeHtml(o.c.name)} estourado` : `${escapeHtml(o.c.name)} já usou ${Math.round(o.pct * 100)}% do orçamento`,
+    titulo: o.pct >= 1
+      ? tom(`Orçamento de ${escapeHtml(o.c.name)} estourado`, `${escapeHtml(o.c.name)} passou do combinado`)
+      : tom(`${escapeHtml(o.c.name)} já usou ${Math.round(o.pct * 100)}% do orçamento`, `${escapeHtml(o.c.name)} já comeu ${Math.round(o.pct * 100)}% do orçamento`),
     texto: `${fmt(o.usado)} de ${fmt(o.c.budget)} em ${mesNome}${o.pct < 1 ? ` · faltam ${radarDiasNoMes(Y, M) - D} dias` : ` · ${fmt(o.usado - o.c.budget)} acima`}.`
   }));
   radarTendencias(hoje).forEach(t => add(t.tipo === 'sobe' ? {
     id: `sobe:${t.cat}:${Y}-${M}`, ritmo: 'quinzena', nivel: 'aviso', icone: '📈',
-    titulo: `${escapeHtml(t.cat)} sobe há 3 meses`,
+    titulo: tom(`${escapeHtml(t.cat)} sobe há 3 meses`, `${escapeHtml(t.cat)} subindo de elevador há 3 meses`),
     texto: `${t.v.map(fmt).join(' → ')}. Vale olhar antes que vire hábito.`
   } : {
     id: `ritmo:${t.cat}:${Y}-${M}`, ritmo: 'quinzena', nivel: 'aviso', icone: '📈',
-    titulo: `${escapeHtml(t.cat)} acima do normal`,
+    titulo: tom(`${escapeHtml(t.cat)} acima do normal`, `${escapeHtml(t.cat)} pisou no acelerador`),
     texto: `No ritmo atual, ${fmt(t.proj)} em ${mesNome} — o seu normal é ${fmt(t.media)}.`
   }));
   const pj = radarProjecao(hoje);
   if (pj) add({
     id: `proj:${Y}-${M}:${D}`, ritmo: 'mes', nivel: pj.sobra >= 0 ? 'info' : 'aviso', icone: pj.sobra >= 0 ? '🎯' : '⚠️',
-    titulo: pj.sobra >= 0 ? `No ritmo atual, ${mesNome} fecha com sobra de ${fmt(pj.sobra)}` : `No ritmo atual, os gastos passam as entradas em ${fmt(-pj.sobra)}`,
+    titulo: pj.sobra >= 0
+      ? tom(`No ritmo atual, ${mesNome} fecha com sobra de ${fmt(pj.sobra)}`, `Nesse ritmo, sobram ${fmt(pj.sobra)} em ${mesNome}. Bonito!`)
+      : tom(`No ritmo atual, os gastos passam as entradas em ${fmt(-pj.sobra)}`, `Nesse ritmo, o mês acaba antes do dinheiro (faltam ${fmt(-pj.sobra)})`),
     texto: `Gastos previstos: ${fmt(pj.projGastos)}${pj.entradas ? ` para ${fmt(pj.entradas)} de entradas` : ''} · ${fmt(pj.ritmoDia)} por dia em gastos do dia a dia.`
   });
   const as = radarAssinaturas(hoje);
@@ -12943,7 +12999,7 @@ function computeRadar() {
       + as.cadastradas.map(r => `<li><span>${escapeHtml(r.desc)} · ${fmt(r.value)}/mês</span><span class="radar-mini muted">já é fixo</span></li>`).join('');
     add({
       id: `ass:${as.detectadas.map(x => x.chave).sort().join(',')}`, ritmo: 'mes', nivel: 'info', icone: '🔁',
-      titulo: `Cobranças que se repetem: ${fmt(total)}/mês`,
+      titulo: tom(`Cobranças que se repetem: ${fmt(total)}/mês`, `Assinaturas: ${fmt(total)}/mês — lembra de todas?`),
       texto: `São ${fmt(total * 12)} por ano. Ainda usa tudo?<ul class="radar-lista">${linhas}</ul>`
     });
   }
@@ -12985,7 +13041,7 @@ function renderRadar() {
   const extras = itens.length - MAX;
   panel.innerHTML = `
     <div class="radar-head"><h2>Radar</h2><span class="radar-sub">${itens.length ? 'o que merece sua atenção' : 'de olho nos seus lançamentos'}</span></div>
-    ${itens.length ? grupos : '<p class="radar-ok">Nada fora do normal por aqui. Aviso quando aparecer cobrança repetida, gasto fora do padrão ou conta para vencer.</p>'}
+    ${itens.length ? grupos : `<p class="radar-ok">${tom('Nada fora do normal por aqui. Aviso quando aparecer cobrança repetida, gasto fora do padrão ou conta para vencer.', 'Tudo calmo por aqui. Se aparecer gasto esquisito, eu dedo-duro na hora.')}</p>`}
     ${extras > 0 ? `<button type="button" class="link-btn radar-mais" onclick="document.getElementById('radarPanel').classList.toggle('aberto'); renderRadar()">${panel.classList.contains('aberto') ? 'Mostrar menos' : `Mostrar mais ${extras}`}</button>` : ''}`;
   // Número no ícone do app (quando instalado e o sistema permite)
   try {
@@ -13348,10 +13404,288 @@ function abrirCompartilhadoPendente() {
 function linkLancarRapido() {
   return location.origin + location.pathname + '?lancar=';
 }
+// v71: o seletor de tom das Configurações mostra o valor salvo
+(function () {
+  const orig = window.updateContaHojeHint;
+  if (typeof orig !== 'function') return;
+  window.updateContaHojeHint = function () {
+    const r = orig.apply(this, arguments);
+    const sel = document.getElementById('tomSelect');
+    if (sel && typeof db !== 'undefined' && db) sel.value = db.prefs && db.prefs.tom === 'humor' ? 'humor' : 'direto';
+    return r;
+  };
+  updateContaHojeHint = window.updateContaHojeHint;
+})();
 window.qaAplicarTexto = qaAplicarTexto;
 window.confirmarLancamentoChat = confirmarLancamentoChat;
 window.ajustarLancamentoChat = ajustarLancamentoChat;
 window.parseLancamentoTexto = parseLancamentoTexto;
+</script>
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// v71 · DESAFIOS DA SEMANA + TOM DO APP
+// Desafios (como a "Rita" do Pierre): o app sugere um desafio feito a partir
+// dos SEUS gastos e mede o progresso sozinho pelos lançamentos. Vale por 7
+// dias a partir do aceite. Tom (como o "Julius"): avisos diretos ou com humor.
+// ══════════════════════════════════════════════════════════════════════
+function tom(direto, humor) {
+  return (typeof db !== 'undefined' && db && db.prefs && db.prefs.tom === 'humor') ? humor : direto;
+}
+function setTom(v) {
+  if (!db.prefs || typeof db.prefs !== 'object') db.prefs = {};
+  db.prefs.tom = v === 'humor' ? 'humor' : 'direto';
+  saveDB();
+  if (typeof renderAll === 'function') renderAll();
+  toast(v === 'humor' ? 'Tom bem-humorado ativado' : 'Tom direto ativado', 'success');
+}
+const somaDias = (iso, n) => { const d = parseLocalDate(iso); d.setDate(d.getDate() + n); return isoDay(d); };
+const ddmm = iso => iso.split('-').reverse().slice(0, 2).join('/');
+
+// Gastos do dia a dia (avulsos, sem aportes) e aportes com data em [ini, fim]
+function desafioLancamentos(ini, fim, aportes) {
+  const out = [];
+  Object.values(db.events || {}).forEach(arr => (arr || []).forEach(it => {
+    const d = isoDay(it.date);
+    if (!d || d < ini || d > fim) return;
+    if ((methodKind(it.method) === 'invest') !== !!aportes) return;
+    out.push({ it, d });
+  }));
+  return out;
+}
+
+const DESAFIO_TIPOS = ['sem_categoria', 'reduzir_categoria', 'dias_sem_gasto', 'teto_diario', 'guardar'];
+const DESAFIO_ESSENCIAL = /mercado|sa[uú]de|farm|contas|aluguel|educa/i;
+function sugerirDesafios(hoje) {
+  const h = isoDay(hoje), ini = somaDias(h, -27);
+  const vars = desafioLancamentos(ini, h, false);
+  const porCat = {};
+  vars.forEach(({ it }) => { const c = it.cat || 'Outros'; (porCat[c] = porCat[c] || { n: 0, v: 0 }); porCat[c].n++; porCat[c].v += it.value; });
+  const sug = [];
+  const delivery = Object.keys(porCat).find(c => /ifood|restaurante|delivery|lanche/i.test(c));
+  if (delivery && porCat[delivery].n >= 3) sug.push({
+    tipo: 'sem_categoria', params: { cat: delivery },
+    titulo: tom(`Semana sem ${delivery}`, `Uma semana inteira sem ${delivery}. Topa?`),
+    desc: `Nenhum gasto em ${delivery} por 7 dias. Nas últimas 4 semanas foram ${porCat[delivery].n}, somando ${fmt(porCat[delivery].v)}.`
+  });
+  const top = Object.entries(porCat).filter(([c]) => c !== delivery).sort((a, b) => b[1].v - a[1].v)[0];
+  if (top && top[1].v / 4 >= 50) {
+    const limite = Math.max(10, Math.round(top[1].v / 4 * 0.8 / 5) * 5);
+    sug.push({
+      tipo: 'reduzir_categoria', params: { cat: top[0], limite },
+      titulo: tom(`20% menos em ${top[0]}`, `${top[0]} de dieta: 20% a menos`),
+      desc: `Até ${fmt(limite)} em ${top[0]} nos próximos 7 dias — sua média é ${fmt(top[1].v / 4)} por semana.`
+    });
+  }
+  sug.push({
+    tipo: 'dias_sem_gasto', params: { meta: 3 },
+    titulo: tom('3 dias sem gastar', '3 dias de carteira fechada'),
+    desc: 'Em 7 dias, ter pelo menos 3 dias sem nenhum gasto do dia a dia. Fixos e parcelas não contam.'
+  });
+  // teto diário só para o que é escolha: mercado, saúde e contas ficam de fora
+  const diaria = vars.filter(x => !DESAFIO_ESSENCIAL.test(x.it.cat || '')).reduce((a, x) => a + x.it.value, 0) / 28;
+  if (diaria >= 20) {
+    const limite = Math.max(10, Math.round(diaria * 0.8 / 5) * 5);
+    sug.push({
+      tipo: 'teto_diario', params: { limite },
+      titulo: tom(`No máximo ${fmt(limite)} por dia`, `Teto de ${fmt(limite)} por dia, sem choro`),
+      desc: `Nenhum dia passar de ${fmt(limite)} em gastos do dia a dia (mercado, saúde e contas não contam) — sua média é ${fmt(diaria)} por dia.`
+    });
+  }
+  const t = hoje.getFullYear() * 12 + hoje.getMonth() - 1;
+  const sobraAnt = getMonthData(Math.floor(t / 12), t % 12).sobra;
+  const valor = sobraAnt > 0 ? Math.min(1000, Math.max(50, Math.round(sobraAnt * 0.1 / 10) * 10)) : 50;
+  sug.push({
+    tipo: 'guardar', params: { valor },
+    titulo: tom(`Guardar ${fmt(valor)} na semana`, `${fmt(valor)} para o seu eu do futuro`),
+    desc: 'Registre em + → Guardar dinheiro. Vale qualquer aplicação feita nos próximos 7 dias.'
+  });
+  return sug;
+}
+
+// Progresso medido pelos lançamentos: andamento | venceu | falhou
+function progressoDesafio(d, hoje) {
+  const h = isoDay(hoje);
+  const terminou = h > d.fim;
+  const ate = terminou ? d.fim : h;
+  const passados = Math.min(7, Math.round((parseLocalDate(ate) - parseLocalDate(d.inicio)) / 864e5) + 1);
+  const restam = terminou ? 0 : 7 - passados;
+  const fimTxt = restam > 0 ? ` · faltam ${restam} dia${restam === 1 ? '' : 's'}` : ' · último dia';
+  const vars = desafioLancamentos(d.inicio, d.fim, false);
+  const P = d.params || {};
+  if (d.tipo === 'sem_categoria') {
+    const caiu = vars.filter(x => x.it.cat === P.cat).sort((a, b) => a.d.localeCompare(b.d));
+    if (caiu.length) return { status: 'falhou', pct: 1, texto: `${fmt(caiu.reduce((a, x) => a + x.it.value, 0))} em ${escapeHtml(P.cat)} em ${ddmm(caiu[0].d)}.` };
+    return { status: terminou ? 'venceu' : 'andamento', pct: passados / 7, texto: `${passados} de 7 dias sem ${escapeHtml(P.cat)}${terminou ? '' : fimTxt}` };
+  }
+  if (d.tipo === 'reduzir_categoria') {
+    const v = vars.filter(x => x.it.cat === P.cat).reduce((a, x) => a + x.it.value, 0);
+    if (v > P.limite) return { status: 'falhou', pct: 1, texto: `${fmt(v)} em ${escapeHtml(P.cat)}, acima do limite de ${fmt(P.limite)}.` };
+    return { status: terminou ? 'venceu' : 'andamento', pct: P.limite ? v / P.limite : 0, texto: `${fmt(v)} de ${fmt(P.limite)}${terminou ? '' : fimTxt}` };
+  }
+  if (d.tipo === 'dias_sem_gasto') {
+    // conta só dias já encerrados (hoje entra quando acabar)
+    const ultimoFechado = terminou ? d.fim : somaDias(h, -1);
+    const comGasto = new Set(vars.map(x => x.d));
+    let livres = 0;
+    for (let dia = d.inicio; dia <= ultimoFechado; dia = somaDias(dia, 1)) if (!comGasto.has(dia)) livres++;
+    const meta = P.meta || 3;
+    const aindaDa = terminou ? 0 : (d.fim >= h ? Math.round((parseLocalDate(d.fim) - parseLocalDate(h)) / 864e5) + 1 : 0);
+    if (livres >= meta) return { status: 'venceu', pct: 1, texto: `${livres} dias sem gastar.` };
+    if (livres + aindaDa < meta) return { status: 'falhou', pct: livres / meta, texto: `${livres} de ${meta} dias sem gastar.` };
+    return { status: 'andamento', pct: livres / meta, texto: `${livres} de ${meta} dias sem gastar${fimTxt}` };
+  }
+  if (d.tipo === 'teto_diario') {
+    const porDia = {};
+    vars.filter(x => !DESAFIO_ESSENCIAL.test(x.it.cat || '')).forEach(x => { porDia[x.d] = (porDia[x.d] || 0) + x.it.value; });
+    const estouro = Object.entries(porDia).find(([, v]) => v > P.limite);
+    if (estouro) return { status: 'falhou', pct: 1, texto: `${fmt(estouro[1])} em ${ddmm(estouro[0])}, acima de ${fmt(P.limite)}.` };
+    return { status: terminou ? 'venceu' : 'andamento', pct: passados / 7, texto: `${passados} de 7 dias dentro do teto${terminou ? '' : fimTxt}` };
+  }
+  if (d.tipo === 'guardar') {
+    const v = desafioLancamentos(d.inicio, d.fim, true).reduce((a, x) => a + x.it.value, 0);
+    if (v >= P.valor) return { status: 'venceu', pct: 1, texto: `${fmt(v)} guardados.` };
+    if (terminou) return { status: 'falhou', pct: P.valor ? v / P.valor : 0, texto: `${fmt(v)} de ${fmt(P.valor)} guardados.` };
+    return { status: 'andamento', pct: P.valor ? v / P.valor : 0, texto: `${fmt(v)} de ${fmt(P.valor)}${fimTxt}` };
+  }
+  return { status: 'falhou', pct: 0, texto: '' };
+}
+
+function desafiosDB() {
+  if (!db.desafios || typeof db.desafios !== 'object') db.desafios = {};
+  const D = db.desafios;
+  if (!Array.isArray(D.historico)) D.historico = [];
+  return D;
+}
+function sequenciaDesafios() {
+  const hist = desafiosDB().historico;
+  let n = 0;
+  for (let i = hist.length - 1; i >= 0 && hist[i].venceu; i--) n++;
+  return { seguidas: n, vencidos: hist.filter(x => x.venceu).length };
+}
+// Encerra o desafio ativo quando o resultado já está definido
+function fecharDesafioSeAcabou(hoje) {
+  const D = desafiosDB();
+  if (!D.ativo) return;
+  const pr = progressoDesafio(D.ativo, hoje);
+  if (pr.status === 'andamento') return;
+  const r = { tipo: D.ativo.tipo, titulo: D.ativo.titulo, inicio: D.ativo.inicio, fim: D.ativo.fim, venceu: pr.status === 'venceu', texto: pr.texto };
+  D.historico.push(r);
+  if (D.historico.length > 100) D.historico = D.historico.slice(-100);
+  D.ultimoResultado = r;
+  D.ativo = null;
+  saveDB();
+}
+
+function renderDesafio() {
+  const hero = document.getElementById('homeHero');
+  if (!hero || typeof currentUser === 'undefined' || !currentUser || !db || !db.events) return;
+  const hoje = new Date(), h = isoDay(hoje);
+  fecharDesafioSeAcabou(hoje);
+  const D = desafiosDB();
+  let panel = document.getElementById('desafioPanel');
+  if (!panel) { panel = document.createElement('section'); panel.id = 'desafioPanel'; panel.className = 'panel desafio'; panel.setAttribute('aria-label', 'Desafio da semana'); }
+  const ancora = document.getElementById('radarPanel') || hero;
+  if (panel.previousElementSibling !== ancora) ancora.insertAdjacentElement('afterend', panel);
+  const seq = sequenciaDesafios();
+  const chip = seq.vencidos ? `<span class="desafio-chip">${seq.seguidas >= 2 ? `🔥 ${seq.seguidas} seguidos · ` : ''}${seq.vencidos} vencido${seq.vencidos === 1 ? '' : 's'}</span>` : '';
+  const head = `<div class="desafio-head"><h2>Desafio da semana</h2>${chip}</div>`;
+
+  if (D.ultimoResultado) {
+    const r = D.ultimoResultado;
+    panel.style.display = '';
+    panel.innerHTML = `${head}
+      <div class="desafio-card ${r.venceu ? 'venceu' : 'falhou'}">
+        <div class="desafio-titulo">${r.venceu ? tom('Desafio vencido!', 'Mandou bem demais!') : tom('Não foi dessa vez', 'Quase! Bola pra frente')} — ${escapeHtml(r.titulo)}</div>
+        <div class="desafio-texto">${r.texto}${r.venceu && seq.seguidas >= 2 ? ` São ${seq.seguidas} desafios seguidos.` : ''}</div>
+        <div class="desafio-acoes"><button type="button" class="btn primary" onclick="desafioNovo()">${r.venceu ? 'Próximo desafio' : 'Tentar outro'}</button>
+          <button type="button" class="link-btn" onclick="desafioPausar()">Agora não</button></div>
+      </div>`;
+    return;
+  }
+  if (D.ativo) {
+    const pr = progressoDesafio(D.ativo, hoje);
+    panel.style.display = '';
+    panel.innerHTML = `${head}
+      <div class="desafio-card">
+        <div class="desafio-titulo">${escapeHtml(D.ativo.titulo)}</div>
+        <div class="desafio-texto">${escapeHtml(D.ativo.desc || '')}</div>
+        <div class="desafio-barra"><span style="width:${Math.round(Math.min(1, Math.max(0, pr.pct)) * 100)}%"></span></div>
+        <div class="desafio-status">${pr.texto}</div>
+        <div class="desafio-acoes"><button type="button" class="link-btn" onclick="desafioDesistir()">Desistir</button></div>
+      </div>`;
+    return;
+  }
+  if (D.pausadoAte && D.pausadoAte >= h) { panel.style.display = 'none'; panel.innerHTML = ''; return; }
+  const sug = sugerirDesafios(hoje);
+  const i = (window._desafioIdx || 0) % sug.length;
+  const x = sug[i];
+  panel.style.display = '';
+  panel.innerHTML = `${head}
+    <div class="desafio-card sugestao">
+      <div class="desafio-titulo">${escapeHtml(x.titulo)}</div>
+      <div class="desafio-texto">${escapeHtml(x.desc)}</div>
+      <div class="desafio-acoes">
+        <button type="button" class="btn primary" onclick="desafioAceitar(${i})">Aceitar</button>
+        ${sug.length > 1 ? '<button type="button" class="btn" onclick="desafioOutro()">Outro</button>' : ''}
+        <button type="button" class="link-btn" onclick="desafioPausar()">Agora não</button>
+      </div>
+    </div>`;
+}
+function desafioAceitar(i) {
+  const hoje = new Date();
+  const x = sugerirDesafios(hoje)[i];
+  if (!x) return;
+  const D = desafiosDB();
+  const ini = isoDay(hoje);
+  D.ativo = { tipo: x.tipo, params: x.params, titulo: x.titulo, desc: x.desc, inicio: ini, fim: somaDias(ini, 6) };
+  D.ultimoResultado = null;
+  saveDB();
+  renderDesafio();
+  toast(tom('Desafio aceito — vale até ' + ddmm(D.ativo.fim), 'Valendo! Até ' + ddmm(D.ativo.fim) + ', sem desculpa'), 'success');
+}
+function desafioOutro() { window._desafioIdx = (window._desafioIdx || 0) + 1; renderDesafio(); }
+function desafioNovo() { const D = desafiosDB(); D.ultimoResultado = null; D.pausadoAte = null; saveDB(); renderDesafio(); }
+function desafioPausar() {
+  const D = desafiosDB();
+  D.ultimoResultado = null;
+  D.pausadoAte = somaDias(todayISO(), 6);
+  saveDB();
+  renderDesafio();
+  toast('Sem desafio por uma semana', 'info');
+}
+async function desafioDesistir() {
+  const ok = await confirmDialog('Desistir do desafio desta semana?');
+  if (!ok) return;
+  const D = desafiosDB();
+  D.ativo = null;
+  saveDB();
+  renderDesafio();
+}
+window.desafioAceitar = desafioAceitar;
+window.desafioOutro = desafioOutro;
+window.desafioNovo = desafioNovo;
+window.desafioPausar = desafioPausar;
+window.desafioDesistir = desafioDesistir;
+window.setTom = setTom;
+window.renderDesafio = renderDesafio;
+
+(function syncTom() {
+  const orig = window.renderAll;
+  if (typeof orig !== 'function') return;
+  window.renderAll = function () {
+    const r = orig.apply(this, arguments);
+    try { const sel = document.getElementById('tomSelect'); if (sel && db) sel.value = db.prefs && db.prefs.tom === 'humor' ? 'humor' : 'direto'; } catch (e) { /* sem tela */ }
+    return r;
+  };
+})();
+
+(function chainDesafio() {
+  const orig = window.renderDashboard;
+  window.renderDashboard = function () {
+    if (orig) orig.apply(this, arguments);
+    try { renderDesafio(); } catch (e) { console.warn('[desafio]', e); }
+  };
+})();
 </script>
 </body>
 </html>
