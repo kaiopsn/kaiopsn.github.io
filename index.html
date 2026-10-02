@@ -5597,6 +5597,7 @@ async function submitQuickAdd() {
     if (!classe) return toast('Crie uma classe de investimento em Investimentos', 'error');
     const origem = document.querySelector('input[name="qaOrigem"]:checked')?.value || 'conta';
     if (origem === 'guardado') {
+      if (!(safeNum(classe.opening, 0) > 0)) classe.openingDate = todayISO();   // v77
       classe.opening = safeNum(classe.opening, 0) + value;
       msg = `${fmt(value)} somados ao que já estava em ${classe.label} — a conta não muda`;
     } else {
@@ -6211,7 +6212,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v76';
+const APP_VERSION = 'v77';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -6914,6 +6915,7 @@ function sanitizeData(data) {
     const reserva = c => {
       c.reserve = !!c.reserve;
       if (c.opening != null) { const v = safeNum(c.opening, 0); if (v > 0) c.opening = v; else delete c.opening; }
+      if (c.openingDate != null && !(c.opening > 0 && typeof c.openingDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(c.openingDate))) delete c.openingDate;
       if (c.market != null) {
         const ok = obj(c.market) && Number.isFinite(c.market.value) && c.market.value >= 0 &&
           typeof c.market.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(c.market.date);
@@ -9110,13 +9112,14 @@ function openInvestClassModal(id) {
       if (!Number.isFinite(opening) || opening < 0) { toast('Saldo inicial inválido, ex.: 12.000,00', 'error'); return false; }
       if (atual) {
         atual.label = label; atual.color = color; atual.reserve = reserve;
-        if (opening > 0) atual.opening = opening; else delete atual.opening;
+        if (opening > 0) { if (!(safeNum(atual.opening, 0) > 0)) atual.openingDate = todayISO(); atual.opening = opening; }
+        else { delete atual.opening; delete atual.openingDate; }
       } else {
         let base = label.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
           .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'classe';
         let novo = base, i = 2;
         while (getInvestClasses().some(c => c.id === novo) || novo === 'withdrawals') novo = `${base}-${i++}`;
-        db.investClasses.push(opening > 0 ? { id: novo, label, color, reserve, opening } : { id: novo, label, color, reserve });
+        db.investClasses.push(opening > 0 ? { id: novo, label, color, reserve, opening, openingDate: todayISO() } : { id: novo, label, color, reserve });
       }
       saveDB();
       rebuildInvestClassDropdowns();
@@ -11970,10 +11973,12 @@ function renderProfitability() {
         <div id="rebalOut" class="rebal-out"></div>
       </div>`
     : `<p class="muted" style="font-size:.84rem;margin:12px 0 0">Defina uma <button type="button" class="link-btn" onclick="openAlvoModal()">alocação-alvo</button> para ver os desvios e como dividir o próximo aporte.</p>`}
+    ${typeof blocoIndicesCarteira === 'function' ? blocoIndicesCarteira() : ''}
     <p class="cart-prov">${prov.total > 0
       ? `Proventos nos últimos 12 meses: <strong>${fmt(prov.total)}</strong> (isentos ${fmt(prov.isento)} · tributáveis ${fmt(prov.tributavel)})${cm.aplicado > 0 ? ` — ${pctFmt(prov.total / cm.aplicado * 100)} sobre o aplicado` : ''}.`
       : 'Dividendos, JCP e juros entram em <strong>Adicionar → Entrada</strong>, marcados como provento.'}</p>
   `;
+  if (typeof agendarIndices === 'function') agendarIndices(cm);   // v77
 }
 function calcRebalance() {
   const out = document.getElementById('rebalOut');
@@ -12958,6 +12963,16 @@ function renderRecentActivity() {
     border: 1px solid var(--border); border-radius: 10px; font-size: .9rem;
   }
   #quickAddCard .qa-origem label:has(input:checked) { border-color: var(--primary); background: var(--primary-tint); }
+  /* v77 · Carteira × CDI e IPCA */
+  .cart-indices { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border-soft); }
+  .cart-indices h3 { margin: 0 0 10px; font-size: 1rem; }
+  .cart-indices-msg { font-size: .86rem; margin: 0; }
+  .cart-indices-resumo { font-size: .86rem; margin: 10px 0 0; }
+  .cart-indices-classes { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 8px; font-size: .86rem; }
+  .cart-indices-cl { display: inline-flex; align-items: center; gap: 6px; }
+  .cart-indices-cl .method-row-dot { margin: 0; }
+  .cart-indices-fonte { font-size: .76rem; color: var(--text-muted); margin: 10px 0 0; line-height: 1.5; }
+  .cart-indices .link-btn { font-size: inherit; padding: 0; text-decoration: underline; text-underline-offset: 2px; }
   /* v74 · Importar extrato */
   #modalBox:has(.extrato-revisao) { max-width: 720px; }
   .extrato-opcoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 12px; }
@@ -14831,11 +14846,25 @@ function ansRendimento() {
   const cm = getCarteiraMercado();
   if (!cm.temMercado) return `Você tem ${fmt(cm.aplicado)} aplicados. Para eu calcular o rendimento, informe os valores de mercado em <strong>Investimentos → Sua carteira</strong>.`;
   const r = cm.mercado - cm.aplicado;
-  return `Sua carteira vale <span class="num">${fmt(cm.mercado)}</span> a mercado para ${fmt(cm.aplicado)} aplicados: <strong>${r >= 0 ? '+' : '−'}${fmt(Math.abs(r))}</strong>${cm.aplicado > 0 ? ` (${r >= 0 ? '+' : '−'}${(Math.abs(r) / cm.aplicado * 100).toFixed(1).replace('.', ',')}%)` : ''}.<br><span class="muted">Comparar com o CDI precisaria da taxa do mercado, que o app não busca (ele funciona offline).</span>`;
+  let txt = `Sua carteira vale <span class="num">${fmt(cm.mercado)}</span> a mercado para ${fmt(cm.aplicado)} aplicados: <strong>${r >= 0 ? '+' : '−'}${fmt(Math.abs(r))}</strong>${cm.aplicado > 0 ? ` (${r >= 0 ? '+' : '−'}${(Math.abs(r) / cm.aplicado * 100).toFixed(1).replace('.', ',')}%)` : ''}.`;
+  // v77: comparação com o CDI e a inflação
+  const c = typeof compararComIndices === 'function' ? compararComIndices() : null;
+  if (c && c.tot) {
+    const real = c.tot.mercado - c.tot.ipca;
+    txt += c.foraSemMercado + c.foraPoucoTempo
+      ? `<br>Nas classes que dá para comparar (valem ${fmt(c.tot.mercado)}), rendeu <strong>${pctDoCdi(c.tot.pctCdi)}</strong>: a 100% do CDI, teriam ${fmt(c.tot.cdi)}.`
+      : `<br>Isso dá <strong>${pctDoCdi(c.tot.pctCdi)}</strong>: a 100% do CDI, teria ${fmt(c.tot.cdi)}.`;
+    if (c.idx.ipca) txt += ` Descontada a inflação (IPCA), ${real >= 0 ? `ganhou ${fmt(real)} de verdade` : `perdeu ${fmt(-real)} para a inflação`}.`;
+  } else if (c && c.semIndices) {
+    txt += `<br><span class="muted">Para comparar com o CDI e a inflação, toque em <strong>Atualizar taxas</strong> em Investimentos → Sua carteira.</span>`;
+  } else if (c && c.vazio) {
+    txt += `<br><span class="muted">Os valores de mercado ainda são recentes demais para comparar com o CDI.</span>`;
+  }
+  return txt;
 }
 function ansAjuda() {
   return `Pergunte do seu jeito. Alguns exemplos:<br>${assistLista([
-    '<em>quanto posso gastar?</em> · <em>quanto tenho?</em> · <em>qual meu patrimônio?</em>',
+    '<em>quanto posso gastar?</em> · <em>quanto tenho?</em> · <em>qual meu patrimônio?</em> · <em>rendeu quanto do CDI?</em>',
     '<em>quanto vem a fatura?</em> · <em>o que vence esta semana?</em> · <em>quais minhas assinaturas?</em>',
     '<em>como vou fechar o mês?</em> · <em>quanto economizei?</em> · <em>minha reserva cobre quantos meses?</em>',
     '<em>quanto gastei hoje / esta semana / com delivery?</em> · <em>maiores gastos</em>',
@@ -14881,7 +14910,7 @@ const ASSIST_INTENCOES = [
   [/gastei (hoje|ontem|essa semana|esta semana|nesta semana|na semana)|gastos? (de |da )?(hoje|ontem|semana)/, ansGastoPeriodo],
   [/\bdesafio/, ansDesafio],
   [/^(meus |quais )?(os |sao )?(meus )?alertas|alertas (ativos|configurados)/, ansAlertas],
-  [/rendimento|rentabilidade|quanto (rendeu|rende)|\bcdi\b/, ansRendimento],
+  [/rendimento|rentabilidade|quanto (rendeu|rende)|\bcdi\b|\bipca\b|inflacao/, ansRendimento],
   [/quanto (eu )?tenho|\bsaldo\b|dinheiro em conta|tenho (na|no|em) /, ansConta],
 ];
 const ASSIST_CONHECIDO = /compar|\bvs\b|versus|\bmaior|\btop\b|menor|menos|medi[ao]|invest|\bmeta|objetivo|entrada|ganhei|renda|salario|recebi|resumo|geral|quanto|gastei|gasto|\boi\b|\bola\b|categoria|mes|ano/;
@@ -14937,6 +14966,232 @@ function sugestoesAssistente() {
   window.renderSuggestions = novo;
   renderSuggestions = novo;
 })();
+</script>
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// v77 · CARTEIRA × CDI E IPCA. Busca só as taxas PÚBLICAS do Banco Central
+// (SGS 4391: CDI no mês; SGS 433: IPCA no mês), sempre desde jan/2015 — a
+// busca não leva nada dos seus dados. Cada aplicação/resgate "rende" o índice
+// da sua data até a data do valor de mercado da classe; o que entrou depois
+// dessa data conta pelo valor aplicado dos dois lados. Daí saem o "% do CDI"
+// e o ganho acima da inflação. Sem internet: taxas guardadas ou informadas à mão.
+// ══════════════════════════════════════════════════════════════════════
+const INDICES_KEY = 'financeapp_indices_v1';
+const INDICES_MANUAL_KEY = 'financeapp_indices_manual_v1';
+const INDICES_DESDE = 2015 * 12;
+function lerJSONLocal(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } }
+function salvarJSONLocal(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* sem espaço */ } }
+function indicesDesdeNecessario() { const f = firstDataMonth(); return f != null ? Math.min(INDICES_DESDE, f) : INDICES_DESDE; }
+
+let _indicesBuscando = null;
+function atualizarIndices() {
+  if (_indicesBuscando) return _indicesBuscando;
+  _indicesBuscando = (async () => {
+    const hoje = new Date(), ini = indicesDesdeNecessario();
+    const dIni = `01/${String(ini % 12 + 1).padStart(2, '0')}/${Math.floor(ini / 12)}`;
+    const dFim = `${String(hoje.getDate()).padStart(2, '0')}/${String(hoje.getMonth() + 1).padStart(2, '0')}/${hoje.getFullYear()}`;
+    const serie = async cod => {
+      const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+      const timer = ctl ? setTimeout(() => ctl.abort(), 10000) : null;
+      try {
+        const r = await fetch(`https://api.bcb.gov.br/dados/serie/bcdata.sgs.${cod}/dados?formato=json&dataInicial=${dIni}&dataFinal=${dFim}`,
+          { signal: ctl ? ctl.signal : undefined, cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const j = await r.json(), out = {};
+        (Array.isArray(j) ? j : []).forEach(x => {
+          const [, m, y] = String(x && x.data || '').split('/').map(Number);
+          const v = parseFloat(String(x && x.valor).replace(',', '.'));
+          if (y > 1990 && m >= 1 && m <= 12 && Number.isFinite(v) && Math.abs(v) < 50) out[y * 12 + m - 1] = v / 100;
+        });
+        return out;
+      } finally { if (timer) clearTimeout(timer); }
+    };
+    try {
+      const [cdi, ipca] = await Promise.all([serie(4391), serie(433)]);
+      if (!Object.keys(cdi).length) throw new Error('série do CDI vazia');
+      const novo = { em: Date.now(), desde: ini, cdi, ipca };
+      salvarJSONLocal(INDICES_KEY, novo);
+      return novo;
+    } catch (e) {
+      console.warn('[índices]', e && e.message);
+      return null;
+    } finally {
+      _indicesBuscando = null;
+    }
+  })();
+  return _indicesBuscando;
+}
+// Busca em segundo plano (uma vez por sessão) quando há valor de mercado para comparar
+let _indicesTentou = false;
+function agendarIndices(cm) {
+  if (_indicesTentou || !cm || !cm.temMercado || cm.legado || navigator.onLine === false) return;
+  const c = lerJSONLocal(INDICES_KEY);
+  if (c && c.em && Date.now() - c.em < 24 * 3600e3 && (c.desde ?? Infinity) <= indicesDesdeNecessario()) return;
+  _indicesTentou = true;
+  atualizarIndices().then(n => { if (n) renderProfitability(); });
+}
+// Séries disponíveis: as do Banco Central ou, sem elas, as anuais informadas à mão
+function indicesDisponiveis() {
+  const c = lerJSONLocal(INDICES_KEY), man = lerJSONLocal(INDICES_MANUAL_KEY) || {};
+  const mensal = a => Number.isFinite(a) ? { const: Math.pow(1 + a / 100, 1 / 12) - 1 } : null;
+  const temSerie = !!(c && c.cdi && typeof c.cdi === 'object' && Object.keys(c.cdi).length);
+  const cdi = temSerie ? c.cdi : mensal(man.cdiAno);
+  const ipca = temSerie && c.ipca && Object.keys(c.ipca).length ? c.ipca : mensal(man.ipcaAno);
+  return { cdi, ipca, fonte: temSerie ? 'bcb' : cdi ? 'manual' : null, em: temSerie ? c.em : null };
+}
+// Fator do índice do início do dia `dia0` do mês absoluto t0 até o início do dia `fim`.
+// Mês parcial = proporcional aos dias; mês ainda sem taxa divulgada repete a última.
+function fatorIndice(serie, t0, dia0, fim) {
+  if (!serie) return null;
+  const tFim = fim.getFullYear() * 12 + fim.getMonth();
+  if (t0 > tFim) return 1;
+  const ks = serie.const != null ? [] : Object.keys(serie).map(Number).sort((a, b) => a - b);
+  const taxa = t => {
+    if (serie.const != null) return serie.const;
+    if (serie[t] != null) return serie[t];
+    let ult = null;
+    for (const k of ks) { if (k <= t) ult = k; else break; }
+    return serie[ult != null ? ult : ks[0]] ?? 0;
+  };
+  let f = 1;
+  for (let t = t0; t <= tFim; t++) {
+    const dim = new Date(Math.floor(t / 12), t % 12 + 1, 0).getDate();
+    const de = t === t0 ? Math.min(dim, Math.max(1, dia0)) - 1 : 0;
+    const ate = t === tFim ? Math.min(dim, fim.getDate()) - 1 : dim;
+    if (ate > de) f *= Math.pow(1 + taxa(t), (ate - de) / dim);
+  }
+  return f;
+}
+// Fluxos datados da carteira, por classe: saldo inicial (na data em que foi
+// informado) + aportes − resgates. Aportes lançados têm data; os da aba
+// Investimentos e os resgates contam no dia 15 do mês.
+function fluxosCarteira() {
+  const out = {};
+  const add = (id, t, dia, v, datado) => { if (id && Math.abs(v) >= 0.005) (out[id] = out[id] || []).push({ t, dia, v, datado }); };
+  getInvestClasses().forEach(c => {
+    const op = safeNum(c.opening, 0);
+    if (op <= 0) return;
+    const d = isoDay(c.openingDate) || (c.market && isoDay(c.market.date)) || todayISO();
+    const [y, m, dd] = d.split('-').map(Number);
+    add(c.id, y * 12 + m - 1, dd, op, true);
+  });
+  const ini = firstDataMonth(), f = investFimAtual(), fim = f.y * 12 + f.m;
+  if (ini != null) for (let t = ini; t <= fim && t - ini < 1200; t++) {
+    const md = getMonthData(Math.floor(t / 12), t % 12), resto = { ...(md.porClasse || {}) };
+    (md.aportes || []).forEach(it => {
+      const d = isoDay(it.date);
+      if (!d || !it.investClass) return;
+      add(it.investClass, t, Number(d.slice(8, 10)) || 15, it.value, true);
+      resto[it.investClass] = (resto[it.investClass] || 0) - it.value;
+    });
+    Object.entries(resto).forEach(([id, v]) => add(id, t, 15, v, false));
+  }
+  return out;
+}
+function compararComIndices() {
+  const idx = indicesDisponiveis();
+  const cm = getCarteiraMercado();
+  if (!cm.temMercado || cm.legado) return { semMercado: true, idx };
+  if (!idx.cdi) return { semIndices: true, idx };
+  const fl = fluxosCarteira();
+  const porClasse = {}, tot = { aplicado: 0, mercado: 0, cdi: 0, ipca: 0 };
+  let ini = null, fimMax = null, foraSemMercado = 0, foraPoucoTempo = 0;
+  getInvestClasses().forEach(c => {
+    const p = cm.porClasse[c.id];
+    if (!p || p.aplicado <= 0) return;
+    if (!p.informado || !isoDay(p.data)) { foraSemMercado++; return; }
+    const fim = parseLocalDate(isoDay(p.data)), tMk = fim.getFullYear() * 12 + fim.getMonth(), diaMk = fim.getDate();
+    let ap = 0, xc = 0, xi = 0, iniC = null;
+    (fl[c.id] || []).forEach(f => {
+      ap += f.v;
+      // depois da data do valor de mercado: entra pelo aplicado dos dois lados (como no getCarteiraMercado)
+      if (f.t > tMk || (f.t === tMk && f.datado && f.dia > diaMk)) { xc += f.v; xi += f.v; return; }
+      xc += f.v * fatorIndice(idx.cdi, f.t, f.dia, fim);
+      xi += f.v * (idx.ipca ? fatorIndice(idx.ipca, f.t, f.dia, fim) : 1);
+      if (!iniC || f.t * 32 + f.dia < iniC.t * 32 + iniC.dia) iniC = f;
+    });
+    // pouco tempo (menos de ~3 semanas de CDI, em média) não dá comparação honesta
+    if (ap <= 0 || !iniC || !(xc - ap > Math.max(0.01, ap * 0.008))) { foraPoucoTempo++; return; }
+    porClasse[c.id] = { aplicado: ap, mercado: p.mercado, cdi: xc, ipca: xi, pctCdi: (p.mercado - ap) / (xc - ap) * 100 };
+    tot.aplicado += ap; tot.mercado += p.mercado; tot.cdi += xc; tot.ipca += xi;
+    if (!ini || iniC.t * 32 + iniC.dia < ini.t * 32 + ini.dia) ini = iniC;
+    if (!fimMax || fim > fimMax) fimMax = fim;
+  });
+  if (!ini) return { vazio: true, foraSemMercado, foraPoucoTempo, idx };
+  tot.pctCdi = (tot.mercado - tot.aplicado) / (tot.cdi - tot.aplicado) * 100;
+  const periodo = {
+    de: new Date(Math.floor(ini.t / 12), ini.t % 12, Math.min(ini.dia, new Date(Math.floor(ini.t / 12), ini.t % 12 + 1, 0).getDate())),
+    ate: fimMax,
+    cdi: fatorIndice(idx.cdi, ini.t, ini.dia, fimMax) - 1,
+    ipca: idx.ipca ? fatorIndice(idx.ipca, ini.t, ini.dia, fimMax) - 1 : null
+  };
+  return { porClasse, tot, periodo, foraSemMercado, foraPoucoTempo, idx };
+}
+function pctDoCdi(v) { const r = Math.round(v); return `${r < 0 ? '−' : ''}${Math.abs(r)}% do CDI`; }
+
+function blocoIndicesCarteira() {
+  const r = compararComIndices();
+  const titulo = '<h3>Comparado ao CDI e à inflação</h3>';
+  const fonte = r.idx.fonte === 'bcb'
+    ? `Taxas mensais do Banco Central, atualizadas em ${new Date(r.idx.em).toLocaleDateString('pt-BR')}`
+    : r.idx.fonte === 'manual' ? 'Usando as taxas anuais que você informou' : '';
+  const rodape = `<p class="cart-indices-fonte">${fonte ? fonte + ' · ' : ''}<button type="button" class="link-btn" onclick="buscarIndicesAgora()">Atualizar taxas</button> · <button type="button" class="link-btn" onclick="openIndicesManual()">Informar à mão</button><br>Só as taxas públicas são buscadas — seus dados não saem do aparelho. O saldo inicial conta a partir da data em que foi informado.</p>`;
+  if (r.semMercado) return `<div class="cart-indices">${titulo}<p class="muted cart-indices-msg">Informe os <button type="button" class="link-btn" onclick="openMercadoModal()">valores de mercado</button> de cada classe para comparar sua carteira com o CDI e o IPCA.</p></div>`;
+  if (r.semIndices) return `<div class="cart-indices">${titulo}<p class="muted cart-indices-msg">${_indicesBuscando ? 'Buscando as taxas do CDI e do IPCA no Banco Central…' : 'Ainda não tenho as taxas do CDI e do IPCA.'}</p>${rodape}</div>`;
+  const fora = n => n ? `${n} classe${n === 1 ? '' : 's'}` : '';
+  if (r.vazio) return `<div class="cart-indices">${titulo}<p class="muted cart-indices-msg">Os valores de mercado ainda são recentes demais em relação ao que você aplicou para comparar com o CDI. Volte depois de algumas semanas de aplicação.</p>${rodape}</div>`;
+  const t = r.tot, pc = v => v.toLocaleString('pt-BR', { maximumFractionDigits: 1, minimumFractionDigits: 1 }) + '%';
+  const sinal = v => (v >= 0 ? '+' : '−') + fmt(Math.abs(v));
+  const dt = d => d.toLocaleDateString('pt-BR');
+  const real = t.mercado - t.ipca;
+  const cls = v => v >= 100 ? 'pos' : v < 0 ? 'neg' : '';
+  const classes = getInvestClasses().filter(c => r.porClasse[c.id])
+    .map(c => `<span class="cart-indices-cl"><span class="method-row-dot" style="background:${safeColor(c.color)}"></span>${escapeHtml(c.label)} <b class="${cls(r.porClasse[c.id].pctCdi)}">${pctDoCdi(r.porClasse[c.id].pctCdi)}</b></span>`).join('');
+  const deFora = [r.foraSemMercado ? `${fora(r.foraSemMercado)} sem valor de mercado` : '', r.foraPoucoTempo ? `${fora(r.foraPoucoTempo)} com pouco tempo de aplicação` : ''].filter(Boolean).join(' e ');
+  return `<div class="cart-indices">
+    ${titulo}
+    <div class="ytd-panel cart-cards">
+      <div class="ytd-card"><div class="ytd-label">Rendeu</div><div class="ytd-value ${cls(t.pctCdi)}">${pctDoCdi(t.pctCdi)}</div>
+        <div class="ytd-sub">${sinal(t.mercado - t.aplicado)}; o CDI daria ${sinal(t.cdi - t.aplicado)}</div></div>
+      <div class="ytd-card"><div class="ytd-label">Se rendesse 100% do CDI</div><div class="ytd-value">${fmt(t.cdi)}</div>
+        <div class="ytd-sub">${deFora ? 'nas classes comparadas' : 'sua carteira'}: ${fmt(t.mercado)}</div></div>
+      <div class="ytd-card"><div class="ytd-label">Acima da inflação</div><div class="ytd-value ${r.idx.ipca ? (real >= 0 ? 'pos' : 'neg') : ''}">${r.idx.ipca ? sinal(real) : '—'}</div>
+        <div class="ytd-sub">${r.idx.ipca ? (real >= 0 ? 'ganho real, descontado o IPCA' : 'a carteira perdeu para a inflação') : 'informe o IPCA para calcular'}</div></div>
+    </div>
+    <p class="cart-indices-resumo">De ${dt(r.periodo.de)} a ${dt(r.periodo.ate)}, o CDI acumulou ${pc(r.periodo.cdi * 100)}${r.periodo.ipca != null ? ` e o IPCA ${pc(r.periodo.ipca * 100)}` : ''}.${deFora ? ` Ficaram de fora: ${deFora}.` : ''}</p>
+    <div class="cart-indices-classes">${classes}</div>
+    ${rodape}
+  </div>`;
+}
+async function buscarIndicesAgora() {
+  toast('Buscando as taxas no Banco Central…', 'info', 1500);
+  const n = await atualizarIndices();
+  if (n) toast('Taxas do CDI e do IPCA atualizadas', 'success');
+  else toast('Não deu para buscar agora (sem internet?). Você pode informar as taxas à mão.', 'warn', 4500);
+  renderProfitability();
+}
+function openIndicesManual() {
+  const man = lerJSONLocal(INDICES_MANUAL_KEY) || {};
+  const val = v => Number.isFinite(v) ? escapeHtml(String(v).replace('.', ',')) : '';
+  modal.show('Taxas do CDI e do IPCA', `
+    <p class="muted" style="margin:0 0 12px;font-size:.86rem">Para quando não der para buscar no Banco Central — as taxas de lá têm prioridade. O app distribui a taxa anual igualmente pelos meses.</p>
+    <div class="input-group"><label>CDI dos últimos 12 meses (% ao ano)</label><input id="imCdi" type="text" inputmode="decimal" placeholder="ex.: 12,5" value="${val(man.cdiAno)}"></div>
+    <div class="input-group"><label>IPCA dos últimos 12 meses (% ao ano)</label><input id="imIpca" type="text" inputmode="decimal" placeholder="ex.: 4,5" value="${val(man.ipcaAno)}"></div>`, {
+    confirmLabel: 'Salvar taxas',
+    onConfirm: () => {
+      const ler = id => { const v = document.getElementById(id).value.replace('%', '').trim(); return v ? parseMoneyBR(v) : null; };
+      const c = ler('imCdi'), i = ler('imIpca');
+      if (c == null) { salvarJSONLocal(INDICES_MANUAL_KEY, {}); renderProfitability(); toast('Taxas manuais removidas', 'success'); return; }
+      if (!Number.isFinite(c) || c < 0 || c > 100) { toast('CDI inválido, ex.: 12,5', 'error'); return false; }
+      if (i != null && (!Number.isFinite(i) || i <= -50 || i > 100)) { toast('IPCA inválido, ex.: 4,5', 'error'); return false; }
+      salvarJSONLocal(INDICES_MANUAL_KEY, { cdiAno: c, ipcaAno: i });
+      renderProfitability();
+      toast('Taxas salvas', 'success');
+    }
+  });
+}
+window.buscarIndicesAgora = buscarIndicesAgora;
+window.openIndicesManual = openIndicesManual;
 </script>
 </body>
 </html>

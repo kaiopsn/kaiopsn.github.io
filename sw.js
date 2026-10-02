@@ -1,7 +1,7 @@
 // FinanceApp — Service Worker (offline-first, caminhos relativos)
 // IMPORTANTE: a cada atualização, troque o número de VERSION abaixo.
 // Isso faz o app detectar a nova versão e mostrar "Atualização disponível".
-const VERSION = 'v76';
+const VERSION = 'v77';
 const CACHE = 'financeapp-' + VERSION;
 const PRECACHE = [
   './',
@@ -41,6 +41,8 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET' || !e.request.url.startsWith('http')) return;
+  // v77: só o que é do próprio app passa pelo cache (as taxas do Banco Central vão direto à rede)
+  if (new URL(e.request.url).origin !== self.location.origin) return;
 
   // Assets estáticos (js/css/fontes/imagens): cache-first
   if (/\.(woff2?|js|css|png|svg|jpg|jpeg|webp|ico)$/i.test(new URL(e.request.url).pathname)) {
