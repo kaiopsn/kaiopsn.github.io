@@ -2800,15 +2800,15 @@
     <div class="panel">
       <h2>Backup dos dados</h2>
       <p class="muted" style="font-size: 0.88rem; margin-bottom: 14px;">
-        Seus dados são salvos automaticamente neste navegador. Faça backups periódicos pra não perder se trocar de máquina ou limpar o cache.
+        Seus dados são salvos automaticamente neste navegador. Faça backups periódicos pra não perder se trocar de máquina ou limpar o cache. Para trazer lançamentos do banco, baixe o extrato em CSV ou OFX no app ou site do banco e use <strong>Importar extrato</strong> — você revisa tudo antes de gravar.
       </p>
       <div style="display: flex; gap: 10px; flex-wrap: wrap;">
         <button class="btn primary" onclick="exportData()"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v10"/><path d="M8 11l4 4 4-4"/><path d="M5 19h14"/></svg>Exportar dados (JSON)</button>
         <button class="btn" onclick="exportTransactionsCSV()" style="margin-left:8px"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 10h16"/><path d="M10 10v9"/></svg>Exportar CSV (Excel)</button>
         <button class="btn" onclick="document.getElementById('importFile').click()"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10"/><path d="M8 13l4-4 4 4"/><path d="M5 5h14"/></svg>Importar backup</button>
         <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(this)">
-        <button class="btn" onclick="document.getElementById('importOfxFile').click()" title="Importe o extrato do banco (.ofx)"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4.5H4z"/><path d="M5 8.5v8"/><path d="M9.5 8.5v8"/><path d="M14.5 8.5v8"/><path d="M19 8.5v8"/><path d="M3.5 19.5h17"/></svg>Importar extrato (OFX)</button>
-        <input type="file" id="importOfxFile" accept=".ofx,.qfx,text/plain" style="display:none" onchange="importOFX(this)">
+        <button class="btn" onclick="document.getElementById('importOfxFile').click()" title="Importe o extrato do banco (.ofx)"><svg class="btn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4.5H4z"/><path d="M5 8.5v8"/><path d="M9.5 8.5v8"/><path d="M14.5 8.5v8"/><path d="M19 8.5v8"/><path d="M3.5 19.5h17"/></svg>Importar extrato (CSV ou OFX)</button>
+        <input type="file" id="importOfxFile" accept=".csv,.txt,.ofx,.qfx,text/csv,text/plain" style="display:none" onchange="importarExtrato(this)">
       </div>
     </div>
     <div class="panel">
@@ -6213,7 +6213,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v73';
+const APP_VERSION = 'v74';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -6949,6 +6949,7 @@ function sanitizeData(data) {
     if (it.investType != null && !['fixa', 'variavel'].includes(it.investType)) delete it.investType;
     if (it.provento != null && !['isento', 'tributavel'].includes(it.provento)) delete it.provento;
     if (it.conta != null && !isSafeId(it.conta)) delete it.conta;
+    if (it._imp != null && !(typeof it._imp === 'string' && it._imp.length <= 120)) delete it._imp;   // v74
     // Início/fim de recorrentes e parcelamentos: sempre inteiros
     ['startYear', 'startMonth'].forEach(f => {
       if (f in it) { const n = safeInt(it[f]); it[f] = n !== null ? n : (f === 'startYear' ? data.years[0] : 0); }
@@ -12912,6 +12913,22 @@ function renderRecentActivity() {
     border: 1px solid var(--border); border-radius: 10px; font-size: .9rem;
   }
   #quickAddCard .qa-origem label:has(input:checked) { border-color: var(--primary); background: var(--primary-tint); }
+  /* v74 · Importar extrato */
+  #modalBox:has(.extrato-revisao) { max-width: 720px; }
+  .extrato-opcoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 12px; }
+  .ex-inverter { display: flex; gap: 8px; align-items: center; font-size: .84rem; color: var(--text-muted); margin: 2px 0 10px; cursor: pointer; text-transform: none; letter-spacing: 0; font-weight: 400; }
+  .ex-inverter input { width: auto; }
+  .ex-resumo { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .86rem; padding: 8px 0; border-top: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft); margin-bottom: 8px; }
+  .ex-linhas { display: grid; gap: 6px; max-height: 46vh; overflow-y: auto; padding-right: 2px; }
+  .ex-linha { padding: 8px 10px; border-radius: 10px; background: var(--surface-warm); border: 1px solid var(--border-soft); }
+  .ex-linha.ignorada { opacity: .55; }
+  .ex-top { display: flex; justify-content: space-between; gap: 10px; font-size: .88rem; }
+  .ex-desc { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+  .ex-valor { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .ex-baixo { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin-top: 6px; font-size: .8rem; }
+  .ex-baixo select { width: auto; min-width: 0; max-width: 100%; padding: 4px 8px; font-size: .8rem; min-height: 30px; }
+  .ex-data { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .ex-nota { color: var(--text-muted); font-style: italic; }
   /* v73 · Várias contas */
   body.uma-conta .qa-conta-wrap, body.uma-conta .in-conta-wrap { display: none !important; }
   .conta-row { flex-wrap: wrap; }
@@ -14279,6 +14296,341 @@ window.renderAlertasList = renderAlertasList;
     return r;
   };
 })();
+</script>
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// v74 · IMPORTAR EXTRATO (CSV ou OFX) — sem Open Finance, sem servidor.
+// Reconhece o CSV dos principais bancos pelo cabeçalho (Nubank conta e fatura,
+// Inter, Itaú, Banco do Brasil, C6, Bradesco, Santander, Caixa, PicPay,
+// Mercado Pago…) ou pelo conteúdo, e abre uma REVISÃO antes de gravar:
+// gasto / entrada / aplicação / ignorar e a categoria de cada linha.
+// Pagamento de fatura vem marcado para ignorar (o app já desconta a fatura no
+// vencimento) e o que já foi importado não entra de novo.
+// ══════════════════════════════════════════════════════════════════════
+function decodificarArquivo(buf) {
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+  catch (e) { return new TextDecoder('windows-1252').decode(buf); }   // muitos bancos exportam em ANSI
+}
+function splitCSVLinha(linha, sep) {
+  const out = [];
+  let cur = '', q = false;
+  for (let i = 0; i < linha.length; i++) {
+    const ch = linha[i];
+    if (q) {
+      if (ch === '"') { if (linha[i + 1] === '"') { cur += '"'; i++; } else q = false; }
+      else cur += ch;
+    } else if (ch === '"') q = true;
+    else if (ch === sep) { out.push(cur); cur = ''; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out.map(c => c.trim());
+}
+function lerDataExtrato(s) {
+  const t = String(s || '').trim();
+  let m = /^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})/.exec(t);
+  if (m) {
+    let y = +m[3]; if (y < 100) y += 2000;
+    const mo = +m[2], d = +m[1];
+    if (mo >= 1 && mo <= 12 && d >= 1 && d <= new Date(y, mo, 0).getDate()) return isoDay(new Date(y, mo - 1, d));
+    return null;
+  }
+  m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(t);
+  if (m && +m[2] >= 1 && +m[2] <= 12) return isoDay(new Date(+m[1], +m[2] - 1, +m[3]));
+  return null;
+}
+function lerValorExtrato(s) {
+  let t = String(s == null ? '' : s).trim();
+  if (!t) return NaN;
+  let sinal = 1;
+  if (/^\(.*\)$/.test(t)) { sinal = -1; t = t.slice(1, -1); }
+  const dc = /\s*([DC])$/i.exec(t);
+  if (dc && /\d/.test(t.slice(0, dc.index))) { if (dc[1].toUpperCase() === 'D') sinal = -sinal; t = t.slice(0, dc.index); }
+  t = t.replace(/R\$/gi, '').replace(/\s/g, '');
+  const v = parseMoneyBR(t);
+  return Number.isFinite(v) ? v * sinal : NaN;
+}
+
+// CSV → { formato, tipoSugerido: 'conta' | 'fatura', linhas: [{ date, desc, valor }] }
+function parseCSVExtrato(texto) {
+  const brutas = texto.replace(/^\uFEFF/, '').split(/\r?\n/).filter(l => l.trim());
+  if (!brutas.length) return null;
+  const amostra = brutas.slice(0, 20);
+  const conta = (l, c) => splitCSVLinha(l, c).length - 1;
+  const sep = [';', ',', '\t'].map(c => ({ c, n: amostra.filter(l => conta(l, c) >= 1).length, med: amostra.reduce((a, l) => a + conta(l, c), 0) }))
+    .sort((a, b) => b.n - a.n || b.med - a.med)[0].c;
+  const linhas = brutas.map(l => splitCSVLinha(l, sep));
+  const H = c => normTok(c).replace(/\s+/g, ' ');
+  const ehData = h => /^(data|date|dt)\b|data (do |de )?(lancamento|movimento|mov|compra|transacao)/.test(h);
+  const ehValor = h => /^(valor|amount|quantia|montante)\b|valor \(r\$\)|^vlr/.test(h);
+  // Cabeçalho: a 1ª linha (entre as 15 primeiras) com coluna de data e de valor
+  let ih = -1;
+  for (let i = 0; i < Math.min(15, linhas.length); i++) {
+    const hs = linhas[i].map(H);
+    if (hs.some(ehData) && (hs.some(ehValor) || hs.some(h => /debito|credito|entrada|saida/.test(h)))) { ih = i; break; }
+  }
+  let col = { data: -1, desc: [], valor: -1, debito: -1, credito: -1, tipo: -1 };
+  let formato = 'CSV';
+  if (ih >= 0) {
+    const hs = linhas[ih].map(H);
+    col.data = hs.findIndex(ehData);
+    col.valor = hs.findIndex((h, i) => i !== col.data && ehValor(h));
+    col.debito = hs.findIndex(h => /^(debito|debitos|saida|saidas)\b/.test(h));
+    col.credito = hs.findIndex(h => /^(credito|creditos|entrada|entradas)\b/.test(h));
+    col.tipo = hs.findIndex(h => /^(tipo|natureza|d\/c|c\/d|operacao)\b|tipo (de )?lancamento/.test(h));
+    // Descrição: as melhores colunas de texto, em ordem de preferência
+    const PREF = [/descri/, /estabelecimento/, /^title$/, /historico/, /lancamento/, /detalhe/, /memo|complemento/];
+    const usadas = new Set([col.data, col.valor, col.debito, col.credito, col.tipo]);
+    PREF.forEach(rx => hs.forEach((h, i) => { if (!usadas.has(i) && rx.test(h) && !/saldo|identificador|documento|n[ºo°]/.test(h)) { col.desc.push(i); usadas.add(i); } }));
+    if (hs.includes('title') && hs.includes('amount')) formato = 'Nubank (fatura do cartão)';
+    else if (hs.includes('identificador') && hs.includes('descricao')) formato = 'Nubank (conta)';
+    else if (hs.some(h => /^historico$/.test(h)) && hs.some(h => /^descricao$/.test(h))) formato = 'Inter';
+    else if (hs.some(h => /tipo lancamento/.test(h))) formato = 'Banco do Brasil';
+    else if (hs.some(h => /ag\.?\/origem/.test(h))) formato = 'Itaú';
+  } else {
+    // Sem cabeçalho: descobre as colunas pelo conteúdo
+    const corpo = linhas.slice(0, 40), n = Math.max(...corpo.map(l => l.length));
+    const taxa = (i, f) => corpo.filter(l => l[i] != null && f(l[i])).length / corpo.length;
+    let melhorData = -1, melhorValor = -1;
+    for (let i = 0; i < n; i++) if (melhorData < 0 && taxa(i, v => !!lerDataExtrato(v)) > 0.6) melhorData = i;
+    for (let i = n - 1; i >= 0; i--) if (i !== melhorData && melhorValor < 0 && taxa(i, v => /\d/.test(v) && Number.isFinite(lerValorExtrato(v))) > 0.6) melhorValor = i;
+    col.data = melhorData; col.valor = melhorValor;
+    let maior = -1, tam = -1;
+    for (let i = 0; i < n; i++) if (i !== melhorData && i !== melhorValor) {
+      const m = corpo.reduce((a, l) => a + String(l[i] || '').length, 0);
+      if (m > tam) { tam = m; maior = i; }
+    }
+    if (maior >= 0) col.desc = [maior];
+    ih = -1;
+  }
+  if (col.data < 0 || (col.valor < 0 && col.debito < 0 && col.credito < 0)) return null;
+  const out = [];
+  linhas.slice(ih + 1).forEach(l => {
+    const date = lerDataExtrato(l[col.data]);
+    if (!date) return;
+    let valor;
+    if (col.valor >= 0) valor = lerValorExtrato(l[col.valor]);
+    if ((!Number.isFinite(valor) || col.valor < 0) && (col.debito >= 0 || col.credito >= 0)) {
+      const deb = col.debito >= 0 ? Math.abs(lerValorExtrato(l[col.debito])) || 0 : 0;
+      const cre = col.credito >= 0 ? Math.abs(lerValorExtrato(l[col.credito])) || 0 : 0;
+      valor = cre - deb;
+    }
+    if (!Number.isFinite(valor) || Math.abs(valor) < 0.005) return;
+    if (col.tipo >= 0) {
+      const tp = normTok(l[col.tipo] || '');
+      if (/^(d|deb|saida|sa[ií]da|debito)/.test(tp)) valor = -Math.abs(valor);
+      else if (/^(c|cred|entrada|credito)/.test(tp)) valor = Math.abs(valor);
+    }
+    const partes = col.desc.map(i => l[i]).filter(x => x && x.trim());
+    const desc = [...new Set(partes)].join(' · ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Lançamento do extrato';
+    if (/^saldo\b/i.test(desc)) return;   // "Saldo anterior", "Saldo do dia"
+    out.push({ date, desc, valor });
+  });
+  return { formato, tipoSugerido: formato === 'Nubank (fatura do cartão)' ? 'fatura' : 'conta', linhas: out };
+}
+
+// Chaves do que já existe, para não importar duas vezes
+function assinaturaExtrato(date, valor, desc) {
+  return `${date}|${Math.round(Math.abs(valor) * 100)}|${radarDescKey(desc).slice(0, 40)}`;
+}
+function chavesExistentes() {
+  const imp = new Set(), sig = new Set();
+  const ve = it => {
+    if (!it) return;
+    if (it._imp) imp.add(it._imp);
+    if (it._fitid) imp.add('ofx:' + it._fitid);
+    const d = isoDay(it.date);
+    if (d) sig.add(assinaturaExtrato(d, it.value, it.desc));
+  };
+  Object.values(db.events || {}).forEach(a => (a || []).forEach(ve));
+  Object.values(db.income || {}).forEach(a => (a || []).forEach(ve));
+  return { imp, sig };
+}
+
+let _extrato = null;   // revisão em andamento
+function importarExtrato(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    input.value = '';
+    try {
+      const texto = decodificarArquivo(reader.result);
+      let base;
+      if (/<OFX>|<STMTTRN>/i.test(texto)) {
+        base = { formato: 'OFX', tipoSugerido: 'conta', linhas: parseOFX(texto).map(t => ({
+          date: isoDay(new Date(t.year, t.month, t.day)), desc: t.desc, valor: t.amount, fitid: t.fitid })) };
+      } else base = parseCSVExtrato(texto);
+      if (!base || !base.linhas.length) return toast('Não reconheci lançamentos neste arquivo. Envie o extrato em CSV ou OFX do banco.', 'error', 5000);
+      abrirRevisaoExtrato(base, file.name);
+    } catch (e) {
+      toast('Não consegui ler o arquivo: ' + e.message, 'error');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function classificarLinhaExtrato(l, tipoExtrato) {
+  const d = normTok(l.desc);
+  if (tipoExtrato === 'fatura') {
+    if (l.valor < 0) return { acao: 'ignorar', nota: 'pagamento ou estorno' };
+    return { acao: 'gasto' };
+  }
+  if (l.valor < 0) {
+    if (/pagamento.*fatura|fatura.*(pag|cartao)|pgto.*fat|pag fat|pagto fatura/.test(d)) return { acao: 'ignorar', nota: 'pagamento de fatura — o app já desconta no vencimento' };
+    if (/mesma titularidade|mesmo titular|entre contas/.test(d)) return { acao: 'ignorar', nota: 'entre suas contas' };
+    if (/aplicacao|\brdb\b|\bcdb\b|poupanca|tesouro|investimento|caixinha|guardar dinheiro|porquinho/.test(d)) return { acao: 'aplicacao' };
+    return { acao: 'gasto' };
+  }
+  if (/resgate|mesma titularidade|mesmo titular|entre contas/.test(d)) return { acao: 'ignorar', nota: /resgate/.test(d) ? 'resgate de investimento' : 'entre suas contas' };
+  return { acao: 'entrada' };
+}
+
+function abrirRevisaoExtrato(base, nomeArquivo) {
+  const ex = chavesExistentes();
+  const vistos = {};
+  const catPadrao = (db.categories.find(c => /despesas eventuais|outros/i.test(c.name)) || db.categories[0] || {}).name || '';
+  const cartoes = getMethods().filter(m => m.kind === 'credit');
+  _extrato = {
+    formato: base.formato, arquivo: nomeArquivo,
+    tipo: base.tipoSugerido === 'fatura' && cartoes.length ? 'fatura' : 'conta',
+    inverter: false,
+    linhas: base.linhas.map((l, i) => {
+      const sig = assinaturaExtrato(l.date, l.valor, l.desc);
+      vistos[sig] = (vistos[sig] || 0) + 1;
+      const imp = l.fitid ? 'ofx:' + l.fitid : `csv:${sig}#${vistos[sig]}`;
+      const dup = ex.imp.has(imp) || (vistos[sig] === 1 && ex.sig.has(sig));
+      const sugerida = autoCategorize(l.desc);
+      return { ...l, i, imp, dup, catSugerida: sugerida || catPadrao, cat: sugerida || catPadrao };
+    })
+  };
+  reclassificarExtrato();
+  const cs = getContas();
+  const instant = getMethods().filter(m => m.kind === 'instant');
+  modal.show('Revisar extrato', `
+    <div class="extrato-revisao">
+      <p class="muted" style="margin:0 0 10px;font-size:.86rem">${escapeHtml(nomeArquivo)} · formato ${escapeHtml(base.formato)} · ${base.linhas.length} lançamentos de ${ddmm(base.linhas.map(l => l.date).sort()[0])} a ${ddmm(base.linhas.map(l => l.date).sort().slice(-1)[0])}.</p>
+      <div class="extrato-opcoes">
+        <div class="input-group"><label>Este arquivo é</label>
+          <select id="exTipo" onchange="extratoMudouTipo(this.value)">
+            <option value="conta" ${_extrato.tipo === 'conta' ? 'selected' : ''}>Extrato de conta</option>
+            ${cartoes.length ? `<option value="fatura" ${_extrato.tipo === 'fatura' ? 'selected' : ''}>Fatura de cartão de crédito</option>` : ''}
+          </select></div>
+        <div class="input-group ex-so-conta" ${cs.length > 1 ? '' : 'style="display:none"'}><label>Conta</label>
+          <select id="exConta" onchange="extratoMudouConta(this.value)">${cs.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.nome)}</option>`).join('')}</select></div>
+        <div class="input-group ex-so-conta"><label>Gastos saem como</label>
+          <select id="exMetodo">${instant.map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.label)}</option>`).join('')}</select></div>
+        <div class="input-group ex-so-fatura" style="display:none"><label>Cartão</label>
+          <select id="exCartao">${cartoes.map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.label)}</option>`).join('')}</select></div>
+      </div>
+      <label class="ex-inverter"><input type="checkbox" id="exInverter" onchange="extratoInverter(this.checked)"> Os gastos vêm com valor positivo neste arquivo</label>
+      <div id="exResumo" class="ex-resumo"></div>
+      <div id="exLinhas" class="ex-linhas"></div>
+    </div>`, {
+    confirmLabel: 'Importar',
+    onConfirm: () => confirmarImportacaoExtrato()
+  });
+  extratoMudouTipo(_extrato.tipo);
+  extratoMudouConta(document.getElementById('exConta')?.value || cs[0].id);
+}
+
+// Ação padrão de cada linha (respeita o que a pessoa já mudou)
+function reclassificarExtrato() {
+  _extrato.linhas.forEach(l => {
+    const v = _extrato.inverter ? -l.valor : l.valor;
+    const c = l.dup ? { acao: 'ignorar', nota: 'já importado' } : classificarLinhaExtrato({ ...l, valor: v }, _extrato.tipo);
+    l.v = v;
+    if (!l.acaoManual) l.acao = c.acao;
+    l.nota = c.nota || '';
+  });
+}
+function extratoMudouTipo(tipo) {
+  _extrato.tipo = tipo;
+  document.querySelectorAll('#modalBox .ex-so-conta').forEach(e => { e.style.display = tipo === 'conta' && !(e.querySelector('#exConta') && getContas().length < 2) ? '' : 'none'; });
+  document.querySelectorAll('#modalBox .ex-so-fatura').forEach(e => { e.style.display = tipo === 'fatura' ? '' : 'none'; });
+  _extrato.linhas.forEach(l => { l.acaoManual = false; });
+  reclassificarExtrato();
+  renderLinhasExtrato();
+}
+function extratoMudouConta(contaId) {
+  // a forma de pagamento padrão é a ligada a essa conta (PIX/débito do banco)
+  const sel = document.getElementById('exMetodo');
+  if (!sel) return;
+  const ligada = getMethods().find(m => m.kind === 'instant' && contaDoMetodo(m.id) === contaId);
+  if (ligada) sel.value = ligada.id;
+}
+function extratoInverter(v) { _extrato.inverter = !!v; reclassificarExtrato(); renderLinhasExtrato(); }
+function extratoAcao(i, acao) { const l = _extrato.linhas[i]; l.acao = acao; l.acaoManual = true; renderLinhasExtrato(); }
+function extratoCat(i, cat) { _extrato.linhas[i].cat = cat; }
+
+function renderLinhasExtrato() {
+  const el = document.getElementById('exLinhas');
+  if (!el) return;
+  const cats = db.categories.map(c => c.name);
+  const ACOES = _extrato.tipo === 'fatura'
+    ? [['gasto', 'Gasto'], ['ignorar', 'Ignorar']]
+    : [['gasto', 'Gasto'], ['entrada', 'Entrada'], ['aplicacao', 'Aplicação'], ['ignorar', 'Ignorar']];
+  el.innerHTML = _extrato.linhas.map(l => `
+    <div class="ex-linha ${l.acao === 'ignorar' ? 'ignorada' : ''}">
+      <div class="ex-top"><span class="ex-desc">${escapeHtml(l.desc)}</span><span class="ex-valor ${l.v < 0 ? 'neg' : 'pos'}">${l.v < 0 ? '−' : '+'}${fmt(Math.abs(l.v))}</span></div>
+      <div class="ex-baixo">
+        <span class="ex-data">${ddmm(l.date)}</span>
+        <select onchange="extratoAcao(${l.i}, this.value)" aria-label="O que fazer">${ACOES.map(([k, r]) => `<option value="${k}" ${l.acao === k ? 'selected' : ''}>${r}</option>`).join('')}</select>
+        ${l.acao === 'gasto' ? `<select onchange="extratoCat(${l.i}, this.value)" aria-label="Categoria">${cats.map(c => `<option value="${escapeHtml(c)}" ${c === l.cat ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}</select>` : ''}
+        ${l.nota ? `<span class="ex-nota">${escapeHtml(l.nota)}</span>` : ''}
+      </div>
+    </div>`).join('');
+  const soma = a => _extrato.linhas.filter(l => l.acao === a).reduce((t, l) => t + Math.abs(l.v), 0);
+  const n = a => _extrato.linhas.filter(l => l.acao === a).length;
+  const pl = (q, um, varios) => `${q} ${q === 1 ? um : varios}`;
+  document.getElementById('exResumo').innerHTML = [
+    n('gasto') ? `<span>${pl(n('gasto'), 'gasto', 'gastos')} <b>${fmt(soma('gasto'))}</b></span>` : '',
+    n('entrada') ? `<span>${pl(n('entrada'), 'entrada', 'entradas')} <b>${fmt(soma('entrada'))}</b></span>` : '',
+    n('aplicacao') ? `<span>${pl(n('aplicacao'), 'aplicação', 'aplicações')} <b>${fmt(soma('aplicacao'))}</b></span>` : '',
+    n('ignorar') ? `<span class="muted">${pl(n('ignorar'), 'ignorado', 'ignorados')}</span>` : ''
+  ].filter(Boolean).join('');
+}
+
+function confirmarImportacaoExtrato() {
+  if (!_extrato) return;
+  const tipo = _extrato.tipo;
+  const conta = getContas().length > 1 ? document.getElementById('exConta').value : null;
+  const metodo = tipo === 'fatura' ? document.getElementById('exCartao').value : document.getElementById('exMetodo').value;
+  if (!metodo) { toast(tipo === 'fatura' ? 'Cadastre o cartão em Categorias e pagamentos' : 'Cadastre uma forma de pagamento à vista', 'error'); return false; }
+  const reserva = (getInvestClasses().find(c => c.reserve) || getInvestClasses()[0] || {}).id;
+  const base = Date.now();
+  let n = 0;
+  _extrato.linhas.forEach(l => {
+    if (l.acao === 'ignorar') return;
+    const r = refFromDate(l.date);
+    ensureYear(r.y);
+    const key = getKey(r.y, r.m);
+    const id = base + n++;
+    const valor = Math.round(Math.abs(l.v) * 100) / 100;
+    if (l.acao === 'entrada') {
+      (db.income[key] = db.income[key] || []).push({ id, desc: l.desc, value: valor, date: l.date, _imp: l.imp, ...(conta ? { conta } : {}) });
+    } else if (l.acao === 'aplicacao') {
+      (db.events[key] = db.events[key] || []).push({ id, desc: l.desc, value: valor, cat: '', method: formaInvestimento(), type: 'eventual', date: l.date, investClass: reserva, _imp: l.imp, ...(conta ? { conta } : {}) });
+    } else {
+      if (l.cat !== l.catSugerida) aprenderCategoria(l.desc, l.cat);   // corrigiu na revisão → o app aprende
+      (db.events[key] = db.events[key] || []).push({ id, desc: l.desc, value: valor, cat: l.cat, method: metodo, type: 'eventual', date: l.date, _imp: l.imp });
+    }
+  });
+  _extrato = null;
+  saveDB();
+  if (typeof rebuildYearSelectors === 'function') rebuildYearSelectors();
+  if (typeof renderAll === 'function') renderAll();
+  toast(n ? `${n} lançamento${n === 1 ? '' : 's'} importado${n === 1 ? '' : 's'} do extrato` : 'Nada importado', n ? 'success' : 'info', 4000);
+}
+// O botão antigo de OFX passa pelo mesmo caminho (com revisão)
+function importOFX(input) { importarExtrato(input); }
+window.importOFX = importOFX;
+window.importarExtrato = importarExtrato;
+window.extratoMudouTipo = extratoMudouTipo;
+window.extratoMudouConta = extratoMudouConta;
+window.extratoInverter = extratoInverter;
+window.extratoAcao = extratoAcao;
+window.extratoCat = extratoCat;
 </script>
 </body>
 </html>
