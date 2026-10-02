@@ -4563,6 +4563,10 @@ const AUTO_CAT_RULES = [
 
 function autoCategorize(desc) {
   if (!desc) return null;
+  // v69: o que a pessoa já corrigiu vale antes das regras
+  const aprendida = (typeof db !== 'undefined' && db && db.catAprendidas && typeof radarMerchant === 'function')
+    ? db.catAprendidas[radarMerchant(desc)] : null;
+  if (aprendida && (db.categories || []).some(c => c.name === aprendida)) return aprendida;
   const cats = (typeof db !== 'undefined' && db && Array.isArray(db.categories)) ? db.categories : [];
   const norm = t => String(t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const achar = nome => cats.find(c => norm(c.name) === norm(nome));
@@ -5560,6 +5564,7 @@ async function submitQuickAdd() {
     const cat = document.getElementById('qaCat').value;
     const method = document.getElementById('qaMethod').value;
     if (!cat) { document.getElementById('qaCat').focus(); return toast('Escolha a categoria', 'error'); }
+    if (document.getElementById('qaCat').dataset.userSet) aprenderCategoria(desc, cat);   // v69
     ensureYear(ref.y);
     if (!db.events[key]) db.events[key] = [];
     db.events[key].push({ id: Date.now(), desc, value, cat, method, type: 'eventual', date });
@@ -6150,7 +6155,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v68';
+const APP_VERSION = 'v69';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -6976,6 +6981,21 @@ function sanitizeData(data) {
     data.chatHistory = data.chatHistory.filter(m => obj(m) && typeof m.html === 'string');
     if (!obj(data.paidStatus)) data.paidStatus = {};
     if (data.custoVidaMensal != null) { const v = safeNum(data.custoVidaMensal, 0); data.custoVidaMensal = v > 0 ? v : null; }
+    // v69: categorias aprendidas e avisos dispensados do Radar
+    if (data.catAprendidas != null) {
+      const ca = {};
+      if (obj(data.catAprendidas)) Object.keys(data.catAprendidas).slice(0, 500).forEach(k => {
+        if (k.length <= 60 && typeof data.catAprendidas[k] === 'string') ca[k] = data.catAprendidas[k];
+      });
+      data.catAprendidas = ca;
+    }
+    if (data.radar != null) {
+      const ig = {};
+      if (obj(data.radar) && obj(data.radar.ignorados)) Object.entries(data.radar.ignorados)
+        .filter(([k, v]) => k.length <= 200 && typeof v === 'string').sort((a, b) => b[1].localeCompare(a[1])).slice(0, 300)
+        .forEach(([k, v]) => { ig[k] = v; });
+      data.radar = { ignorados: ig };
+    }
     if (!Array.isArray(data.deletedIds)) data.deletedIds = [];
   });
   return data;
@@ -9478,7 +9498,10 @@ function editTransactionModal(item) {
       // Atualizar campos básicos
       item.desc = newDesc;
       item.value = newVal;
-      item.cat = document.getElementById('editCat').value;
+      const catNova = document.getElementById('editCat').value;
+      // v69: corrigir a categoria ensina o app (próximas vezes do mesmo lugar)
+      if (catNova !== item.cat && methodKind(document.getElementById('editMethod').value) !== 'invest') aprenderCategoria(newDesc, catNova);
+      item.cat = catNova;
       item.method = document.getElementById('editMethod').value;
       if (methodKind(item.method) === 'invest') item.investClass = document.getElementById('editInvestClass').value;
       else delete item.investClass;
@@ -12561,6 +12584,36 @@ function renderRecentActivity() {
     border: 1px solid var(--border); border-radius: 10px; font-size: .9rem;
   }
   #quickAddCard .qa-origem label:has(input:checked) { border-color: var(--primary); background: var(--primary-tint); }
+  /* v69 · Radar */
+  .radar { padding-bottom: 14px; }
+  .radar-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+  .radar-head h2 { margin: 0; }
+  .radar-sub { color: var(--text-muted); font-size: .82rem; }
+  .radar-grupo + .radar-grupo { margin-top: 10px; }
+  .radar-ritmo { font-size: .7rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-soft); margin: 4px 0 6px; }
+  .radar-item {
+    display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: start;
+    padding: 12px 12px 12px 14px; border-radius: 14px; background: var(--surface-warm);
+    border: 1px solid var(--border-soft); border-left: 3px solid var(--border); margin-bottom: 8px;
+  }
+  .radar-item.nivel-alerta { border-left-color: var(--neg); }
+  .radar-item.nivel-aviso { border-left-color: var(--accent); }
+  .radar-item.nivel-info { border-left-color: var(--primary); }
+  .radar-oculto { display: none; }
+  .radar-titulo { font-weight: 600; font-size: .92rem; line-height: 1.3; }
+  .radar-texto { color: var(--text-muted); font-size: .84rem; margin-top: 3px; line-height: 1.4; }
+  .radar-acoes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .radar-acoes .btn { min-height: 34px; padding: 6px 12px; font-size: .82rem; }
+  .radar-x {
+    border: 0; background: transparent; color: var(--text-soft); font-size: 1.25rem; line-height: 1;
+    width: 32px; height: 32px; border-radius: 50%; cursor: pointer; margin: -4px -4px 0 0;
+  }
+  .radar-x:hover { background: var(--bg-soft); color: var(--text); }
+  .radar-lista { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 4px; }
+  .radar-lista li { display: flex; justify-content: space-between; gap: 10px; color: var(--text); font-size: .84rem; flex-wrap: wrap; }
+  .radar-mini .link-btn { font-size: .8rem; padding: 0; text-decoration: underline; text-underline-offset: 2px; }
+  .radar-ok { color: var(--text-muted); font-size: .86rem; margin: 0; }
+  .radar-mais { margin-top: 4px; font-size: .84rem; }
   /* v68 · Sua carteira */
   .cart-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
   .cart-head h2 { margin: 0; }
@@ -12608,6 +12661,346 @@ function renderRecentActivity() {
       });
     } catch (e) { /* formulário ausente */ }
     return r;
+  };
+})();
+</script>
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// v69 · RADAR — o app avisa o que merece atenção, em três ritmos:
+//   Hoje: cobrança repetida, gasto fora do padrão, conta a vencer, orçamento
+//   Esta quinzena: categorias que sobem mês a mês ou correm acima do normal
+//   Este mês: projeção do fechamento e cobranças que se repetem (assinaturas)
+// Inspirado nos agentes do Pierre, mas 100% local: nada sai do aparelho.
+// ══════════════════════════════════════════════════════════════════════
+Object.assign(window.ICON_CHIP, {
+  '🔁': ['#6D5EF6', 'rgba(109,94,246,.15)', '<path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/>'],
+  '📅': ['#0EA5E9', 'rgba(14,165,233,.15)', '<rect x="4" y="5" width="16" height="16" rx="2"/><path d="M4 9.5h16"/><path d="M8 3v4"/><path d="M16 3v4"/>'],
+  '👯': ['#F04438', 'rgba(240,68,56,.15)', '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>'],
+});
+
+// Chave de estabelecimento: 2 primeiras palavras, sem acento nem números.
+function radarMerchant(desc) {
+  const stop = new Set(['de', 'da', 'do', 'das', 'dos', 'e', 'com', 'pra', 'para', 'no', 'na', 'em', 'o', 'a']);
+  return String(desc || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(t => t.length >= 2 && !stop.has(t)).slice(0, 2).join(' ');
+}
+function radarDescKey(desc) {
+  return String(desc || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+}
+const radarDiasNoMes = (y, m) => new Date(y, m + 1, 0).getDate();
+const radarMediana = arr => { const a = [...arr].sort((x, y) => x - y); return a.length ? a[Math.floor(a.length / 2)] : 0; };
+
+// "Sherlock": quando a pessoa corrige a categoria, o app aprende.
+function aprenderCategoria(desc, cat) {
+  const k = radarMerchant(desc);
+  if (!k || !cat || !(db.categories || []).some(c => c.name === cat)) return;
+  if (!db.catAprendidas || typeof db.catAprendidas !== 'object') db.catAprendidas = {};
+  db.catAprendidas[k] = cat;
+}
+
+// Lançamentos avulsos dos últimos `meses` meses (0 = só o atual), com data.
+function radarEventos(hoje, meses) {
+  const fim = hoje.getFullYear() * 12 + hoje.getMonth();
+  const out = [];
+  for (let t = fim - meses; t <= fim; t++) {
+    (db.events[getKey(Math.floor(t / 12), t % 12)] || []).forEach(it => {
+      const d = isoDay(it.date);
+      out.push({ it, t, d, ms: d ? parseLocalDate(d).getTime() : null });
+    });
+  }
+  return out;
+}
+
+// HOJE · mesma descrição e mesmo valor em até 3 dias
+function radarDuplicadas(hoje) {
+  const limite = hoje.getTime() - 40 * 864e5;
+  const grupos = {};
+  radarEventos(hoje, 1).filter(x => x.ms != null && x.ms >= limite && x.it.id != null).forEach(x => {
+    const k = radarDescKey(x.it.desc) + '|' + Math.round(x.it.value * 100);
+    (grupos[k] = grupos[k] || []).push(x);
+  });
+  const out = [];
+  Object.values(grupos).forEach(g => {
+    g.sort((a, b) => a.ms - b.ms);
+    for (let i = 1; i < g.length; i++) if (g[i].ms - g[i - 1].ms <= 3 * 864e5) out.push([g[i - 1].it, g[i].it]);
+  });
+  return out;
+}
+
+// HOJE · gasto da última semana muito acima do típico da categoria
+function radarForaDoPadrao(hoje) {
+  const Y = hoje.getFullYear(), M = hoje.getMonth();
+  const base = {};
+  for (let i = 0; i <= 3; i++) {
+    const t = Y * 12 + M - i;
+    getMonthData(Math.floor(t / 12), t % 12).items.forEach(it => { (base[it.cat] = base[it.cat] || []).push(it); });
+  }
+  const corte = hoje.getTime() - 7 * 864e5;
+  const out = [];
+  radarEventos(hoje, 1).forEach(({ it, ms }) => {
+    if (ms == null || ms < corte || ms > hoje.getTime() || methodKind(it.method) === 'invest') return;
+    const outros = (base[it.cat] || []).filter(x => x.id !== it.id).map(x => x.value);
+    if (outros.length < 4) return;
+    const med = radarMediana(outros);
+    if (med > 0 && it.value >= Math.max(3 * med, med + 100)) out.push({ it, med, vezes: it.value / med });
+  });
+  return out.sort((a, b) => b.vezes - a.vezes).slice(0, 3);
+}
+
+// HOJE · contas e faturas que vencem nos próximos 5 dias
+function radarAVencer(hoje) {
+  const Y = hoje.getFullYear(), M = hoje.getMonth(), D = hoje.getDate(), ult = radarDiasNoMes(Y, M);
+  const out = [];
+  getMonthData(Y, M).items.forEach(it => {
+    if ((it.type !== 'fixo' && it.type !== 'parc') || methodKind(it.method) === 'credit') return;
+    const s = isoDay(it.date);
+    if (!s) return;
+    const dia = Math.min(ult, Number(s.slice(8, 10)) || 1);
+    if (dia < D || dia > D + 5 || getPaidStatus(it.id, Y, M)) return;
+    out.push({ tipo: 'conta', it, dia });
+  });
+  faturasPagasEm(Y, M).forEach(f => { if (f.dia >= D && f.dia <= D + 5) out.push({ tipo: 'fatura', f, dia: f.dia }); });
+  return out.sort((a, b) => a.dia - b.dia);
+}
+
+// HOJE · orçamento da categoria em 80% ou estourado
+function radarOrcamento(hoje) {
+  const Y = hoje.getFullYear(), M = hoje.getMonth();
+  const gasto = groupByCat(getMonthData(Y, M).items);
+  return (db.categories || []).filter(c => c.budget > 0).map(c => ({ c, usado: gasto[c.name] || 0, pct: (gasto[c.name] || 0) / c.budget }))
+    .filter(x => x.pct >= 0.8).sort((a, b) => b.pct - a.pct);
+}
+
+// QUINZENA · categorias que sobem 3 meses seguidos ou correm acima do normal
+function radarTendencias(hoje) {
+  const Y = hoje.getFullYear(), M = hoje.getMonth(), D = hoje.getDate(), dias = radarDiasNoMes(Y, M);
+  const meses = [3, 2, 1].map(i => { const t = Y * 12 + M - i; return groupByCat(getMonthData(Math.floor(t / 12), t % 12).items); });
+  const out = [];
+  new Set(meses.flatMap(m => Object.keys(m))).forEach(cat => {
+    const v = meses.map(m => m[cat] || 0);
+    if (v[0] > 0 && v[1] > v[0] && v[2] > v[1] && v[2] >= v[0] * 1.3 && v[2] - v[0] >= 100) out.push({ tipo: 'sobe', cat, v });
+  });
+  if (D >= 7) {
+    const fixo = {}, variavel = {};
+    getMonthData(Y, M).items.forEach(it => {
+      const alvo = (it.type === 'fixo' || it.type === 'parc') ? fixo : variavel;
+      alvo[it.cat] = (alvo[it.cat] || 0) + it.value;
+    });
+    Object.keys(variavel).forEach(cat => {
+      const com = meses.filter(m => (m[cat] || 0) > 0);
+      if (com.length < 2) return;
+      const media = com.reduce((a, m) => a + m[cat], 0) / com.length;
+      const proj = (fixo[cat] || 0) + variavel[cat] / D * dias;
+      if (out.some(o => o.cat === cat)) return;
+      if (proj >= media * 1.4 && proj - media >= 100) out.push({ tipo: 'ritmo', cat, proj, media });
+    });
+  }
+  return out.slice(0, 3);
+}
+
+// MÊS · no ritmo atual, como o mês fecha
+function radarProjecao(hoje) {
+  const Y = hoje.getFullYear(), M = hoje.getMonth(), D = hoje.getDate(), dias = radarDiasNoMes(Y, M);
+  if (D < 3) return null;
+  const d = getMonthData(Y, M);
+  if (!d.entradas && !d.items.length) return null;
+  let fixos = 0, variaveis = 0;
+  d.items.forEach(it => { if (it.type === 'fixo' || it.type === 'parc') fixos += it.value; else variaveis += it.value; });
+  const projGastos = fixos + (D >= dias ? variaveis : variaveis / D * dias);
+  return { projGastos, sobra: d.entradas - projGastos, entradas: d.entradas, ritmoDia: variaveis / D };
+}
+
+// MÊS · cobranças que se repetem todo mês com o mesmo valor (assinaturas)
+function radarAssinaturas(hoje) {
+  const Y = hoje.getFullYear(), M = hoje.getMonth(), agora = Y * 12 + M;
+  const ativos = (db.recurringExpenses || []).filter(r => r.endYear == null || (r.endYear * 12 + r.endMonth) >= agora);
+  const chavesFixas = new Set(ativos.map(r => radarMerchant(r.desc)));
+  const porMerc = {};
+  // Categorias que variam por natureza não viram "assinatura" (um Uber por mês)
+  const variavel = /mercado|uber|transporte|ifood|restaurante|gasolina|combust|feira|farm/i;
+  radarEventos(hoje, 3).forEach(({ it, t, d }) => {
+    if (methodKind(it.method) === 'invest' || variavel.test(it.cat || '')) return;
+    const k = radarMerchant(it.desc);
+    if (!k || chavesFixas.has(k)) return;
+    const g = (porMerc[k] = porMerc[k] || { meses: {}, itens: [] });
+    g.meses[t] = (g.meses[t] || 0) + 1;
+    g.itens.push({ it, t, d });
+  });
+  const detectadas = [];
+  Object.entries(porMerc).forEach(([k, g]) => {
+    const ts = Object.keys(g.meses).map(Number).sort((a, b) => a - b);
+    if (ts.length < 2 || ts.some(t => g.meses[t] > 1)) return;     // uma cobrança por mês
+    let seq = 1, melhor = 1;
+    for (let i = 1; i < ts.length; i++) { seq = ts[i] === ts[i - 1] + 1 ? seq + 1 : 1; melhor = Math.max(melhor, seq); }
+    if (melhor < 2 || ts[ts.length - 1] < agora - 1) return;          // seguidas e ainda ativa
+    const vals = g.itens.map(x => x.it.value), med = radarMediana(vals);
+    if (vals.some(v => Math.abs(v - med) > med * 0.15)) return;       // valor estável
+    const ultimo = g.itens.sort((a, b) => (b.d || '').localeCompare(a.d || ''))[0].it;
+    detectadas.push({ chave: k, desc: ultimo.desc, valor: med, ultimo });
+  });
+  const cadastradas = ativos.filter(r => /assinatura/i.test(r.cat || ''));
+  return { detectadas, cadastradas };
+}
+
+// Monta a lista de avisos (já sem os dispensados)
+function computeRadar() {
+  const hoje = new Date();
+  const Y = hoje.getFullYear(), M = hoje.getMonth(), D = hoje.getDate();
+  const ign = (db.radar && db.radar.ignorados) || {};
+  const mesNome = monthsFull[M].toLowerCase();
+  const itens = [];
+  const add = x => { if (!ign[x.id]) itens.push(x); };
+  const dt = s => s ? s.split('-').reverse().slice(0, 2).join('/') : '';
+
+  radarDuplicadas(hoje).forEach(([a, b]) => add({
+    id: `dup:${Math.min(a.id, b.id)}:${Math.max(a.id, b.id)}`, ritmo: 'hoje', nivel: 'alerta', icone: '👯',
+    titulo: 'Cobrança repetida?',
+    texto: `<strong>${escapeHtml(b.desc)}</strong> de ${fmt(b.value)} aparece em ${dt(isoDay(a.date))} e ${dt(isoDay(b.date))}.`,
+    acoes: [{ rotulo: 'Excluir a repetida', fn: `radarExcluir(${jsArg(b.id)})` }]
+  }));
+  radarForaDoPadrao(hoje).forEach(x => add({
+    id: `fora:${x.it.id}`, ritmo: 'hoje', nivel: 'aviso', icone: '🔥',
+    titulo: 'Gasto fora do seu padrão',
+    texto: `<strong>${escapeHtml(x.it.desc)}</strong>: ${fmt(x.it.value)} em ${escapeHtml(x.it.cat)} — ${x.vezes.toFixed(1).replace('.', ',')}× o seu gasto típico na categoria (${fmt(x.med)}).`
+  }));
+  radarAVencer(hoje).forEach(v => {
+    const quando = v.dia === D ? 'vence hoje' : v.dia === D + 1 ? 'vence amanhã' : `vence em ${v.dia - D} dias (dia ${v.dia})`;
+    if (v.tipo === 'fatura') add({
+      id: `fat:${v.f.metodo}:${Y}-${M}`, ritmo: 'hoje', nivel: 'aviso', icone: '📅',
+      titulo: `Fatura ${escapeHtml(methodLabel(v.f.metodo))} ${quando}`,
+      texto: `${fmt(v.f.valor)} das compras de ${monthsFull[v.f.compraM].toLowerCase()} saem da sua conta.`
+    });
+    else add({
+      id: `venc:${v.it.id}:${Y}-${M}`, ritmo: 'hoje', nivel: 'aviso', icone: '📅',
+      titulo: `${escapeHtml(v.it.desc)} ${quando}`,
+      texto: `${fmt(v.it.value)} · ${escapeHtml(methodLabel(v.it.method))}`,
+      acoes: [{ rotulo: 'Já paguei', fn: `radarPago(${jsArg(v.it.id)})` }]
+    });
+  });
+  radarOrcamento(hoje).forEach(o => add({
+    id: `orc:${o.c.name}:${Y}-${M}:${o.pct >= 1 ? 'estouro' : '80'}`, ritmo: 'hoje', nivel: o.pct >= 1 ? 'alerta' : 'aviso', icone: o.pct >= 1 ? '🚨' : '⚠️',
+    titulo: o.pct >= 1 ? `Orçamento de ${escapeHtml(o.c.name)} estourado` : `${escapeHtml(o.c.name)} já usou ${Math.round(o.pct * 100)}% do orçamento`,
+    texto: `${fmt(o.usado)} de ${fmt(o.c.budget)} em ${mesNome}${o.pct < 1 ? ` · faltam ${radarDiasNoMes(Y, M) - D} dias` : ` · ${fmt(o.usado - o.c.budget)} acima`}.`
+  }));
+  radarTendencias(hoje).forEach(t => add(t.tipo === 'sobe' ? {
+    id: `sobe:${t.cat}:${Y}-${M}`, ritmo: 'quinzena', nivel: 'aviso', icone: '📈',
+    titulo: `${escapeHtml(t.cat)} sobe há 3 meses`,
+    texto: `${t.v.map(fmt).join(' → ')}. Vale olhar antes que vire hábito.`
+  } : {
+    id: `ritmo:${t.cat}:${Y}-${M}`, ritmo: 'quinzena', nivel: 'aviso', icone: '📈',
+    titulo: `${escapeHtml(t.cat)} acima do normal`,
+    texto: `No ritmo atual, ${fmt(t.proj)} em ${mesNome} — o seu normal é ${fmt(t.media)}.`
+  }));
+  const pj = radarProjecao(hoje);
+  if (pj) add({
+    id: `proj:${Y}-${M}:${D}`, ritmo: 'mes', nivel: pj.sobra >= 0 ? 'info' : 'aviso', icone: pj.sobra >= 0 ? '🎯' : '⚠️',
+    titulo: pj.sobra >= 0 ? `No ritmo atual, ${mesNome} fecha com sobra de ${fmt(pj.sobra)}` : `No ritmo atual, os gastos passam as entradas em ${fmt(-pj.sobra)}`,
+    texto: `Gastos previstos: ${fmt(pj.projGastos)}${pj.entradas ? ` para ${fmt(pj.entradas)} de entradas` : ''} · ${fmt(pj.ritmoDia)} por dia em gastos do dia a dia.`
+  });
+  const as = radarAssinaturas(hoje);
+  if (as.detectadas.length) {
+    const total = as.detectadas.reduce((a, x) => a + x.valor, 0) + as.cadastradas.reduce((a, r) => a + r.value, 0);
+    const linhas = as.detectadas.map(x => `<li><span>${escapeHtml(x.desc)} · ${fmt(x.valor)}/mês</span>
+        <span class="radar-mini"><button type="button" class="link-btn" onclick="radarViraFixo(${jsArg(x.chave)})">virar gasto fixo</button></span></li>`).join('')
+      + as.cadastradas.map(r => `<li><span>${escapeHtml(r.desc)} · ${fmt(r.value)}/mês</span><span class="radar-mini muted">já é fixo</span></li>`).join('');
+    add({
+      id: `ass:${as.detectadas.map(x => x.chave).sort().join(',')}`, ritmo: 'mes', nivel: 'info', icone: '🔁',
+      titulo: `Cobranças que se repetem: ${fmt(total)}/mês`,
+      texto: `São ${fmt(total * 12)} por ano. Ainda usa tudo?<ul class="radar-lista">${linhas}</ul>`
+    });
+  }
+  const peso = { alerta: 0, aviso: 1, info: 2 };
+  return itens.sort((a, b) => peso[a.nivel] - peso[b.nivel]);
+}
+
+function renderRadar() {
+  const hero = document.getElementById('homeHero');
+  if (!hero || typeof currentUser === 'undefined' || !currentUser || !db || !db.events) return;
+  let panel = document.getElementById('radarPanel');
+  if (!panel) {
+    panel = document.createElement('section');
+    panel.id = 'radarPanel';
+    panel.className = 'panel radar';
+    panel.setAttribute('aria-label', 'Radar');
+  }
+  if (panel.previousElementSibling !== hero) hero.insertAdjacentElement('afterend', panel);
+  const itens = computeRadar();
+  const RITMOS = [['hoje', 'Hoje'], ['quinzena', 'Esta quinzena'], ['mes', 'Este mês']];
+  const MAX = 4;
+  let mostrados = 0;
+  const card = x => {
+    const oculto = mostrados++ >= MAX && !panel.classList.contains('aberto');
+    return `<div class="radar-item nivel-${x.nivel}${oculto ? ' radar-oculto' : ''}">
+      ${iconChip(x.icone)}
+      <div class="radar-corpo">
+        <div class="radar-titulo">${x.titulo}</div>
+        <div class="radar-texto">${x.texto}</div>
+        ${x.acoes ? `<div class="radar-acoes">${x.acoes.map(a => `<button type="button" class="btn" onclick="${a.fn}">${escapeHtml(a.rotulo)}</button>`).join('')}</div>` : ''}
+      </div>
+      <button type="button" class="radar-x" title="Dispensar" aria-label="Dispensar aviso" onclick="radarIgnorar(${jsArg(x.id)})">×</button>
+    </div>`;
+  };
+  const grupos = RITMOS.map(([k, rot]) => {
+    const g = itens.filter(x => x.ritmo === k);
+    return g.length ? `<div class="radar-grupo"><div class="radar-ritmo">${rot}</div>${g.map(card).join('')}</div>` : '';
+  }).join('');
+  const extras = itens.length - MAX;
+  panel.innerHTML = `
+    <div class="radar-head"><h2>Radar</h2><span class="radar-sub">${itens.length ? 'o que merece sua atenção' : 'de olho nos seus lançamentos'}</span></div>
+    ${itens.length ? grupos : '<p class="radar-ok">Nada fora do normal por aqui. Aviso quando aparecer cobrança repetida, gasto fora do padrão ou conta para vencer.</p>'}
+    ${extras > 0 ? `<button type="button" class="link-btn radar-mais" onclick="document.getElementById('radarPanel').classList.toggle('aberto'); renderRadar()">${panel.classList.contains('aberto') ? 'Mostrar menos' : `Mostrar mais ${extras}`}</button>` : ''}`;
+  // Número no ícone do app (quando instalado e o sistema permite)
+  try {
+    const n = itens.filter(x => x.nivel !== 'info').length;
+    if ('setAppBadge' in navigator) { n ? navigator.setAppBadge(n) : navigator.clearAppBadge(); }
+  } catch (e) { /* sem suporte */ }
+}
+
+function radarIgnorar(id) {
+  if (!db.radar || typeof db.radar !== 'object') db.radar = {};
+  if (!db.radar.ignorados || typeof db.radar.ignorados !== 'object') db.radar.ignorados = {};
+  db.radar.ignorados[id] = todayISO();
+  saveDB();
+  renderRadar();
+}
+function radarExcluir(id) {
+  const b = document.createElement('button');
+  b.dataset.action = 'del';
+  b.dataset.id = String(id);
+  handleTableAction({ target: b });   // mesmo fluxo da tabela: confirmação + desfazer
+}
+function radarPago(id) {
+  const h = new Date();
+  togglePaid(id, h.getFullYear(), h.getMonth());
+  renderRadar();
+  toast('Marcado como pago', 'success');
+}
+function radarViraFixo(chave) {
+  const hoje = new Date();
+  const x = radarAssinaturas(hoje).detectadas.find(a => a.chave === chave);
+  if (!x) return;
+  const u = x.ultimo;
+  const t = hoje.getFullYear() * 12 + hoje.getMonth() + 1;          // a partir do mês que vem
+  const y = Math.floor(t / 12), m = t % 12;
+  const dia = Math.min(radarDiasNoMes(y, m), Number((isoDay(u.date) || '').slice(8, 10)) || 1);
+  db.recurringExpenses.push({ id: Date.now(), desc: u.desc, value: x.valor, cat: u.cat, method: u.method, type: 'fixo',
+    startYear: y, startMonth: m, date: `${y}-${String(m + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}` });
+  ensureYear(y);
+  saveDB();
+  if (typeof renderAll === 'function') renderAll();
+  toast(`${u.desc} vira gasto fixo a partir de ${monthsFull[m].toLowerCase()}`, 'success');
+}
+window.radarIgnorar = radarIgnorar;
+window.radarExcluir = radarExcluir;
+window.radarPago = radarPago;
+window.radarViraFixo = radarViraFixo;
+window.renderRadar = renderRadar;
+
+(function chainRadar() {
+  const orig = window.renderDashboard;
+  window.renderDashboard = function () {
+    if (orig) orig.apply(this, arguments);
+    try { renderRadar(); } catch (e) { console.warn('[radar]', e); }
   };
 })();
 </script>
