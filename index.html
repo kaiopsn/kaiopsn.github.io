@@ -2453,7 +2453,7 @@
   <div class="nav-group">
     <div class="nav-group-label">Relatórios</div>
     <nav class="nav">
-      <button class="tabBtn" data-tab="anual"><span class="icon" aria-hidden="true"><svg class="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 20v-5"/><path d="M12 20V9"/><path d="M18 20v-8"/><path d="M4 20h16"/></svg></span> Relatório anual</button>
+      <button class="tabBtn" data-tab="anual"><span class="icon" aria-hidden="true"><svg class="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 20v-5"/><path d="M12 20V9"/><path d="M18 20v-8"/><path d="M4 20h16"/></svg></span> Anual</button>
       <button class="tabBtn" data-tab="referencia"><span class="icon" aria-hidden="true"><svg class="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4.5 4 8.5l4 4"/><path d="M4 8.5h15"/><path d="m16 19.5 4-4-4-4"/><path d="M20 15.5H5"/></svg></span> Comparar meses</button>
     </nav>
   </div>
@@ -2680,7 +2680,7 @@
 
   <!-- ============== RELATÓRIO ANUAL ============== -->
   <div id="anual" class="content">
-    <h1>Panorama Anual</h1>
+    <h1>Anual</h1>
     <p class="page-sub" id="anualSub">Visão consolidada do ano todo.</p>
     <div class="grid grid-4" id="anualStats"></div>
     <div class="panel">
@@ -2694,7 +2694,7 @@
       </div>
     </div>
     <div class="panel">
-      <h2>Entradas vs Saídas vs Investido</h2>
+      <h2>Entradas, gastos e investido</h2>
       <canvas id="anualChart"></canvas>
     </div>
     <div class="panel">
@@ -6218,7 +6218,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v87';
+const APP_VERSION = 'v88';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -6928,12 +6928,18 @@ function sanitizeData(data) {
         if (!ok) delete c.market;
       }
       if (c.target != null) { const t = safeNum(c.target, NaN); if (t > 0 && t <= 100) c.target = t; else delete c.target; }
-      if (c.ancora != null) {   // v87
-        const a = c.ancora;
+      const saneiaAncoraClasse = a => {   // v87/v88
         const ok = obj(a) && Number.isFinite(a.value) && a.value >= 0 && typeof a.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(a.date);
-        if (!ok) delete c.ancora;
-        else c.ancora = { value: a.value, date: a.date, ts: safeNum(a.ts, 0),
+        if (!ok) return null;
+        const s = { value: a.value, date: a.date, ts: safeNum(a.ts, 0),
           tab: { ap: safeNum(a.tab && a.tab.ap, 0), rs: safeNum(a.tab && a.tab.rs, 0) } };
+        if (Number.isFinite(a.antes)) s.antes = a.antes;
+        return s;
+      };
+      if (c.ancora != null) { const a = saneiaAncoraClasse(c.ancora); if (a) c.ancora = a; else delete c.ancora; }
+      if (c.ancorasAnteriores != null) {
+        const lst = (Array.isArray(c.ancorasAnteriores) ? c.ancorasAnteriores : []).map(saneiaAncoraClasse).filter(Boolean).slice(-60);
+        if (lst.length) c.ancorasAnteriores = lst; else delete c.ancorasAnteriores;
       }
       return c;
     };
@@ -7897,10 +7903,13 @@ function getSaldoAnchor(contaId) {
     const c = getConta(contaId) || getContas()[0];
     return ancoraNormalizada(c.ancora, c.id);
   }
-  const as = getContas().map(c => ancoraNormalizada(c.ancora, c.id));
+  // v88: a visão geral começa no PRIMEIRO ponto de partida de cada conta (o
+  // histórico da v87 conta); o aviso de formato antigo olha o ponto atual.
+  const as = getContas().map(c => primeiraAncoraConta(c));
+  const atuais = getContas().map(c => ancoraNormalizada(c.ancora, c.id));
   const min = as.reduce((a, b) => (a.ay * 12 + a.am) <= (b.ay * 12 + b.am) ? a : b);
   return { ay: min.ay, am: min.am, dia: min.dia, valor: as.reduce((t, a) => t + a.valor, 0), anchorKey: min.anchorKey,
-           _default: as.every(a => a._default), _legado: as.some(a => a._legado) };
+           _default: atuais.every(a => a._default), _legado: atuais.some(a => a._legado) };
 }
 
 // Posição de (y, m) vs. ponto de partida: <0 antes, 0 na âncora, >0 depois.
@@ -7939,12 +7948,20 @@ function ancoraContaPara(c, y, m, ateDia) {
   todas.forEach(a => { if (chave(a) <= alvo) esc = a; });
   return esc;
 }
-function getSaldoAcumulado(y, m, ateDia, contaId) {
+// Primeiro ponto de partida de uma conta (histórico incluído)
+function primeiraAncoraConta(c) {
+  const todas = (Array.isArray(c.ancorasAnteriores) ? c.ancorasAnteriores : []).concat(c.ancora ? [c.ancora] : [])
+    .map(x => ancoraNormalizada(x, c.id)).filter(a => !a._default);
+  if (!todas.length) return ancoraNormalizada(c.ancora, c.id);
+  const chave = a => (a.ay * 12 + a.am) * 40 + a.dia;
+  return todas.sort((p, q) => chave(p) - chave(q) || (p.ts || 0) - (q.ts || 0))[0];
+}
+function getSaldoAcumulado(y, m, ateDia, contaId, forcar) {
   const contas = contaId != null ? [getConta(contaId) || getContas()[0]] : getContas();
   const anc = {};
   let total = 0, ini = Infinity;
   contas.forEach(c => {
-    const a = ancoraContaPara(c, y, m, ateDia);
+    const a = forcar && forcar[c.id] ? forcar[c.id] : ancoraContaPara(c, y, m, ateDia);   // v88: forcar = medir acerto
     anc[c.id] = a;
     total += a.valor;
     ini = Math.min(ini, a.ay * 12 + a.am);
@@ -8050,9 +8067,26 @@ function fluxosDepoisDaAncora(id, a, fim, cadaUm) {
   }
   return soma;
 }
-function novaAncoraClasse(id, valor) {
+function novaAncoraClasse(id, valor, antes) {
   const now = new Date();
-  return { value: Math.round(valor * 100) / 100, date: todayISO(), ts: Date.now(), tab: tabClasse(now.getFullYear(), now.getMonth(), id) };
+  const a = { value: Math.round(valor * 100) / 100, date: todayISO(), ts: Date.now(), tab: tabClasse(now.getFullYear(), now.getMonth(), id) };
+  if (Number.isFinite(antes)) a.antes = Math.round(antes * 100) / 100;   // v88: o que o app mostrava
+  return a;
+}
+// v88: histórico de conferências da classe; cada mês usa a conferência vigente
+function definirAncoraClasse(c, nova) {
+  if (c.ancora && c.ancora.date) c.ancorasAnteriores = (Array.isArray(c.ancorasAnteriores) ? c.ancorasAnteriores : []).concat([c.ancora]).slice(-60);
+  c.ancora = nova;
+}
+function ancorasDaClasse(c) {
+  return (Array.isArray(c.ancorasAnteriores) ? c.ancorasAnteriores : []).concat(c.ancora ? [c.ancora] : [])
+    .map(r => ({ r, a: ancoraClasse({ ancora: r }) })).filter(x => x.a)
+    .sort((p, q) => p.a.date.localeCompare(q.a.date) || p.a.ts - q.a.ts);
+}
+function ancoraClassePara(c, fim) {
+  let esc = null;
+  ancorasDaClasse(c).forEach(x => { if (x.a.t <= fim) esc = x.a; });
+  return esc;
 }
 function getCarteira(y, m) {
   const porClasse = {};
@@ -8062,8 +8096,8 @@ function getCarteira(y, m) {
   // v87: do mês da conferência em diante, a classe parte do valor conferido.
   const ancorada = {};
   getInvestClasses().forEach(c => {
-    const a = ancoraClasse(c);
-    if (a && fim >= a.t) { ancorada[c.id] = 1; porClasse[c.id] = a.value + fluxosDepoisDaAncora(c.id, a, fim); }
+    const a = ancoraClassePara(c, fim);   // v88: conferência vigente naquele mês
+    if (a) { ancorada[c.id] = 1; porClasse[c.id] = a.value + fluxosDepoisDaAncora(c.id, a, fim); }
     else porClasse[c.id] = safeNum(c.opening, 0);
   });
   const ini = firstDataMonth();
@@ -8279,7 +8313,7 @@ function ajustarSaldoConta(id) {
     onConfirm: () => {
       const v = readMoney('ctSaldo');
       if (!Number.isFinite(v)) { toast('Digite um valor, ex.: 1.500,00', 'error'); return false; }
-      definirAncoraConta(c, { anchorKey: getKey(now.getFullYear(), now.getMonth()), anchorDate: todayISO(), value: v, ts: Date.now() });   // v87
+      definirAncoraConta(c, { anchorKey: getKey(now.getFullYear(), now.getMonth()), anchorDate: todayISO(), value: v, ts: Date.now(), antes: Math.round(atual * 100) / 100 });   // v87/v88
       depoisDeMudarContas();
       toast(`Saldo de ${c.nome} salvo`, 'success');
     }
@@ -8861,6 +8895,7 @@ function renderCatEvolution() {
   if (!cat) return;
   const dados = months.map((_, i) => {
     const d = getMonthData(currentYear, i);
+    if (i > ultimoMesRealizado(currentYear)) return null;   // v88: projeção não tem gasto do dia a dia
     return d.items.filter(it => it.cat === cat).reduce((a, b) => a + b.value, 0);
   });
   const ctx = document.getElementById('catEvolChart').getContext('2d');
@@ -9254,7 +9289,7 @@ async function deleteInvestClass(id) {
       });
       const origemOp = safeNum(c.opening, 0), dest = getInvestClass(destino);
       if (origemOp > 0 && dest) dest.opening = safeNum(dest.opening, 0) + origemOp;
-      if (reancorar && dest) { dest.ancora = novaAncoraClasse(destino, somaHoje); delete dest.market; }
+      if (reancorar && dest) { definirAncoraClasse(dest, novaAncoraClasse(destino, somaHoje, somaHoje)); delete dest.market; }
     }
     db.investClasses = getInvestClasses().filter(x => x.id !== id);
     saveDB();
@@ -13225,6 +13260,64 @@ function renderRecentActivity() {
   .conferir-novo select { grid-column: 1 / 3; }
   .conferir-nota { font-size: .8rem; color: var(--text-muted); margin: 12px 0 0; line-height: 1.5; }
   .conferir-chamada { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 12px; padding: 12px; border-radius: 12px; background: var(--primary-tint, rgba(124,58,237,.08)); font-size: .88rem; }
+
+  /* v88 · Anual */
+  .an-cel { display: none; }
+  #anual > .panel.an-velho-cat { display: none !important; }
+  .an-ano { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 4px 0 14px; }
+  .an-ano strong { font-size: 1.25rem; letter-spacing: -.01em; min-width: 64px; text-align: center; }
+  .an-ano button { width: 38px; height: 38px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--text); font-size: 1.2rem; cursor: pointer; }
+  .an-ano button:disabled { opacity: .3; cursor: default; }
+  .an-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+  .an-card { padding: 10px 12px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border-soft); }
+  .an-card .l { font-size: .72rem; color: var(--text-muted); }
+  .an-card .v { font-size: 1.05rem; font-weight: 700; letter-spacing: -.01em; white-space: nowrap; }
+  .an-resumo { font-size: .88rem; line-height: 1.55; margin: 0 0 14px; color: var(--text-muted); }
+  .an-resumo strong { color: var(--text); }
+  #anualTopo .panel h2, #anualFim .panel h2 { margin: 0 0 4px; font-size: 1.05rem; }
+  .an-dica { font-size: .78rem; color: var(--text-muted); margin: 0 0 8px; }
+  .an-mes { padding: 10px 4px; border-bottom: 1px solid var(--border-soft); cursor: pointer; }
+  .an-proj-btn { display: block; margin: 10px auto 2px; }
+  .an-mes:last-child { border-bottom: none; }
+  .an-mes-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .an-mes-nome { font-weight: 600; font-size: .95rem; }
+  .an-mes-sobra { font-weight: 700; font-size: 1rem; white-space: nowrap; }
+  .an-mes-sub { font-size: .74rem; color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .an-mes-barra { height: 4px; border-radius: 4px; background: var(--border-soft); margin-top: 6px; overflow: hidden; }
+  .an-mes-barra span { display: block; height: 100%; border-radius: 4px; background: var(--pos); }
+  .an-mes-barra span.medio { background: var(--invest); }
+  .an-mes-barra span.alto { background: var(--neg); }
+  .an-tag { font-size: .66rem; font-weight: 600; padding: 2px 7px; border-radius: 999px; margin-left: 6px; vertical-align: 1px; background: var(--primary-tint, rgba(124,58,237,.12)); color: var(--primary); }
+  .an-tag.melhor { background: rgba(18,183,106,.14); color: var(--pos); }
+  .an-tag.pior { background: rgba(240,68,56,.14); color: var(--neg); }
+  .an-mes.proj { opacity: .62; }
+  .an-mes-det { margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: var(--surface-warm, rgba(0,0,0,.03)); font-size: .84rem; line-height: 1.6; }
+  .an-mes-det .link-btn { padding: 0; margin-top: 4px; }
+  .an-sep { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); padding: 14px 4px 4px; }
+  .an-vazio { font-size: .8rem; color: var(--text-muted); padding: 8px 4px; }
+  .an-graf { position: relative; height: 210px; }
+  .an-cat { padding: 10px 2px; border-bottom: 1px solid var(--border-soft); cursor: pointer; }
+  .an-cat:last-of-type { border-bottom: none; }
+  .an-cat-top { display: flex; align-items: center; gap: 8px; }
+  .an-cat-nome { flex: 1; min-width: 0; font-weight: 600; font-size: .92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .an-cat-val { font-weight: 700; white-space: nowrap; }
+  .an-cat-sub { font-size: .74rem; color: var(--text-muted); margin: 2px 0 0 18px; }
+  .an-cat-barra { height: 4px; border-radius: 4px; background: var(--border-soft); margin: 6px 0 0 18px; overflow: hidden; }
+  .an-cat-barra span { display: block; height: 100%; border-radius: 4px; }
+  .an-mini { display: flex; align-items: flex-end; gap: 4px; height: 70px; margin: 10px 0 4px 18px; }
+  .an-mini-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 3px; }
+  .an-mini-col span { width: 100%; max-width: 18px; border-radius: 3px 3px 0 0; min-height: 2px; }
+  .an-mini-col small { font-size: .62rem; color: var(--text-muted); }
+  .an-mini-info { font-size: .74rem; color: var(--text-muted); margin-left: 18px; }
+  .an-patr-topo { font-size: .9rem; margin: 2px 0 10px; line-height: 1.5; }
+  .an-acertos { margin-top: 10px; font-size: .82rem; line-height: 1.6; }
+  .an-acertos .neg { color: var(--neg); } .an-acertos .pos { color: var(--pos); }
+  @media (max-width: 768px) {
+    .an-cel { display: block; }
+    .an-cards.an-cel { display: grid; }
+    #anual > #anualStats, #anual > .panel.an-velho { display: none !important; }
+    #anual > .page-sub { display: none; }
+  }
   /* v74 · Importar extrato */
   #modalBox:has(.extrato-revisao) { max-width: 720px; }
   .extrato-opcoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 12px; }
@@ -16032,9 +16125,10 @@ function salvarConferencia() {
   for (const c of getContas()) {
     const v = readMoney('cfC_' + c.id);
     if (!Number.isFinite(v)) { toast(`Valor inválido em ${c.nome}`, 'error'); return false; }
-    if (Math.abs(v - getSaldoAcumulado(Y, M, D, c.id)) >= 0.005) {
+    const atualC = getSaldoAcumulado(Y, M, D, c.id);
+    if (Math.abs(v - atualC) >= 0.005) {
       const conta = contasDB().find(x => x.id === c.id);
-      if (conta) { definirAncoraConta(conta, { anchorKey: getKey(Y, M), anchorDate: todayISO(), value: v, ts: Date.now() }); mudou++; }
+      if (conta) { definirAncoraConta(conta, { anchorKey: getKey(Y, M), anchorDate: todayISO(), value: v, ts: Date.now(), antes: Math.round(atualC * 100) / 100 }); mudou++; }
     }
   }
   const cm = getCarteiraMercado();
@@ -16042,7 +16136,7 @@ function salvarConferencia() {
     const v = readMoney('cfI_' + c.id);
     if (!Number.isFinite(v) || v < 0) { toast(`Valor inválido em ${c.label}`, 'error'); return false; }
     const atual = (cm.porClasse[c.id] || { mercado: 0 }).mercado;
-    if (Math.abs(v - atual) >= 0.005) { c.ancora = novaAncoraClasse(c.id, v); delete c.market; mudou++; }
+    if (Math.abs(v - atual) >= 0.005) { definirAncoraClasse(c, novaAncoraClasse(c.id, v, atual)); delete c.market; mudou++; }
   }
   const dv = readMoney('cfDevValor');
   if (Number.isFinite(dv) && dv > 0) {
@@ -16145,6 +16239,289 @@ function conferirNovoLugar() {
 window.abrirConferirSaldos = abrirConferirSaldos;
 window.resolverDevolver = resolverDevolver;
 window.conferirNovoLugar = conferirNovoLugar;
+</script>
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// v88 · ANUAL — no celular: ‹ ano ›, cartões, resumo em frase, mês a mês em
+// lista (toque abre conta/patrimônio/acertos e leva ao mês), gráfico entradas
+// × gastos. Em todos os tamanhos: "Onde foi o dinheiro" (ranking de
+// categorias, toque mostra a evolução só nos meses que já aconteceram) e
+// "Seu patrimônio" (fim de cada mês; hoje igual à Início) com os acertos das
+// conferências explicados. No computador a tabela e o gráfico continuam.
+// ══════════════════════════════════════════════════════════════════════
+(function () {
+  const INI = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
+  const $ = id => document.getElementById(id);
+  let mesAberto = null, catAberta = null, todasCats = false, chartM = null, chartP = null, anoVisto = null, verProj = false;
+  const celular = () => window.matchMedia('(max-width: 768px)').matches;
+  const cssVar = (n, fb) => { try { return getComputedStyle(document.documentElement).getPropertyValue(n).trim() || fb; } catch (e) { return fb; } };
+  const sinal = v => (v >= 0 ? '+' : '−') + fmt(Math.abs(v));
+  const mil = v => Math.abs(v) >= 1000 ? (v / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' mil' : String(Math.round(v));
+  const ddmm = iso => String(iso || '').split('-').reverse().slice(0, 2).join('/');
+
+  // Patrimônio de HOJE com a mesma regra do "Onde está seu dinheiro" da Início
+  function patrimonioHoje() {
+    const h = new Date(), Y = h.getFullYear(), M = h.getMonth();
+    const cm = getCarteiraMercado();
+    const cart = cm.temMercado && !cm.legado ? cm.mercado : getCarteira(Y, M).total;
+    return getContaExibida(Y, M) + cart - aDevolverEm(Y, M);
+  }
+  function primeiroMesConhecido() { const a = getSaldoAnchor(); return a._default ? null : a.ay * 12 + a.am; }
+
+  // Acertos das conferências: valor informado − o que o app mostrava na hora
+  function acertos() {
+    const out = [];
+    getContas().forEach(c => {
+      const lst = (Array.isArray(c.ancorasAnteriores) ? c.ancorasAnteriores : []).concat(c.ancora ? [c.ancora] : [])
+        .map(r => ({ r, a: ancoraNormalizada(r, c.id) })).filter(x => !x.a._default && !x.a._legado)
+        .sort((p, q) => ((p.a.ay * 12 + p.a.am) * 40 + p.a.dia) - ((q.a.ay * 12 + q.a.am) * 40 + q.a.dia) || (p.a.ts || 0) - (q.a.ts || 0));
+      for (let i = 1; i < lst.length; i++) {
+        const { r, a } = lst[i];
+        const antes = Number.isFinite(r.antes) ? r.antes : getSaldoAcumulado(a.ay, a.am, a.dia, c.id, { [c.id]: lst[i - 1].a });
+        out.push({ t: a.ay * 12 + a.am, data: r.anchorDate, nome: c.nome, conta: true, ajuste: a.valor - antes });
+      }
+    });
+    getInvestClasses().forEach(c => {
+      const lst = ancorasDaClasse(c);
+      lst.forEach(({ r, a }, i) => {
+        let antes = Number.isFinite(r.antes) ? r.antes : null;
+        if (antes == null) {   // conferências da v87 (ainda sem "antes"): recalcula
+          const depoisNoMes = fluxosDepoisDaAncora(c.id, a, a.t);
+          if (i > 0) { const p = lst[i - 1].a; antes = p.value + fluxosDepoisDaAncora(c.id, p, a.t) - depoisNoMes; }
+          else {
+            let v = safeNum(c.opening, 0); const ini = firstDataMonth();
+            if (ini != null) for (let t = ini; t <= a.t && t - ini < 1200; t++) v += (getMonthData(Math.floor(t / 12), t % 12).porClasse || {})[c.id] || 0;
+            antes = Math.max(0, v - depoisNoMes);
+          }
+        }
+        out.push({ t: a.t, data: a.date, nome: c.label, conta: false, ajuste: a.value - antes });
+      });
+    });
+    return out.filter(x => Math.abs(x.ajuste) >= 1);
+  }
+
+  function dadosAno(y) {
+    const lim = ultimoMesRealizado(y), md = months.map((_, i) => getMonthData(y, i));
+    let E = 0, G = 0, I = 0, pE = 0, pG = 0;
+    md.forEach((d, i) => { if (i <= lim) { E += d.entradas; G += d.gastos; I += d.investido; } else { pE += d.entradas; pG += d.gastos; } });
+    const val = md.map((d, i) => ({ i, s: d.sobra, tem: d.gastos > 0 || d.entradas > 0 })).filter(x => x.i <= lim && x.tem);
+    const mel = val.length ? val.reduce((a, b) => b.s > a.s ? b : a) : null, pio = val.length ? val.reduce((a, b) => b.s < a.s ? b : a) : null;
+    return { y, lim, md, E, G, I, S: E - G, pE, pG, melhor: mel && mel.s > 0 ? mel.i : -1, pior: pio && pio.s < 0 ? pio.i : -1 };
+  }
+
+  function htmlTopo(D) {
+    const { y, lim, E, G, I, S, pE, pG } = D;
+    const anos = (db.years || []).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+    const ant = anos.filter(a => a < y).pop(), prox = anos.find(a => a > y);
+    const ate = lim >= 0 && lim < 11 ? ` até ${months[lim].toLowerCase()}` : '';
+    const card = (l, v, cls) => `<div class="an-card"><div class="l">${l}${ate}</div><div class="v ${cls}">${fmt(v)}</div></div>`;
+    let resumo;
+    if (lim < 0) resumo = `${y} ainda não começou — abaixo está só o que já está previsto (fixos, parcelas e rendas que se repetem).`;
+    else if (!E && !G) resumo = `Nenhum lançamento em ${y} ainda.`;
+    else {
+      const pct = E > 0 ? Math.round(S / E * 100) : null;
+      resumo = S >= 0
+        ? (pct != null ? `<strong>${pct}%</strong> do que entrou sobrou.` : 'Sem entradas registradas.')
+        : `Os gastos passaram as entradas em <strong class="neg">${fmt(-S)}</strong>.`;
+      if (lim < 11) {
+        const fimAno = E + pE - (G + pG);
+        resumo += ` Com o que já está previsto (fixos, parcelas e rendas), o ano fecha com ${fimAno >= 0 ? 'sobra' : 'falta'} de <strong>${fmt(Math.abs(fimAno))}</strong> — sem contar os gastos do dia a dia que ainda virão.`;
+      }
+    }
+    return `
+      <div class="an-ano">
+        <button type="button" ${ant == null ? 'disabled' : `onclick="setCurrentYear(${Number(ant)})"`} aria-label="Ano anterior">‹</button>
+        <strong>${y}</strong>
+        <button type="button" ${prox == null ? 'disabled' : `onclick="setCurrentYear(${Number(prox)})"`} aria-label="Próximo ano">›</button>
+      </div>
+      <div class="an-cards an-cel">${card('Entrou', E, 'pos')}${card('Saiu', G, 'neg')}${card('Guardou', I, 'invest')}${card(S >= 0 ? 'Sobrou' : 'Faltou', Math.abs(S), S >= 0 ? 'pos' : 'neg')}</div>
+      <p class="an-resumo an-cel">${resumo}</p>
+      <section class="panel an-cel"><h2>Mês a mês</h2><p class="an-dica">Toque num mês para ver a conta, o patrimônio e abrir os lançamentos.</p><div id="anMeses"></div></section>
+      <section class="panel an-cel"><h2>Entradas e gastos</h2><div class="an-graf"><canvas id="anChartM" aria-label="Entradas e gastos por mês"></canvas></div></section>`;
+  }
+
+  function htmlMeses(D) {
+    const { y, lim, md } = D;
+    const h = new Date(), tHoje = h.getFullYear() * 12 + h.getMonth(), pm = primeiroMesConhecido();
+    const ac = acertos();
+    const vazios = [];
+    const linha = (i, proj) => {
+      const d = md[i], t = y * 12 + i, aberto = mesAberto === i;
+      const tag = i === D.melhor ? '<span class="an-tag melhor">melhor mês</span>' : i === D.pior ? '<span class="an-tag pior">pior mês</span>' : t === tHoje ? '<span class="an-tag">agora</span>' : '';
+      const pctGasto = d.entradas > 0 ? Math.min(100, d.gastos / d.entradas * 100) : (d.gastos > 0 ? 100 : 0);
+      const nivel = pctGasto >= 100 ? 'alto' : pctGasto >= 80 ? 'medio' : '';
+      const curto = v => 'R$ ' + Math.round(v).toLocaleString('pt-BR');
+      const inv = Math.abs(d.investido) >= 0.005 ? ` · ${d.investido > 0 ? 'guardou' : 'resgatou'} ${curto(Math.abs(d.investido))}` : '';
+      let det = '';
+      if (aberto) {
+        const conhecido = pm != null && t >= pm, partes = [];
+        if (!conhecido) partes.push('Em conta: antes do primeiro saldo que você informou.');
+        else if (t === tHoje) partes.push(`Em conta hoje: <strong>${fmt(getContaExibida(y, i))}</strong> · no fim do mês: ${fmt(getSaldoAcumulado(y, i))}`);
+        else partes.push(`Em conta no fim do mês${proj ? ' (previsto)' : ''}: <strong>${fmt(getSaldoAcumulado(y, i))}</strong>`);
+        if (conhecido && !proj) partes.push(t === tHoje ? `Patrimônio hoje: <strong>${fmt(patrimonioHoje())}</strong>` : `Patrimônio no fim do mês: <strong>${fmt(getPatrimonio(y, i))}</strong>`);
+        ac.filter(a => a.t === t).forEach(a => partes.push(`Acerto da conferência de ${ddmm(a.data)} em ${escapeHtml(a.nome)}: <span class="${a.ajuste < 0 ? 'neg' : 'pos'}">${sinal(a.ajuste)}</span>`));
+        if (proj) partes.push('Projeção: só fixos, parcelas e rendas que se repetem.');
+        det = `<div class="an-mes-det">${partes.join('<br>')}${proj ? '' : `<br><button type="button" class="link-btn" onclick="event.stopPropagation(); anualIrMes(${i})">Ver os lançamentos de ${monthsFull[i].toLowerCase()} ›</button>`}</div>`;
+      }
+      return `<div class="an-mes ${proj ? 'proj' : ''}" role="button" tabindex="0" onclick="anualAbrirMes(${i})" onkeydown="if(event.key==='Enter') anualAbrirMes(${i})">
+        <div class="an-mes-top"><span class="an-mes-nome">${monthsFull[i]}${tag}</span><span class="an-mes-sobra ${d.sobra >= 0 ? 'pos' : 'neg'}">${sinal(d.sobra)}</span></div>
+        <div class="an-mes-sub">${proj ? 'previsto: entra' : 'entrou'} ${curto(d.entradas)} · ${proj ? 'sai' : 'saiu'} ${curto(d.gastos)}${inv}</div>
+        <div class="an-mes-barra" title="${Math.round(pctGasto)}% do que entrou foi gasto"><span class="${nivel}" style="width:${pctGasto}%"></span></div>
+        ${det}</div>`;
+    };
+    let html = '';
+    for (let i = 0; i <= Math.min(lim, 11); i++) {
+      const d = md[i];
+      if (!(d.gastos > 0 || d.entradas > 0 || Math.abs(d.investido) >= 0.005)) { vazios.push(months[i]); continue; }
+      html += linha(i, false);
+    }
+    if (vazios.length && !html) html = `<div class="an-vazio">Nenhum lançamento ${lim >= 11 ? 'neste ano' : 'até agora'}.</div>`;
+    else if (vazios.length) html = `<div class="an-vazio">Sem lançamentos em: ${vazios.join(', ')}.</div>` + html;
+    if (lim < 11) {
+      const ini = Math.max(0, lim + 1), rot = ini === 11 ? 'dezembro' : `${monthsFull[ini].toLowerCase()} ${ini === 10 ? 'e' : 'a'} dezembro`;
+      if (lim < 0 || verProj) {
+        html += `<div class="an-sep">Previsão · só fixos, parcelas e rendas${lim >= 0 ? ` · <button type="button" class="link-btn" onclick="anualVerProj()">esconder</button>` : ''}</div>`;
+        for (let i = ini; i <= 11; i++) html += linha(i, true);
+      } else html += `<button type="button" class="link-btn an-proj-btn" onclick="anualVerProj()">Ver a previsão de ${rot} ›</button>`;
+    }
+    return html || '<div class="an-vazio">Nada por aqui ainda.</div>';
+  }
+
+  function htmlCategorias(D) {
+    const { lim, md } = D;
+    const porCat = {}, porMes = {};
+    let total = 0, mesesCom = 0;
+    for (let i = 0; i <= Math.min(lim, 11); i++) {
+      const d = md[i];
+      if (d.gastos > 0 || d.entradas > 0) mesesCom++;
+      (d.items || []).forEach(it => {
+        const c = it.cat || 'Sem categoria';
+        porCat[c] = (porCat[c] || 0) + it.value; total += it.value;
+        (porMes[c] = porMes[c] || Array(12).fill(0))[i] += it.value;
+      });
+    }
+    const lista = Object.entries(porCat).filter(([, v]) => v > 0.004).sort((a, b) => b[1] - a[1]);
+    if (!lista.length) return `<h2>Onde foi o dinheiro</h2><p class="an-dica">Sem gastos ${lim < 0 ? 'neste ano ainda' : 'registrados no ano'}.</p>`;
+    const max = lista[0][1], mostrar = todasCats ? lista : lista.slice(0, 6);
+    const rows = mostrar.map(([nome, v]) => {
+      let corC = '#94a3b8'; try { corC = safeColor(getCategoryColor(nome), '#94a3b8'); } catch (e) {}
+      const aberta = catAberta === nome;
+      let mini = '';
+      if (aberta) {
+        const vals = (porMes[nome] || []).slice(0, Math.min(lim, 11) + 1), mx = Math.max(...vals, 0.01);
+        const iMax = vals.indexOf(Math.max(...vals));
+        mini = `<div class="an-mini">${vals.map((x, i) => `<div class="an-mini-col" title="${monthsFull[i]}: ${fmt(x)}"><span style="height:${Math.max(2, Math.round(x / mx * 100))}%;background:${corC}"></span><small>${INI[i]}</small></div>`).join('')}</div>
+          <div class="an-mini-info">Maior mês: ${monthsFull[iMax].toLowerCase()} (${fmt(vals[iMax])})</div>`;
+      }
+      return `<div class="an-cat" role="button" tabindex="0" onclick="anualAbrirCat(${jsArg(nome)})" onkeydown="if(event.key==='Enter') anualAbrirCat(${jsArg(nome)})">
+        <div class="an-cat-top"><span class="method-row-dot" style="background:${corC}"></span><span class="an-cat-nome">${escapeHtml(nome)}</span><span class="an-cat-val">${fmt(v)}</span></div>
+        <div class="an-cat-sub">${(v / total * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% dos gastos · média de ${fmt(v / Math.max(1, mesesCom))} por mês</div>
+        <div class="an-cat-barra"><span style="width:${v / max * 100}%;background:${corC}"></span></div>${mini}</div>`;
+    }).join('');
+    const mais = lista.length > 6 ? `<button type="button" class="link-btn" style="margin-top:8px" onclick="anualTodasCats()">${todasCats ? 'Mostrar menos' : `Ver todas as ${lista.length} categorias`}</button>` : '';
+    return `<h2>Onde foi o dinheiro</h2><p class="an-dica">${lim >= 11 ? 'No ano todo' : `De janeiro a ${monthsFull[Math.max(0, lim)].toLowerCase()}`} · toque numa categoria para ver mês a mês.</p>${rows}${mais}`;
+  }
+
+  function serie(y) {
+    const lim = ultimoMesRealizado(y), pm = primeiroMesConhecido();
+    if (pm == null || lim < 0) return [];
+    const h = new Date(), tHoje = h.getFullYear() * 12 + h.getMonth(), pts = [];
+    for (let m = 0; m <= Math.min(lim, 11); m++) {
+      const t = y * 12 + m;
+      if (t < pm) continue;
+      pts.push({ m, t, hoje: t === tHoje, v: t === tHoje ? patrimonioHoje() : getPatrimonio(y, m) });
+    }
+    return pts;
+  }
+  function htmlPatrimonio(D) {
+    const pm = primeiroMesConhecido();
+    if (pm == null) return `<h2>Seu patrimônio</h2><p class="an-dica">Informe quanto você tem nas contas e nos investimentos para acompanhar o patrimônio mês a mês.</p><button type="button" class="btn primary" onclick="abrirConferirSaldos()">Conferir saldos</button>`;
+    const pts = serie(D.y);
+    if (!pts.length) return `<h2>Seu patrimônio</h2><p class="an-dica">O primeiro saldo que você informou é de ${monthsFull[pm % 12].toLowerCase()} de ${Math.floor(pm / 12)}; o patrimônio aparece a partir dele.</p>`;
+    const rot = p => p.hoje ? 'hoje' : `fim de ${months[p.m].toLowerCase()}`;
+    const a = pts[0], b = pts[pts.length - 1], dif = b.v - a.v;
+    const ac = acertos().filter(x => Math.floor(x.t / 12) === D.y);
+    const lista = ac.length ? `<div class="an-acertos"><strong>Acertos das conferências</strong><br>${ac.map(x => `${ddmm(x.data)} · ${escapeHtml(x.nome)}: <span class="${x.ajuste < 0 ? 'neg' : 'pos'}">${sinal(x.ajuste)}</span>`).join('<br>')}
+      <div class="an-dica" style="margin-top:6px">Diferença entre o que o app calculava e o que você informou ao conferir. Negativa numa conta costuma ser gasto que não foi registrado; num investimento, resgate não registrado ou rendimento.</div></div>` : '';
+    return `<h2>Seu patrimônio</h2>
+      <p class="an-patr-topo">${pts.length > 1 ? `De <strong>${fmt(a.v)}</strong> (${rot(a)}) para <strong>${fmt(b.v)}</strong> (${rot(b)}): <span class="${dif >= 0 ? 'pos' : 'neg'}">${sinal(dif)}</span>` : `${rot(b)[0].toUpperCase() + rot(b).slice(1)}: <strong>${fmt(b.v)}</strong>`}</p>
+      <div class="an-graf" style="height:180px"><canvas id="anChartP" aria-label="Patrimônio no fim de cada mês"></canvas></div>
+      <p class="an-dica" style="margin-top:8px">Contas + investimentos (valor aplicado; hoje, a mercado quando você informou) − o que talvez tenha que devolver. Meses passados no fim do mês; o mês atual, hoje.</p>
+      ${lista}`;
+  }
+
+  function graficos(D) {
+    const muted = cssVar('--text-muted', '#888'), grade = cssVar('--border-soft', 'rgba(0,0,0,.08)'), prim = cssVar('--primary', '#7A5AF8');
+    if (chartM) { chartM.destroy(); chartM = null; }
+    if (chartP) { chartP.destroy(); chartP = null; }
+    if (typeof Chart === 'undefined') return;
+    const cm = $('anChartM');
+    if (cm && celular()) {
+      chartM = new Chart(cm.getContext('2d'), {
+        type: 'bar',
+        data: { labels: INI, datasets: [
+          { label: 'Entradas', data: D.md.map(d => d.entradas), backgroundColor: D.md.map((_, i) => i > D.lim ? '#10b98140' : '#10b981'), borderRadius: 4, maxBarThickness: 12 },
+          { label: 'Gastos', data: D.md.map(d => d.gastos), backgroundColor: D.md.map((_, i) => i > D.lim ? '#ef444440' : '#ef4444'), borderRadius: 4, maxBarThickness: 12 }
+        ] },
+        options: { responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, color: muted } },
+            tooltip: { callbacks: { title: it => monthsFull[it[0].dataIndex] + (it[0].dataIndex > D.lim ? ' (projeção)' : ''), label: it => `${it.dataset.label}: ${fmt(it.raw)}` } } },
+          scales: { x: { grid: { display: false }, ticks: { color: muted } }, y: { grid: { color: grade }, ticks: { color: muted, callback: v => mil(v) } } } }
+      });
+    }
+    const cp = $('anChartP'), pts = serie(D.y);
+    if (cp && pts.length) {
+      const mesesAcerto = new Set(acertos().map(a => a.t));
+      chartP = new Chart(cp.getContext('2d'), {
+        type: 'line',
+        data: { labels: pts.map(p => p.hoje ? 'hoje' : months[p.m]), datasets: [{ label: 'Patrimônio', data: pts.map(p => Math.round(p.v * 100) / 100),
+          borderColor: prim, backgroundColor: prim + '22', fill: true, tension: .25,
+          pointRadius: pts.map(p => mesesAcerto.has(p.t) ? 6 : 3), pointBackgroundColor: pts.map(p => mesesAcerto.has(p.t) ? '#F79009' : prim) }] },
+        options: { responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false }, tooltip: { callbacks: {
+            title: it => { const p = pts[it[0].dataIndex]; return p.hoje ? 'Hoje' : `Fim de ${monthsFull[p.m].toLowerCase()}`; },
+            label: it => fmt(it.raw), afterLabel: it => mesesAcerto.has(pts[it.dataIndex].t) ? 'teve acerto de conferência' : '' } } },
+          scales: { x: { grid: { display: false }, ticks: { color: muted } }, y: { grid: { color: grade }, ticks: { color: muted, callback: v => mil(v) } } } }
+      });
+    }
+  }
+
+  function renderAnualNovo() {
+    const pg = $('anual');
+    if (!pg || typeof db === 'undefined' || !db || !db.events) return;
+    [...pg.querySelectorAll(':scope > .panel')].forEach(p => {
+      const h = ((p.querySelector('h2') || {}).textContent || '').trim();
+      if (/^Resumo mensal/.test(h) || /^Entradas/.test(h)) p.classList.add('an-velho');
+      else if (/^Evolução por categoria/.test(h)) p.classList.add('an-velho-cat');
+    });
+    if (anoVisto !== currentYear) { mesAberto = null; catAberta = null; todasCats = false; verProj = false; anoVisto = currentYear; }
+    const D = dadosAno(currentYear);
+    let topo = $('anualTopo');
+    if (!topo) { topo = document.createElement('div'); topo.id = 'anualTopo'; ($('anualSub') || pg.firstElementChild).insertAdjacentElement('afterend', topo); }
+    let fim = $('anualFim');
+    if (!fim) { fim = document.createElement('div'); fim.id = 'anualFim'; pg.appendChild(fim); }
+    topo.innerHTML = htmlTopo(D);
+    $('anMeses').innerHTML = htmlMeses(D);
+    fim.innerHTML = `<section class="panel" id="anCats">${htmlCategorias(D)}</section><section class="panel" id="anPatr">${htmlPatrimonio(D)}</section>`;
+    graficos(D);
+  }
+  window.anualAbrirMes = i => { mesAberto = mesAberto === i ? null : i; const el = $('anMeses'); if (el) el.innerHTML = htmlMeses(dadosAno(currentYear)); };
+  window.anualAbrirCat = nome => { catAberta = catAberta === nome ? null : nome; const el = $('anCats'); if (el) el.innerHTML = htmlCategorias(dadosAno(currentYear)); };
+  window.anualVerProj = () => { verProj = !verProj; const el = $('anMeses'); if (el) el.innerHTML = htmlMeses(dadosAno(currentYear)); };
+  window.anualTodasCats = () => { todasCats = !todasCats; const el = $('anCats'); if (el) el.innerHTML = htmlCategorias(dadosAno(currentYear)); };
+  window.anualIrMes = i => { if (i !== currentMonth) setCurrentMonth(i); navTo('gastos'); window.scrollTo(0, 0); };
+  window.renderAnualNovo = renderAnualNovo;
+
+  const orig = window.renderAnual;
+  if (typeof orig === 'function') {
+    window.renderAnual = function () { const r = orig.apply(this, arguments); try { renderAnualNovo(); } catch (e) { console.warn('[v88 anual]', e); } return r; };
+  }
+  try {
+    window.matchMedia('(max-width: 768px)').addEventListener('change', () => {
+      if (document.getElementById('anual')?.classList.contains('active')) { try { renderAnualNovo(); } catch (e) {} }
+    });
+  } catch (e) { /* navegador antigo */ }
+})();
 </script>
 </body>
 </html>
