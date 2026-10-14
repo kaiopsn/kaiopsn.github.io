@@ -2732,7 +2732,7 @@
 
   <!-- ============== INVESTIMENTOS ============== -->
   <div id="investimentos" class="content">
-    <h1>Patrimônio e Investimentos</h1>
+    <h1>Investimentos</h1>
     <p class="page-sub" id="invSub">Acompanhe seu patrimônio total e histórico de aportes.</p>
     
     <!-- 4 Cards Superiores (Visão Global e do Ano) -->
@@ -6207,7 +6207,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v89';
+const APP_VERSION = 'v90';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -8986,11 +8986,12 @@ function investFlowsMonth(y, m) {
   if (typeof w === 'number') ['reserva', 'rendaFixa', 'polyMarket', 'acoes'].forEach(id => add(retirada, id, w / 4));
   else if (w && typeof w === 'object') Object.keys(w).forEach(id => add(retirada, id, w[id] || 0));
   const lancados = getMonthData(y, m).aportes || [];
-  lancados.forEach(it => add(aporte, it.investClass, it.value));
+  // v90: lançamento negativo (Tirar da meta) é resgate, não aporte
+  lancados.forEach(it => { if (it.value >= 0) add(aporte, it.investClass, it.value); else add(retirada, it.investClass, -it.value); });
   const soma = o => Object.values(o).reduce((a, b) => a + b, 0);
   const aportes = soma(aporte), retiradas = soma(retirada);
   return { aporte, retirada, lancados, aportes, retiradas, liquido: aportes - retiradas,
-           lancadoTotal: lancados.reduce((a, b) => a + b.value, 0) };
+           lancadoTotal: lancados.filter(i => i.value > 0).reduce((a, b) => a + b.value, 0) };
 }
 
 function renderInvest() {
@@ -9054,25 +9055,28 @@ function renderInvest() {
       <td class="table-num"><strong>${fmt(anoAp)}</strong></td>${retCell(anoRt)}${liqCell(anoAp - anoRt, true)}<td></td>
     </tr>`;
 
-  // 4. Cards: o que está investido hoje, separado em reserva × investimentos
-  const cobRes = coberturaReserva(cart.reserva, currentYear, currentMonth);
+  // 4. Cards — v90: a mercado (os mesmos números da Início); o aplicado vira detalhe
+  const cmk = getCarteiraMercado();
+  const vM = id => ((cmk.porClasse[id] || {}).mercado || 0);
+  const cobRes = coberturaReserva(cmk.reserva, currentYear, currentMonth);
   const temReserva = classes.some(c => c.reserve);
-  const topInv = classes.filter(c => !c.reserve && (cart.porClasse[c.id] || 0) > 0)
+  const topInv = classes.filter(c => !c.reserve && vM(c.id) > 0).sort((a, b) => vM(b.id) - vM(a.id))
     .map(c => escapeHtml(c.label)).slice(0, 3).join(' · ') || 'nada aplicado ainda';
+  const rendT = cmk.mercado - cmk.aplicado;
   document.getElementById('invStats').innerHTML = `
     <div class="card featured" style="padding: 16px 20px;">
-      <div class="label">Total investido</div>
-      <div class="value anim-num" data-value="${cart.total}" style="font-size: 1.8rem">${fmt(cart.total)}</div>
-      <div class="sub">${(() => { const cmk = getCarteiraMercado(); return cmk.temMercado ? `aplicado · a mercado ${fmt(cmk.mercado)}` : (temReserva ? 'reserva de emergência + investimentos' : 'soma das suas classes'); })()}</div>
+      <div class="label">Você tem investido</div>
+      <div class="value anim-num" data-value="${cmk.mercado}" style="font-size: 1.8rem">${fmt(cmk.mercado)}</div>
+      <div class="sub">${cmk.temMercado && !cmk.legado ? `aplicado ${fmt(cmk.aplicado)} · rendeu ${rendT >= 0 ? '+' : '−'}${fmt(Math.abs(rendT))}` : (temReserva ? 'reserva de emergência + investimentos' : 'soma das suas classes')}</div>
     </div>
     <div class="card">
       <div class="label">Reserva de emergência</div>
-      <div class="value anim-num" data-value="${cart.reserva}">${fmt(cart.reserva)}</div>
+      <div class="value anim-num" data-value="${cmk.reserva}">${fmt(cmk.reserva)}</div>
       <div class="sub">${!temReserva ? 'marque uma classe como reserva abaixo' : cobRes.texto.replace(/^Cobre/, 'cobre')}</div>
     </div>
     <div class="card">
       <div class="label">Investimentos</div>
-      <div class="value anim-num" data-value="${cart.investimentos}">${fmt(cart.investimentos)}</div>
+      <div class="value anim-num" data-value="${cmk.investimentos}">${fmt(cmk.investimentos)}</div>
       <div class="sub">${topInv}</div>
     </div>
     <div class="card">
@@ -9084,7 +9088,7 @@ function renderInvest() {
   if (typeof animateNumbers === 'function') animateNumbers(document.getElementById('invStats'));
 
   // 5. Distribuição por classe
-  const comValor = classes.filter(c => (cart.porClasse[c.id] || 0) > 0);
+  const comValor = classes.filter(c => vM(c.id) > 0);   // v90: a mercado
   const canvas = document.getElementById('invChart');
   if (canvas && typeof Chart !== 'undefined') {
     if (invChart) invChart.destroy();
@@ -9092,7 +9096,7 @@ function renderInvest() {
       type: 'doughnut',
       data: {
         labels: comValor.map(c => c.label),
-        datasets: [{ data: comValor.map(c => cart.porClasse[c.id]), backgroundColor: comValor.map(c => c.color), borderWidth: 0 }]
+        datasets: [{ data: comValor.map(c => vM(c.id)), backgroundColor: comValor.map(c => c.color), borderWidth: 0 }]
       },
       options: { responsive: true, cutout: '70%', plugins: { legend: { position: 'bottom' } } }
     });
@@ -9108,7 +9112,7 @@ function editInvestModal(y, m) {
   const wRaw = r.withdrawals;
   const w = (wRaw && typeof wRaw === 'object') ? wRaw : {};
   const legacyW = typeof wRaw === 'number' ? wRaw : 0;
-  const lanc = getMonthData(y, m).aportes || [];
+  const lanc = (getMonthData(y, m).aportes || []).filter(i => i.value > 0);   // v90: resgates (negativos) à parte
   const lancTotal = lanc.reduce((a, b) => a + b.value, 0);
   const campo = (pref, c, v) => `<div class="input-group"><label>${escapeHtml(c.label)} (R$)</label>
     <input id="${pref}_${escapeHtml(c.id)}" type="text" inputmode="decimal" value="${escapeHtml(fmtInput(v || 0))}"></div>`;
@@ -9210,7 +9214,7 @@ function openInvestClassModal(id) {
       <input id="icName" placeholder="Ex: Tesouro Selic, CDB, Ações, Cripto" value="${atual ? escapeHtml(atual.label) : ''}"></div>
     <div class="input-group"><label>Cor</label>
       <input id="icColor" type="color" value="${escapeHtml(cor)}" style="height:40px"></div>
-    <div class="input-group"><label>Já tinha aplicado antes de usar o app (saldo inicial)</label>
+    <div class="input-group"><label>${atual ? 'Já tinha aplicado antes de usar o app (saldo inicial)' : 'Quanto já tem nela hoje (opcional)'}</label>
       <input id="icOpening" type="text" inputmode="decimal" placeholder="0,00" value="${atual && safeNum(atual.opening, 0) > 0 ? escapeHtml(fmtInput(atual.opening)) : ''}">
       <small class="muted" style="display:block;margin-top:4px;font-size:0.75rem">Entra no patrimônio, mas não conta como aporte de nenhum mês — não sai da sua conta nem mexe na sua sobra.</small></div>
     <label style="display:flex;gap:10px;align-items:flex-start;font-size:0.9rem;cursor:pointer;margin-top:4px">
@@ -9238,7 +9242,9 @@ function openInvestClassModal(id) {
           .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'classe';
         let novo = base, i = 2;
         while (getInvestClasses().some(c => c.id === novo) || novo === 'withdrawals') novo = `${base}-${i++}`;
-        db.investClasses.push(opening > 0 ? { id: novo, label, color, reserve, opening, openingDate: todayISO() } : { id: novo, label, color, reserve });
+        const nova = { id: novo, label, color, reserve };
+        db.investClasses.push(nova);
+        if (opening > 0) somarJaGuardado(nova, opening);   // v90: ponto de partida hoje
       }
       saveDB();
       rebuildInvestClassDropdowns();
@@ -11909,7 +11915,8 @@ function computeFutureCommitment() {
   const list = [];
   let total = 0;
   (db.installments || []).forEach(inst => {
-    const monthsSince = (currentYear - inst.startYear) * 12 + (currentMonth - inst.startMonth);
+    const _h = new Date();   // v90: a partir de hoje, igual ao patrimônio ao lado
+    const monthsSince = (_h.getFullYear() - inst.startYear) * 12 + (_h.getMonth() - inst.startMonth);
     const currentParc = monthsSince + 1;
     let remaining;
     if (currentParc < 1) remaining = inst.total;               // ainda não começou
@@ -13344,6 +13351,52 @@ function renderRecentActivity() {
   .mt-opcao small { display: block; font-weight: 400; color: var(--text-muted); font-size: .78rem; margin-top: 2px; }
   .mt-opcao:has(input:checked) { border-color: var(--primary); background: var(--primary-tint, rgba(124,58,237,.08)); }
   @media (max-width: 768px) { .mt-lista { grid-template-columns: 1fr; } }
+
+  /* v90 · Investimentos no celular */
+  #invNovo { display: none; }
+  .iv-topo { padding: 18px; border-radius: 18px; background: var(--surface); border: 1px solid var(--border-soft); margin-bottom: 14px; }
+  .iv-topo .iv-l { font-size: .82rem; color: var(--text-muted); font-weight: 600; }
+  .iv-topo .iv-v { font-size: 2.1rem; font-weight: 800; letter-spacing: -.02em; line-height: 1.15; margin: 2px 0; }
+  .iv-topo .iv-s { font-size: .82rem; color: var(--text-muted); line-height: 1.5; }
+  .iv-acoes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .iv-topo .iv-acoes .btn { flex: 1 1 0; min-width: 0; white-space: nowrap; width: auto !important; }
+  #invNovo .panel h2 { margin: 0 0 4px; font-size: 1.05rem; }
+  .iv-dica { font-size: .78rem; color: var(--text-muted); margin: 0 0 10px; line-height: 1.5; }
+  .iv-barra { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: var(--border-soft); margin: 4px 0 10px; }
+  .iv-barra span { display: block; height: 100%; }
+  .iv-cl { padding: 11px 2px; border-bottom: 1px solid var(--border-soft); cursor: pointer; }
+  .iv-cl:last-of-type { border-bottom: none; }
+  .iv-cl-top { display: flex; align-items: center; gap: 8px; }
+  .iv-cl-nome { flex: 1; min-width: 0; font-weight: 600; font-size: .93rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .iv-cl-val { font-weight: 700; white-space: nowrap; }
+  .iv-cl-sub { font-size: .75rem; color: var(--text-muted); margin: 2px 0 0 18px; }
+  .iv-tag { font-size: .64rem; font-weight: 700; padding: 2px 7px; border-radius: 999px; background: rgba(18,183,106,.14); color: var(--pos); white-space: nowrap; }
+  .iv-tag.meta { background: var(--primary-tint, rgba(124,58,237,.12)); color: var(--primary); }
+  .iv-det { margin: 8px 0 2px 18px; padding: 10px 12px; border-radius: 12px; background: var(--surface-warm, rgba(0,0,0,.03)); font-size: .82rem; line-height: 1.65; cursor: default; }
+  .iv-det .iv-acoes { margin-top: 8px; }
+  .iv-det .btn { padding: 6px 12px; font-size: .82rem; }
+  .iv-rodape { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .iv-rebal { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+  .iv-rebal-out { margin-top: 10px; font-size: .86rem; line-height: 1.8; }
+  .iv-resumo-linha { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: .88rem; }
+  .iv-mes { padding: 10px 2px; border-bottom: 1px solid var(--border-soft); cursor: pointer; }
+  .iv-mes:last-of-type { border-bottom: none; }
+  .iv-mes-top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .iv-mes-nome { font-weight: 600; font-size: .92rem; }
+  .iv-mes-sub { font-size: .74rem; color: var(--text-muted); margin-top: 2px; }
+  .iv-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+  .iv-chip { padding: 5px 10px; border-radius: 999px; border: 1px dashed var(--border); background: transparent; color: var(--text-muted); font: 500 .78rem/1 inherit; cursor: pointer; }
+  .iv-parc { display: flex; justify-content: space-between; gap: 10px; padding: 8px 2px; border-bottom: 1px solid var(--border-soft); font-size: .86rem; }
+  .iv-parc:last-child { border-bottom: none; }
+  .iv-parc small { display: block; color: var(--text-muted); font-size: .74rem; }
+  #invNovo .cart-indices { margin-top: 10px; padding-top: 10px; }
+  #invNovo .cart-indices h3 { display: none; }
+  #invNovo .cart-cards { display: grid; grid-template-columns: 1fr; gap: 8px; }
+  @media (max-width: 768px) {
+    #invNovo { display: block; }
+    #investimentos > #invStats, #investimentos > #profitabilityPanel, #investimentos > #futureCommitPanel,
+    #investimentos > .grid.grid-2, #investimentos > .panel.inv-velho, #investimentos > #invSub { display: none !important; }
+  }
   /* v74 · Importar extrato */
   #modalBox:has(.extrato-revisao) { max-width: 720px; }
   .extrato-opcoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 12px; }
@@ -16859,6 +16912,182 @@ window.guardarNaMeta = guardarNaMeta;
 window.tirarDaMeta = tirarDaMeta;
 window.realizarMeta = realizarMeta;
 window.desfazerRealizada = desfazerRealizada;
+</script>
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// v90 · INVESTIMENTOS NO CELULAR — um número no topo (a mercado, igual à
+// Início), "Onde está o seu dinheiro" (classes com %, alvo, rendimento, meta;
+// toque abre detalhes e ações), como dividir o próximo aporte, CDI recolhido,
+// movimentos do ano em lista e parcelas em aberto. No computador, a tela de
+// sempre (com os números a mercado).
+// ══════════════════════════════════════════════════════════════════════
+(function () {
+  const $ = id => document.getElementById(id);
+  let aberta = null, mesAberto = null, cdiAberto = false, verZeradas = false, dentro = false;
+  const pct1 = v => v.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%';
+  const sinal = v => (v >= 0 ? '+' : '−') + fmt(Math.abs(v));
+  const ddmm = iso => String(iso || '').split('-').reverse().slice(0, 2).join('/');
+
+  function htmlTopo(cm) {
+    const rend = cm.mercado - cm.aplicado, temM = cm.temMercado && !cm.legado;
+    return `<div class="iv-topo">
+      <div class="iv-l">Você tem investido</div>
+      <div class="iv-v">${fmt(cm.mercado)}</div>
+      <div class="iv-s">${temM ? `aplicado ${fmt(cm.aplicado)} · rendeu <span class="${rend >= 0 ? 'pos' : 'neg'}">${sinal(rend)}</span>${cm.aplicado > 0 ? ` (${(rend >= 0 ? '+' : '−') + pct1(Math.abs(rend / cm.aplicado * 100))})` : ''}`
+        : cm.legado ? 'valor de mercado da carteira toda' : 'valor aplicado — informe o valor de mercado para ver quanto rendeu'}</div>
+      <div class="iv-acoes"><button type="button" class="btn primary" onclick="abrirConferirSaldos()">Conferir saldos</button><button type="button" class="btn" onclick="openMercadoModal()">Valor de mercado</button></div>
+    </div>`;
+  }
+
+  function htmlOnde(cm) {
+    const classes = getInvestClasses(), prov = getProventos(12), h = new Date();
+    const somaAlvo = classes.reduce((a, c) => a + safeNum(c.target, 0), 0);
+    const lista = classes.map(c => ({ c, p: cm.porClasse[c.id] || { aplicado: 0, mercado: 0, informado: false }, meta: (db.goals || []).find(g => g.classe === c.id && !g.realizada) }))
+      .sort((a, b) => b.p.mercado - a.p.mercado);
+    const vivas = lista.filter(x => x.p.mercado > 0.004 || x.c.reserve || x.meta), zeradas = lista.filter(x => !vivas.includes(x));
+    const base = cm.mercado > 0 ? cm.mercado : 1;
+    const barra = vivas.filter(x => x.p.mercado > 0).map(x => `<span style="width:${x.p.mercado / base * 100}%;background:${safeColor(x.c.color)}" title="${escapeHtml(x.c.label)}"></span>`).join('');
+    const linha = x => {
+      const { c, p, meta } = x, id = jsArg(c.id), r = p.mercado - p.aplicado;
+      const peso = cm.mercado > 0 ? p.mercado / cm.mercado * 100 : 0, alvo = safeNum(c.target, 0);
+      const sub = [`${pct1(peso)} da carteira`, alvo > 0 ? `alvo ${pct1(alvo)}` : '', p.informado && Math.abs(r) >= 0.005 ? `<span class="${r >= 0 ? 'pos' : 'neg'}">${sinal(r)}</span>` : ''].filter(Boolean).join(' · ');
+      const mi = meta && typeof metaInfo === 'function' ? metaInfo(meta) : null;
+      const tags = (c.reserve ? '<span class="iv-tag">reserva</span>' : '') + (mi ? `<span class="iv-tag meta">🎯 ${Math.round(mi.pct)}%</span>` : '');
+      let det = '';
+      if (aberta === c.id) {
+        const partes = [`Aplicado: <strong>${fmt(p.aplicado)}</strong>`];
+        partes.push(p.informado ? `A mercado: <strong>${fmt(p.mercado)}</strong> (informado em ${ddmm(p.data)})` : 'Sem valor de mercado: conta o que foi aplicado.');
+        if (c.ancora && c.ancora.date) partes.push(`${c.ancora.motivo === 'guardado' ? 'Já estava guardado' : 'Conferido'} em ${c.ancora.date.split('-').reverse().join('/')}`);
+        if (alvo > 0) { const d = peso - alvo; partes.push(`Alvo ${pct1(alvo)} · está em ${pct1(peso)} (${Math.abs(d) < 1 ? 'no alvo' : `${d > 0 ? '+' : '−'}${Math.abs(d).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} p.p.`})`); }
+        if (c.reserve) partes.push(coberturaReserva(cm.reserva, h.getFullYear(), h.getMonth()).texto);
+        if ((prov.porClasse[c.id] || 0) > 0) partes.push(`Proventos nos últimos 12 meses: ${fmt(prov.porClasse[c.id])}`);
+        if (mi) partes.push(`Meta <strong>${escapeHtml(meta.name)}</strong>: ${escapeHtml(mi.frase)}`);
+        det = `<div class="iv-det" onclick="event.stopPropagation()">${partes.join('<br>')}
+          <div class="iv-acoes"><button type="button" class="btn primary" onclick="ivGuardar(${id})">Guardar</button><button type="button" class="btn" onclick="openInvestClassModal(${id})">Editar</button><button type="button" class="btn" onclick="deleteInvestClass(${id})">Excluir</button></div></div>`;
+      }
+      return `<div class="iv-cl" role="button" tabindex="0" onclick="ivAbrirClasse(${id})" onkeydown="if(event.key==='Enter') ivAbrirClasse(${id})">
+        <div class="iv-cl-top"><span class="method-row-dot" style="background:${safeColor(c.color)}"></span><span class="iv-cl-nome">${escapeHtml(c.label)}</span>${tags}<span class="iv-cl-val">${fmt(p.mercado)}</span></div>
+        <div class="iv-cl-sub">${sub}</div>${det}</div>`;
+    };
+    const prv = prov.total > 0 ? `<p class="iv-dica" style="margin:10px 0 0">Proventos nos últimos 12 meses: <strong>${fmt(prov.total)}</strong> (isentos ${fmt(prov.isento)} · tributáveis ${fmt(prov.tributavel)}).</p>` : '';
+    return `<h2>Onde está o seu dinheiro</h2>
+      ${barra ? `<div class="iv-barra">${barra}</div>` : ''}
+      ${vivas.map(linha).join('') || '<p class="iv-dica">Nada aplicado ainda.</p>'}
+      ${zeradas.length ? `<button type="button" class="link-btn" style="margin-top:6px" onclick="ivVerZeradas()">${verZeradas ? 'Esconder' : 'Ver'} ${zeradas.length} classe${zeradas.length === 1 ? '' : 's'} sem saldo</button>${verZeradas ? zeradas.map(linha).join('') : ''}` : ''}
+      ${prv}
+      ${somaAlvo > 0 && Math.abs(somaAlvo - 100) >= 0.5 ? `<p class="iv-dica" style="margin-top:8px">A soma dos alvos está em ${pct1(somaAlvo)} — o ideal é 100%.</p>` : ''}
+      <div class="iv-rodape"><button type="button" class="btn" onclick="openInvestClassModal()">+ Nova classe</button><button type="button" class="btn" onclick="openAlvoModal()">Alocação-alvo</button></div>`;
+  }
+
+  function htmlRebal() {
+    const somaAlvo = getInvestClasses().reduce((a, c) => a + safeNum(c.target, 0), 0);
+    if (!(somaAlvo > 0)) return '';
+    return `<section class="panel"><h2>Como dividir o próximo aporte</h2><p class="iv-dica">Pela sua alocação-alvo: primeiro completa o que está abaixo do alvo.</p>
+      <div class="iv-rebal"><input id="ivRebalValor" type="text" inputmode="decimal" placeholder="Quanto vai aportar" onkeydown="if(event.key==='Enter') ivCalcRebal()"><button type="button" class="btn primary" onclick="ivCalcRebal()">Dividir</button></div>
+      <div id="ivRebalOut" class="iv-rebal-out"></div></section>`;
+  }
+
+  function htmlCdi() {
+    if (typeof compararComIndices !== 'function') return '';
+    let r; try { r = compararComIndices(); } catch (e) { return ''; }
+    const resumo = r.tot ? `Rendeu <strong>${pctDoCdi(r.tot.pctCdi)}</strong>${r.idx.ipca ? ` · ${(r.tot.mercado - r.tot.ipca) >= 0 ? 'acima' : 'abaixo'} da inflação: <span class="${(r.tot.mercado - r.tot.ipca) >= 0 ? 'pos' : 'neg'}">${sinal(r.tot.mercado - r.tot.ipca)}</span>` : ''}`
+      : r.semMercado ? 'Informe o valor de mercado para comparar.' : r.semIndices ? 'As taxas do CDI e do IPCA ainda não foram carregadas.' : 'Ainda é pouco tempo para comparar.';
+    return `<section class="panel"><h2>Comparado ao CDI e à inflação</h2>
+      <div class="iv-resumo-linha"><span>${resumo}</span><button type="button" class="link-btn" onclick="ivCdi()">${cdiAberto ? 'menos ▴' : 'detalhes ▾'}</button></div>
+      ${cdiAberto && typeof blocoIndicesCarteira === 'function' ? blocoIndicesCarteira() : ''}</section>`;
+  }
+
+  function htmlMovs() {
+    const y = currentYear, lim = ultimoMesRealizado(y), classes = getInvestClasses();
+    const nome = id => (classes.find(c => c.id === id) || {}).label || id;
+    let tAp = 0, tRt = 0;
+    const meses = months.map((_, i) => { const f = investFlowsMonth(y, i); tAp += f.aportes; tRt += f.retiradas; return f; });
+    const linhas = [], vazios = [];
+    meses.forEach((f, i) => {
+      const tem = f.aportes > 0.004 || f.retiradas > 0.004;
+      if (!tem) { if (i <= lim) vazios.push(i); return; }
+      let det = '';
+      if (mesAberto === i) {
+        const ids = [...new Set(Object.keys(f.aporte).concat(Object.keys(f.retirada)))];
+        det = `<div class="iv-det" onclick="event.stopPropagation()">${ids.map(id => `${escapeHtml(nome(id))}: ${f.aporte[id] ? `<span class="pos">+${fmt(f.aporte[id])}</span>` : ''}${f.aporte[id] && f.retirada[id] ? ' · ' : ''}${f.retirada[id] ? `<span class="neg">−${fmt(f.retirada[id])}</span>` : ''}`).join('<br>')}
+          ${f.lancadoTotal > 0 ? `<br><span class="muted">Inclui ${fmt(f.lancadoTotal)} lançados pelo + (mude em Gastos no mês).</span>` : ''}
+          <div class="iv-acoes"><button type="button" class="btn" onclick="editInvestModal(${y}, ${i})">Editar o mês</button></div></div>`;
+      }
+      linhas.push(`<div class="iv-mes" role="button" tabindex="0" onclick="ivAbrirMes(${i})" onkeydown="if(event.key==='Enter') ivAbrirMes(${i})">
+        <div class="iv-mes-top"><span class="iv-mes-nome">${monthsFull[i]}${i > lim ? ' <span class="proj-tag">previsto</span>' : ''}</span><span class="${f.liquido >= 0 ? 'pos' : 'neg'}" style="font-weight:700">${sinal(f.liquido)}</span></div>
+        <div class="iv-mes-sub">guardou ${fmt(f.aportes)}${f.retiradas > 0.004 ? ` · tirou ${fmt(f.retiradas)}` : ''}</div>${det}</div>`);
+    });
+    const anteriores = (db.years || []).filter(a => a < y).sort((a, b) => b - a).map(a => {
+      let ap = 0, rt = 0; for (let m = 0; m < 12; m++) { const f = investFlowsMonth(a, m); ap += f.aportes; rt += f.retiradas; }
+      return ap > 0.004 || rt > 0.004 ? `<div class="iv-mes-sub">${a}: guardou ${fmt(ap)}${rt > 0.004 ? ` · tirou ${fmt(rt)}` : ''} · líquido ${fmt(ap - rt)}</div>` : '';
+    }).join('');
+    return `<section class="panel"><h2>Movimentos de ${y}</h2>
+      <p class="iv-dica">Guardou <strong>${fmt(tAp)}</strong>${tRt > 0.004 ? ` · tirou <strong>${fmt(tRt)}</strong>` : ''} · líquido <strong>${fmt(tAp - tRt)}</strong>. Toque num mês para ver por classe.</p>
+      ${linhas.join('') || '<p class="iv-dica">Nenhum aporte ou resgate neste ano.</p>'}
+      ${vazios.length ? `<div class="iv-dica" style="margin:10px 0 2px">Sem movimentos — toque para lançar:</div><div class="iv-chips">${vazios.map(i => `<button type="button" class="iv-chip" onclick="editInvestModal(${y}, ${i})">${months[i]}</button>`).join('')}</div>` : ''}
+      ${anteriores ? `<div style="margin-top:8px">${anteriores}</div>` : ''}</section>`;
+  }
+
+  function htmlParcelas(cm) {
+    const fc = computeFutureCommitment();
+    if (!(fc.total > 0)) return '';
+    const h = new Date(), patr = getContaExibida(h.getFullYear(), h.getMonth()) + cm.mercado - aDevolverEm(h.getFullYear(), h.getMonth());
+    return `<section class="panel"><h2>Parcelas em aberto</h2>
+      <p class="iv-dica">${fc.list.length} parcelamento${fc.list.length === 1 ? '' : 's'} · <strong>${fmt(fc.total)}</strong> a pagar. Depois de pagar tudo, seu patrimônio seria <strong class="${patr - fc.total >= 0 ? '' : 'neg'}">${fmt(patr - fc.total)}</strong>.</p>
+      ${fc.list.map(i => `<div class="iv-parc"><span>${escapeHtml(i.desc)}<small>${i.remaining}× de ${fmt(i.value)} · até ${escapeHtml(i.endLabel)}</small></span><strong>${fmt(i.remValue)}</strong></div>`).join('')}</section>`;
+  }
+
+  function renderInvNovo() {
+    const pg = $('investimentos');
+    if (!pg || typeof db === 'undefined' || !db || !db.events) return;
+    const lista = $('investClassesList');
+    if (lista && lista.closest('.panel')) lista.closest('.panel').classList.add('inv-velho');
+    let box = $('invNovo');
+    if (!box) { box = document.createElement('div'); box.id = 'invNovo'; ($('invSub') || pg.firstElementChild).insertAdjacentElement('afterend', box); }
+    const cm = getCarteiraMercado();
+    box.innerHTML = htmlTopo(cm)
+      + `<section class="panel" id="ivOnde">${htmlOnde(cm)}</section>`
+      + htmlRebal() + `<div id="ivCdiBox">${htmlCdi()}</div>` + `<div id="ivMovsBox">${htmlMovs()}</div>` + htmlParcelas(cm);
+  }
+  window.ivAbrirClasse = id => { aberta = aberta === id ? null : id; const el = $('ivOnde'); if (el) el.innerHTML = htmlOnde(getCarteiraMercado()); };
+  window.ivVerZeradas = () => { verZeradas = !verZeradas; const el = $('ivOnde'); if (el) el.innerHTML = htmlOnde(getCarteiraMercado()); };
+  window.ivAbrirMes = i => { mesAberto = mesAberto === i ? null : i; const el = $('ivMovsBox'); if (el) el.innerHTML = htmlMovs(); };
+  window.ivCdi = () => { cdiAberto = !cdiAberto; const el = $('ivCdiBox'); if (el) el.innerHTML = htmlCdi(); };
+  window.ivGuardar = id => {
+    openQuickAdd('guardar');
+    setTimeout(() => { const sel = $('qaInvestClass'); if (sel) sel.value = id; }, 60);
+  };
+  window.ivCalcRebal = () => {
+    const out = $('ivRebalOut'), v = readMoney('ivRebalValor');
+    if (!out) return;
+    if (!Number.isFinite(v) || v <= 0) { out.innerHTML = '<span class="muted">Digite quanto vai aportar, ex.: 1.000,00</span>'; return; }
+    const plano = sugerirAporte(v);
+    out.innerHTML = plano.length
+      ? plano.map(x => `<div><span class="method-row-dot" style="background:${safeColor(x.classe.color)}"></span>${escapeHtml(x.classe.label)} <strong>${fmt(x.valor)}</strong></div>`).join('')
+      : '<span class="muted">Defina a alocação-alvo primeiro.</span>';
+  };
+  window.renderInvNovo = renderInvNovo;
+
+  const ri = window.renderInvest;
+  if (typeof ri === 'function') {
+    renderInvest = window.renderInvest = function () {
+      dentro = true;
+      let r;
+      try { r = ri.apply(this, arguments); } finally { dentro = false; }
+      try { renderInvNovo(); } catch (e) { console.warn('[v90 invest]', e); }
+      return r;
+    };
+  }
+  // CDI e valores de mercado atualizam só o painel antigo: refaz o novo também
+  const rp = window.renderProfitability;
+  if (typeof rp === 'function') {
+    renderProfitability = window.renderProfitability = function () {
+      const r = rp.apply(this, arguments);
+      if (!dentro) { try { renderInvNovo(); } catch (e) {} }
+      return r;
+    };
+  }
+})();
 </script>
 </body>
 </html>
