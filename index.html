@@ -4715,7 +4715,7 @@ function fillInvoicePanels() {
     return `
       <div class="card-invoice">
         <div class="card-invoice-header">
-          <span class="card-invoice-title">Fatura ${escapeHtml(label)} — ${monthsFull[currentMonth]}<small class="ci-due">${(dt => dt.fecha ? `fecha ${dt.fecha} · sai da conta em ${dt.vence}` : `sai da conta em ${dt.vence}`)(datasFatura(m, currentYear * 12 + currentMonth))}</small></span>
+          <span class="card-invoice-title">${(dt => `Fatura ${escapeHtml(label)} de ${dt.mesVence}<small class="ci-due">${dt.fecha ? `compras até ${dt.fecha}` : `compras de ${monthsFull[currentMonth].toLowerCase()}`} · vence ${dt.vence}</small>`)(datasFatura(m, currentYear * 12 + currentMonth))}</span>
           <span class="card-invoice-total">${fmt(total)}</span>
         </div>
         <div class="card-invoice-items">${rows}</div>
@@ -6215,7 +6215,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v84';
+const APP_VERSION = 'v85';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -7801,7 +7801,9 @@ function datasFatura(metodoId, tf) {
   const venc = diaVencimento(metodoId), fecha = diaFechamento(metodoId);
   const dm = (t, d) => `${String(Math.min(d, new Date(Math.floor(t / 12), t % 12 + 1, 0).getDate())).padStart(2, '0')}/${String(t % 12 + 1).padStart(2, '0')}`;
   const tv = fecha == null ? tf + 1 : (venc > fecha ? tf : tf + 1);
-  return { fecha: fecha == null ? null : dm(tf, fecha), vence: dm(tv, venc) };
+  // v85: o banco chama a fatura pelo mês do VENCIMENTO ("fatura de novembro")
+  const mesVence = monthsFull[tv % 12] + (Math.floor(tv / 12) !== Math.floor(tf / 12) ? `/${Math.floor(tv / 12)}` : '');
+  return { fecha: fecha == null ? null : dm(tf, fecha), vence: dm(tv, venc), tv, mesVence };
 }
 
 // ── v73 · VÁRIAS CONTAS ──────────────────────────────────────────────────
@@ -13437,9 +13439,7 @@ function computeRadar() {
     if (v.tipo === 'fatura') add({
       id: `fat:${v.f.metodo}:${Y}-${M}`, ritmo: 'hoje', nivel: 'aviso', icone: '📅',
       titulo: `Fatura ${escapeHtml(methodLabel(v.f.metodo))} ${quando}`,
-      texto: v.f.fechaDia
-        ? `${fmt(v.f.valor)} da fatura que fechou em ${datasFatura(v.f.metodo, v.f.compraY * 12 + v.f.compraM).fecha} saem da sua conta.`
-        : `${fmt(v.f.valor)} das compras de ${monthsFull[v.f.compraM].toLowerCase()} saem da sua conta.`
+      texto: (dt => `${fmt(v.f.valor)} da fatura de ${dt.mesVence.toLowerCase()} (${dt.fecha ? `fechou em ${dt.fecha}` : `compras de ${monthsFull[v.f.compraM].toLowerCase()}`}) saem da sua conta.`)(datasFatura(v.f.metodo, v.f.compraY * 12 + v.f.compraM))
     });
     else add({
       id: `venc:${v.it.id}:${Y}-${M}`, ritmo: 'hoje', nivel: 'aviso', icone: '📅',
@@ -14895,8 +14895,8 @@ function ansFatura(t, n) {
     const dt = datasFatura(m.id, tfAberta);
     const pg = aPagar.find(f => f.metodo === m.id);
     const partes = [dt.fecha
-      ? `Fatura aberta (fecha ${dt.fecha}): <span class="num">${fmt(atual)}</span> até agora — vence ${dt.vence}`
-      : `Fatura de ${mes}: <span class="num">${fmt(atual)}</span> até agora — vence ${dt.vence}`];
+      ? `Fatura de ${dt.mesVence.toLowerCase()} (aberta, fecha ${dt.fecha}): <span class="num">${fmt(atual)}</span> até agora — vence ${dt.vence}`
+      : `Fatura de ${dt.mesVence.toLowerCase()} (compras de ${mes}): <span class="num">${fmt(atual)}</span> até agora — vence ${dt.vence}`];
     if (pg) partes.push(pg.dia >= D ? `A pagar este mês: ${fmt(pg.valor)} no dia ${pg.dia}` : `A anterior (${fmt(pg.valor)}) venceu dia ${pg.dia}`);
     return `<strong>${escapeHtml(m.label)}</strong><br>${assistLista(partes)}`;
   }).join('<br><br>');
