@@ -6212,7 +6212,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v78';
+const APP_VERSION = 'v79';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -13015,6 +13015,21 @@ function renderRecentActivity() {
   #quickAddCard .qa78-frase-btn { display: block; margin: 10px auto 0; background: none; border: none; color: var(--primary); font: 600 .85rem/1 inherit; cursor: pointer; padding: 6px; }
   #quickAddCard .qa-texto.qa78-fechado { display: none; }
   #quickAddCard #qaSuggestions:empty { display: none; }
+
+  /* v79 · Adicionar mais rápido */
+  #quickAddCard .qa79-topo { display: flex; align-items: baseline; justify-content: center; gap: 6px; margin: 6px 0 2px; }
+  #quickAddCard .qa79-topo .qa79-rs { font-size: 1.3rem; font-weight: 700; color: var(--text-muted); }
+  #quickAddCard .qa79-topo input.qa78-valor { width: auto; max-width: 70%; text-align: left; padding: 0; }
+  #quickAddCard .qa78-moeda { display: none; }
+  #quickAddCard .qa79-quando { display: flex; justify-content: center; gap: 6px; margin: 0 0 12px; }
+  #quickAddCard .qa79-quando .qa78-chip { padding: 6px 12px; font-size: .8rem; }
+  #quickAddCard #qa78Cats { flex-wrap: wrap; overflow: visible; }
+  #quickAddCard .qa79-rep { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin: 0 0 4px; }
+  #quickAddCard .qa79-rep::-webkit-scrollbar { display: none; }
+  #quickAddCard .qa79-rep .qa78-chip { border-style: dashed; }
+  #quickAddCard .qa79-rep .qa78-chip b { font-weight: 700; }
+  #quickAddCard .qa-submit { position: sticky; bottom: 0; z-index: 2; box-shadow: 0 -8px 16px var(--bg, #fff); }
+  #quickAddCard .qa-hint.qa-kbd { display: none; }
   /* v74 · Importar extrato */
   #modalBox:has(.extrato-revisao) { max-width: 720px; }
   .extrato-opcoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 12px; }
@@ -15342,16 +15357,16 @@ window.openIndicesManual = openIndicesManual;
     if (!bc) return;
     // Categorias: escolhida/sugerida primeiro, depois as mais usadas (até 7) + "Outra…"
     const todas = catsMaisUsadas(), atual = cat.value;
-    let lista = todas.slice(0, 7);
-    if (atual && !lista.includes(atual)) lista = [atual, ...lista.slice(0, 6)];
+    let lista = todas.slice(0, 5);
+    if (atual && !lista.includes(atual)) lista = [atual, ...lista.slice(0, 4)];
     else if (atual) lista = [atual, ...lista.filter(x => x !== atual)];
     bc.innerHTML = '';
     lista.forEach(n => {
       const c = (db.categories || []).find(x => x.name === n);
-      bc.appendChild(chip(n, n === atual, () => { cat.value = n === cat.value ? '' : n; cat.dataset.userSet = '1'; desenharChips(); }, c && c.color));
+      bc.appendChild(chip(n, n === atual, () => { cat.value = n === cat.value ? '' : n; cat.dataset.userSet = '1'; window.qa78Chips(); }, c && c.color));
     });
     bc.appendChild(chip('Outra…', false, () => { cat.classList.toggle('qa78-oculto'); cat.focus(); }));
-    if (!cat.parentElement.isSameNode(bc.parentElement)) { cat.classList.add('qa78-oculto'); bc.parentElement.appendChild(cat); cat.addEventListener('change', desenharChips); }
+    if (!cat.parentElement.isSameNode(bc.parentElement)) { cat.classList.add('qa78-oculto'); bc.parentElement.appendChild(cat); cat.addEventListener('change', () => window.qa78Chips()); }
     // Formas de pagamento
     bm.innerHTML = '';
     [...met.options].forEach(o => bm.appendChild(chip(o.textContent, o.value === met.value, () => { met.value = o.value; desenharChips(); })));
@@ -15380,8 +15395,140 @@ window.openIndicesManual = openIndicesManual;
   });
   if (oa) openQuickAdd = oa;
   const sm = envolver('qaSetMode', desenharChips); if (sm) qaSetMode = sm;
-  const us = envolver('updateQASuggestions', desenharChips); if (us) updateQASuggestions = us;
-  const at = envolver('qaAplicarTexto', desenharChips); if (at) qaAplicarTexto = at;
+  const us = envolver('updateQASuggestions', () => window.qa78Chips()); if (us) updateQASuggestions = us;
+  const at = envolver('qaAplicarTexto', () => window.qa78Chips()); if (at) qaAplicarTexto = at;
+})();
+</script>
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// v79 · ADICIONAR MAIS RÁPIDO
+// · valor estilo maquininha: digite só números (4250 → 42,50)
+// · descrição opcional: vazia, vira o nome da categoria
+// · "Repetir": os gastos mais frequentes num toque (preenche tudo)
+// · forma de pagamento: a que você mais usa naquela categoria
+// · data em pílulas pequenas sob o valor; categorias visíveis (sem carrossel)
+// · Enter no valor salva; botão Salvar sempre à vista
+// ══════════════════════════════════════════════════════════════════════
+(function () {
+  const $ = id => document.getElementById(id);
+  let metEscolhido = false;
+  function lancamentosRecentes(meses) {
+    const out = [], h = new Date();
+    for (let k = 0; k < meses; k++) {
+      const t = h.getFullYear() * 12 + h.getMonth() - k;
+      (getMonthData(Math.floor(t / 12), t % 12).items || []).forEach(i => { if (i.type === 'eventual' || !i.type) out.push(i); });
+    }
+    return out;
+  }
+  function frequentes() {
+    const m = {};
+    lancamentosRecentes(3).forEach(i => {
+      if (!i.desc || !(i.value > 0)) return;
+      const k = normTok(i.desc) + '|' + i.value;
+      (m[k] = m[k] || { n: 0, i }).n++;
+      if ((i.id || 0) > (m[k].i.id || 0)) m[k].i = i;
+    });
+    return Object.values(m).sort((a, b) => b.n - a.n || (b.i.id || 0) - (a.i.id || 0)).slice(0, 6).map(x => x.i);
+  }
+  function metodoDaCategoria(cat) {
+    const c = {};
+    lancamentosRecentes(3).forEach(i => { if (i.cat === cat && i.method) c[i.method] = (c[i.method] || 0) + 1; });
+    return Object.keys(c).sort((a, b) => c[b] - c[a])[0] || null;
+  }
+  function montar79() {
+    const card = $('quickAddCard');
+    if (!card || card.dataset.v79 || !card.dataset.v78) return;
+    card.dataset.v79 = '1';
+    const valor = $('qaValue'), wrap = valor.parentElement;
+    const topo = document.createElement('div'); topo.className = 'qa79-topo';
+    topo.innerHTML = '<span class="qa79-rs">R$</span>';
+    wrap.insertBefore(topo, valor); topo.appendChild(valor);
+    valor.setAttribute('inputmode', 'numeric');
+    valor.addEventListener('input', () => {
+      if (valor.dataset.texto === '1') return;
+      const dig = valor.value.replace(/\D/g, '').replace(/^0+/, '').slice(0, 10);
+      valor.value = dig ? fmtInput(Number(dig) / 100) : '';
+    });
+    // data: pílulas logo abaixo do valor
+    const quando = $('qa78Datas'), bloco = quando.parentElement;
+    quando.className = 'qa79-quando';
+    wrap.appendChild(quando); wrap.appendChild($('qaDate'));
+    bloco.remove();
+    // repetir
+    const rep = document.createElement('div'); rep.className = 'qa79-rep'; rep.id = 'qa79Rep';
+    card.querySelector('.qa-tabs').insertAdjacentElement('afterend', rep);
+    $('qaDesc').placeholder = 'Descrição (opcional)';
+    $('qaMethod').addEventListener('change', () => { metEscolhido = true; });
+  }
+  function desenharRepetir() {
+    const rep = $('qa79Rep');
+    if (!rep) return;
+    rep.innerHTML = '';
+    if (_qaMode !== 'gasto') { rep.style.display = 'none'; return; }
+    const fs = frequentes();
+    rep.style.display = fs.length ? '' : 'none';
+    fs.forEach(i => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'qa78-chip';
+      b.innerHTML = `↺ ${escapeHtml(i.desc)} <b>${escapeHtml(fmt(i.value))}</b>`;
+      b.onclick = () => {
+        $('qaDesc').value = i.desc;
+        $('qaValue').value = fmtInput(i.value);
+        const cat = $('qaCat');
+        if (i.cat && [...cat.options].some(o => o.value === i.cat)) { cat.value = i.cat; cat.dataset.userSet = '1'; }
+        const met = $('qaMethod');
+        if (i.method && [...met.options].some(o => o.value === i.method)) { met.value = i.method; metEscolhido = true; }
+        window.qa78Chips && qa78Chips();
+        $('qaSubmit').focus();
+      };
+      rep.appendChild(b);
+    });
+  }
+  // forma de pagamento acompanha a categoria (até a pessoa escolher uma)
+  const origChips = window.qa78Chips;
+  if (typeof origChips === 'function') {
+    window.qa78Chips = function () {
+      const cat = $('qaCat'), met = $('qaMethod');
+      if (cat && met && !metEscolhido && cat.value) {
+        const m = metodoDaCategoria(cat.value);
+        if (m && [...met.options].some(o => o.value === m)) met.value = m;
+      }
+      origChips();
+      document.querySelectorAll('#qa78Mets .qa78-chip').forEach(b => b.addEventListener('click', () => { metEscolhido = true; }));
+    };
+  }
+  const oa = window.openQuickAdd;
+  if (typeof oa === 'function') {
+    openQuickAdd = window.openQuickAdd = function () {
+      metEscolhido = false;
+      const r = oa.apply(this, arguments);
+      try {
+        montar79(); desenharRepetir(); window.qa78Chips && qa78Chips();
+        const v = $('qaValue');
+        v.dataset.texto = '';
+        v.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); submitQuickAdd(); } if (e.key === 'Escape') closeQuickAdd(); };
+      } catch (e) { console.warn('[v79]', e); }
+      return r;
+    };
+  }
+  const sm = window.qaSetMode;
+  if (typeof sm === 'function') qaSetMode = window.qaSetMode = function () { const r = sm.apply(this, arguments); try { desenharRepetir(); } catch (e) {} return r; };
+  // a frase preenche o valor já formatado: não passar pela máscara
+  const at = window.qaAplicarTexto;
+  if (typeof at === 'function') qaAplicarTexto = window.qaAplicarTexto = function () {
+    const v = $('qaValue'); v.dataset.texto = '1';
+    try { return at.apply(this, arguments); } finally { v.dataset.texto = ''; }
+  };
+  // descrição opcional: vazia → nome da categoria (ou o tipo)
+  const sq = window.submitQuickAdd;
+  if (typeof sq === 'function') submitQuickAdd = window.submitQuickAdd = function () {
+    const d = $('qaDesc');
+    if (d && !d.value.trim()) {
+      const cat = $('qaCat') && $('qaCat').value;
+      d.value = _qaMode === 'gasto' ? (cat || 'Gasto') : _qaMode === 'entrada' ? 'Entrada' : 'Guardado';
+    }
+    return sq.apply(this, arguments);
+  };
 })();
 </script>
 </body>
