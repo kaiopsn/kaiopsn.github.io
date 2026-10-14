@@ -6215,7 +6215,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v85';
+const APP_VERSION = 'v86';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -7773,7 +7773,9 @@ function comprasCreditoComFatura(t0, t1) {
       if (methodKind(it.method) !== 'credit') return;
       const s = isoDay(it.date);
       const dia = s ? Math.min(ult, Number(s.slice(8, 10)) || 1) : 1;
-      out.push({ it, metodo: it.method, y, m, dia, ...faturaDaCompra(it.method, y, m, dia) });
+      const f = faturaDaCompra(it.method, y, m, dia);
+      if (it.faturaMais === 1) { f.tf += 1; f.tv += 1; }   // v86: "foi para a próxima fatura"
+      out.push({ it, metodo: it.method, y, m, dia, ...f });
     });
   }
   return out;
@@ -13101,6 +13103,12 @@ function renderRecentActivity() {
     #gastos #mainTable tbody tr.v82-aberto > td:nth-child(9) .btn-icon::after { content: attr(title); margin-left: 6px; }
     #gastos #mainTable tbody tr.v82-aberto { background: var(--primary-tint, rgba(124,58,237,.06)) !important; border-radius: 12px !important; }
   }
+
+  /* v86 · Foi para a próxima fatura */
+  .v86-badge { background: var(--primary-tint, rgba(124,58,237,.12)) !important; color: var(--primary) !important; margin-left: 4px; font-size: .7rem; padding: 2px 6px; border-radius: 6px; white-space: nowrap; }
+  .input-group label.v86-check, .v86-check { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; font-size: .9rem; text-transform: none; letter-spacing: normal; font-weight: 600; color: var(--text); }
+  .v86-check small { text-transform: none; letter-spacing: normal; font-weight: 400; }
+  .v86-check small { display: block; color: var(--text-muted); font-size: .76rem; margin-top: 2px; }
   /* v74 · Importar extrato */
   #modalBox:has(.extrato-revisao) { max-width: 720px; }
   .extrato-opcoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 12px; }
@@ -15716,6 +15724,113 @@ window.openIndicesManual = openIndicesManual;
   const orig = window.renderGastos;
   if (typeof orig === 'function') {
     renderGastos = window.renderGastos = function () { const r = orig.apply(this, arguments); try { ligar(); marcar(); } catch (e) {} return r; };
+  }
+})();
+</script>
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// v86 · "FOI PARA A PRÓXIMA FATURA" — compras de fim de mês que o banco lança
+// na fatura seguinte (fechamento móvel ou loja que processa depois). A compra
+// continua no mês em que foi feita (orçamento, gastos); só a fatura e o dia em
+// que sai da conta andam uma fatura. Em parcelado/fixo vale para todas as
+// parcelas/meses. Campo: item.faturaMais = 1.
+// ══════════════════════════════════════════════════════════════════════
+(function () {
+  function acharLancamento(id) {
+    const n = Number(id);
+    return db.recurringExpenses.find(x => x.id === n) || db.installments.find(x => x.id === n)
+      || Object.values(db.events || {}).flat().find(x => x && x.id === n) || null;
+  }
+  function tipoDe(it) { return db.installments.includes(it) ? 'parc' : db.recurringExpenses.includes(it) ? 'fixo' : 'eventual'; }
+  function marcarFatura() {
+    const t = document.getElementById('mainTable');
+    if (!t) return;
+    t.querySelectorAll('tbody tr:not(.method-group-header)').forEach(tr => {
+      const ed = tr.querySelector('button[data-action="edit"]');
+      if (!ed) return;
+      const it = acharLancamento(ed.dataset.id);
+      const credito = it && methodKind(it.method) === 'credit';
+      let b = tr.querySelector('button[data-action="prox-fatura"]');
+      if (!credito) { if (b) b.remove(); return; }
+      const on = it.faturaMais === 1;
+      const titulo = on ? 'Voltar à fatura original' : 'Próxima fatura';
+      if (!b) {
+        b = document.createElement('button');
+        b.className = 'btn-icon'; b.dataset.action = 'prox-fatura'; b.dataset.id = ed.dataset.id;
+        ed.insertAdjacentElement('beforebegin', b);
+      }
+      if (b.title !== titulo) { b.title = titulo; b.textContent = on ? '⇤' : '⇥'; b.setAttribute('aria-label', titulo); }
+      const cat = tr.children[3];
+      const badge = cat && cat.querySelector('.v86-badge');
+      if (on && cat && !badge) cat.insertAdjacentHTML('beforeend', '<span class="detail-badge v86-badge">próx. fatura</span>');
+      if (!on && badge) badge.remove();
+    });
+  }
+  function aplicar(it, on) {
+    if (on) it.faturaMais = 1; else delete it.faturaMais;
+  }
+  function redesenhar() {
+    saveDB();
+    if (typeof renderGastos === 'function') renderGastos();
+    if (typeof fillIncomePanels === 'function') fillIncomePanels();
+    if (document.getElementById('dashboard')?.classList.contains('active') && typeof renderDashboard === 'function') renderDashboard();
+  }
+  function alternar(id) {
+    const it = acharLancamento(id);
+    if (!it || methodKind(it.method) !== 'credit') return;
+    const on = it.faturaMais !== 1;
+    aplicar(it, on);
+    redesenhar();
+    const k = tipoDe(it), todos = k === 'parc' ? ' (todas as parcelas)' : k === 'fixo' ? ' (todos os meses)' : '';
+    toast(on ? `${it.desc} agora conta na fatura seguinte${todos}` : `${it.desc} voltou para a fatura original${todos}`, 'success', 3500);
+  }
+  window.alternarProximaFatura = alternar;
+  function ligar() {
+    const t = document.getElementById('mainTable');
+    if (!t || t.dataset.v86) return;
+    t.dataset.v86 = '1';
+    t.addEventListener('click', e => {
+      const b = e.target.closest('button[data-action="prox-fatura"]');
+      if (!b) return;
+      e.preventDefault(); e.stopPropagation();
+      alternar(b.dataset.id);
+    });
+    new MutationObserver(marcarFatura).observe(t.tBodies[0] || t, { childList: true, subtree: true });
+    marcarFatura();
+  }
+  window.addEventListener('load', () => setTimeout(ligar, 300));
+  const rg = window.renderGastos;
+  if (typeof rg === 'function') renderGastos = window.renderGastos = function () { const r = rg.apply(this, arguments); try { ligar(); marcarFatura(); } catch (e) { console.warn('[v86]', e); } return r; };
+
+  // Editar: caixinha "Foi para a próxima fatura" (só no crédito)
+  const ed = window.editTransactionModal;
+  if (typeof ed === 'function') {
+    editTransactionModal = window.editTransactionModal = function (item) {
+      const r = ed.apply(this, arguments);
+      try {
+        const body = document.querySelector('#modalBox .modal-body'), sel = document.getElementById('editMethod');
+        if (!body || !sel) return r;
+        const k = tipoDe(item);
+        const wrap = document.createElement('div');
+        wrap.className = 'input-group'; wrap.id = 'v86Wrap';
+        wrap.innerHTML = `<label class="v86-check"><input type="checkbox" id="v86Mais" ${item.faturaMais === 1 ? 'checked' : ''}>
+          <span>Foi para a próxima fatura<small>O banco lançou na fatura seguinte${k === 'parc' ? ' — vale para todas as parcelas' : k === 'fixo' ? ' — vale para todos os meses' : ''}. O gasto continua no mês da compra.</small></span></label>`;
+        body.appendChild(wrap);
+        const mostrar = () => { wrap.style.display = methodKind(sel.value) === 'credit' ? '' : 'none'; };
+        sel.addEventListener('change', mostrar); mostrar();
+        const id = item.id, conf = modal._onConfirm;
+        modal._onConfirm = function () {
+          const marcado = document.getElementById('v86Mais')?.checked, metodo = sel.value;
+          const res = conf ? conf.apply(this, arguments) : undefined;
+          if (res !== false) {
+            const atual = acharLancamento(id);
+            if (atual) { aplicar(atual, !!marcado && methodKind(metodo) === 'credit'); saveDB(); }
+          }
+          return res;
+        };
+      } catch (e) { console.warn('[v86 editar]', e); }
+      return r;
+    };
   }
 })();
 </script>
