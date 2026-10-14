@@ -6212,7 +6212,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v77';
+const APP_VERSION = 'v78';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -12973,6 +12973,48 @@ function renderRecentActivity() {
   .cart-indices-cl .method-row-dot { margin: 0; }
   .cart-indices-fonte { font-size: .76rem; color: var(--text-muted); margin: 10px 0 0; line-height: 1.5; }
   .cart-indices .link-btn { font-size: inherit; padding: 0; text-decoration: underline; text-underline-offset: 2px; }
+
+  /* v78 · Início enxuto no celular + Adicionar repaginado */
+  .home-mais-btn { display: none; }
+  @media (max-width: 768px) {
+    #dashboard.v78 { display: flex; flex-direction: column; }
+    #dashboard.v78 > * { order: 10; }
+    #dashboard.v78 > .h78-topo { order: 0; }
+    #dashboard.v78 > #homeExtras { order: 1; }
+    #dashboard.v78 > #homeHero { order: 2; }
+    #dashboard.v78 > #radarPanel { order: 3; }
+    #dashboard.v78 > .h78-cat { order: 4; }
+    #dashboard.v78 > #recentActivity { order: 5; }
+    #dashboard.v78 > .home-mais-btn { order: 6; display: block; }
+    #dashboard.v78:not(.mostrar-tudo) > .h78-extra,
+    #dashboard.v78:not(.mostrar-tudo) #homeExtras .money-panel,
+    #dashboard.v78:not(.mostrar-tudo) > #radarPanel.h78-vazio { display: none !important; }
+    #dashboard.v78.mostrar-tudo > .h78-extra { order: 7; }
+    /* "Pode gastar hoje" é o herói */
+    #dashboard.v78 #homeExtras { margin: 4px 0 0; }
+    #dashboard.v78 #homeExtras .spend-card { flex-direction: column; align-items: flex-start; gap: 6px; padding: 20px; }
+    #dashboard.v78 #homeExtras .spend-card .value { order: -1; font-size: 2.6rem; line-height: 1.05; font-weight: 800; letter-spacing: -.02em; }
+    #dashboard.v78 #homeExtras .spend-card .label { font-size: .95rem; font-weight: 700; color: var(--text); }
+    #dashboard.v78 #homeHero { padding: 12px 4px; }
+    #dashboard.v78 #homeHero .hh-amount { font-size: 1.4rem !important; }
+    #dashboard.v78 .home-mais-btn { width: 100%; padding: 14px; margin: 4px 0 90px; border-radius: 14px; border: 1px dashed var(--border); background: transparent; color: var(--primary); font: 600 .95rem/1 inherit; cursor: pointer; }
+  }
+  /* Adicionar */
+  #quickAddCard input.qa78-valor { font-size: 2.6rem !important; height: auto !important; border: none !important; background: transparent !important; box-shadow: none !important; }
+  #quickAddCard[data-v78] #qaSuggestions { display: none; }
+  #quickAddCard .qa78-valor { width: 100%; border: none; background: transparent; text-align: center; font-size: 2.6rem; font-weight: 800; letter-spacing: -.02em; padding: 8px 0 2px; color: var(--text); outline: none; box-shadow: none; }
+  #quickAddCard .qa78-valor::placeholder { color: var(--text-soft, var(--text-muted)); }
+  #quickAddCard .qa78-moeda { text-align: center; font-size: .8rem; color: var(--text-muted); margin-bottom: 12px; }
+  #quickAddCard .qa78-label { font-size: .78rem; font-weight: 600; color: var(--text-muted); margin: 12px 0 6px; }
+  #quickAddCard .qa78-chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+  #quickAddCard .qa78-chips::-webkit-scrollbar { display: none; }
+  #quickAddCard .qa78-chip { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 9px 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface, transparent); color: var(--text); font: 500 .88rem/1 inherit; cursor: pointer; white-space: nowrap; }
+  #quickAddCard .qa78-chip .dot { width: 8px; height: 8px; border-radius: 50%; }
+  #quickAddCard .qa78-chip.on { border-color: var(--primary); background: var(--primary-tint, rgba(124,58,237,.1)); color: var(--primary); font-weight: 600; }
+  #quickAddCard .qa78-oculto { display: none !important; }
+  #quickAddCard .qa78-frase-btn { display: block; margin: 10px auto 0; background: none; border: none; color: var(--primary); font: 600 .85rem/1 inherit; cursor: pointer; padding: 6px; }
+  #quickAddCard .qa-texto.qa78-fechado { display: none; }
+  #quickAddCard #qaSuggestions:empty { display: none; }
   /* v74 · Importar extrato */
   #modalBox:has(.extrato-revisao) { max-width: 720px; }
   .extrato-opcoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 12px; }
@@ -15192,6 +15234,155 @@ function openIndicesManual() {
 }
 window.buscarIndicesAgora = buscarIndicesAgora;
 window.openIndicesManual = openIndicesManual;
+</script>
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// v78 · INÍCIO ENXUTO NO CELULAR + ADICIONAR REPAGINADO
+// Início (≤768px): "Livre para gastar" vira o herói; depois saldo, Radar (só
+// quando há algo), gastos por categoria e atividade recente. O resto fica em
+// "Ver mais do mês". No computador nada muda.
+// Adicionar: valor grande no topo, categoria/forma/data em chips; o texto livre
+// vira atalho opcional. Os campos originais continuam sendo a fonte do salvar.
+// ══════════════════════════════════════════════════════════════════════
+(function () {
+  const MANTER = new Set(['homeHero', 'homeExtras', 'radarPanel', 'recentActivity']);
+  function organizarInicio() {
+    const dash = document.getElementById('dashboard');
+    if (!dash) return;
+    dash.classList.add('v78');
+    [...dash.children].forEach((el, i) => {
+      if (el.classList.contains('home-mais-btn')) return;
+      el.classList.remove('h78-topo', 'h78-cat', 'h78-extra');
+      if (i < 2 && !el.id.startsWith('home')) { el.classList.add('h78-topo'); return; }
+      if (MANTER.has(el.id)) return;
+      const h = el.querySelector('h2, h3');
+      if (el.classList.contains('panel') && h && /^Gastos por categoria/i.test(h.textContent.trim())) { el.classList.add('h78-cat'); return; }
+      el.classList.add('h78-extra');
+    });
+    const radar = document.getElementById('radarPanel');
+    if (radar) radar.classList.toggle('h78-vazio', /Nada fora do normal/i.test(radar.textContent));
+    let btn = dash.querySelector('.home-mais-btn');
+    if (!btn) {
+      btn = document.createElement('button');
+      btn.type = 'button'; btn.className = 'home-mais-btn';
+      btn.onclick = () => { dash.classList.toggle('mostrar-tudo'); atualizarBtn(); };
+      dash.appendChild(btn);
+    }
+    atualizarBtn();
+    function atualizarBtn() { btn.textContent = dash.classList.contains('mostrar-tudo') ? 'Mostrar menos' : 'Ver mais do mês'; }
+  }
+  const orig = window.renderDashboard;
+  if (typeof orig === 'function') {
+    window.renderDashboard = function () { const r = orig.apply(this, arguments); try { organizarInicio(); } catch (e) { console.warn('[v78 início]', e); } return r; };
+    renderDashboard = window.renderDashboard;
+  }
+  const origX = window.renderHomeExtras;
+  if (typeof origX === 'function') {
+    window.renderHomeExtras = function () { const r = origX.apply(this, arguments); try { organizarInicio(); } catch (e) {} return r; };
+    renderHomeExtras = window.renderHomeExtras;
+  }
+  window.addEventListener('load', () => setTimeout(() => { try { organizarInicio(); } catch (e) {} }, 300));
+})();
+
+// ── Adicionar ───────────────────────────────────────────────────────────
+(function () {
+  const $ = id => document.getElementById(id);
+  function montar() {
+    const card = $('quickAddCard');
+    if (!card || card.dataset.v78) return;
+    card.dataset.v78 = '1';
+    const tabs = card.querySelector('.qa-tabs'), texto = card.querySelector('.qa-texto');
+    const valor = $('qaValue'), desc = $('qaDesc'), data = $('qaDate'), met = $('qaMethod'), cat = $('qaCat');
+    // Ordem: abas → valor grande → descrição → chips → resto
+    const wrapV = document.createElement('div');
+    wrapV.innerHTML = '<div class="qa78-moeda">R$</div>';
+    valor.classList.add('qa78-valor'); valor.placeholder = '0,00';
+    wrapV.insertBefore(valor, wrapV.firstChild);
+    tabs.insertAdjacentElement('afterend', wrapV);
+    wrapV.insertAdjacentElement('afterend', desc);
+    const sug = $('qaSuggestions'); desc.insertAdjacentElement('afterend', sug);
+    const bloco = document.createElement('div');
+    bloco.innerHTML = `
+      <div data-only="gasto"><div class="qa78-label">Categoria</div><div class="qa78-chips" id="qa78Cats"></div></div>
+      <div data-only="gasto"><div class="qa78-label">Pagou com</div><div class="qa78-chips" id="qa78Mets"></div></div>
+      <div><div class="qa78-label">Quando</div><div class="qa78-chips" id="qa78Datas"></div></div>`;
+    sug.insertAdjacentElement('afterend', bloco);
+    // os selects/data originais ficam escondidos (cat aparece com "Outra…")
+    const linhaMet = met.closest('.qa-row'); linhaMet.classList.add('qa78-oculto');
+    const linhaData = data.closest('.qa-row');
+    linhaData.removeAttribute('class'); data.classList.add('qa78-oculto');
+    $('qa78Datas').insertAdjacentElement('afterend', data);
+    // texto livre vira atalho
+    texto.classList.add('qa78-fechado');
+    const fr = document.createElement('button');
+    fr.type = 'button'; fr.className = 'qa78-frase-btn'; fr.textContent = '✍️ Escrever tudo numa frase';
+    fr.onclick = () => { texto.classList.toggle('qa78-fechado'); if (!texto.classList.contains('qa78-fechado')) $('qaTexto').focus(); };
+    $('qaSubmit').insertAdjacentElement('afterend', fr);
+    card.querySelector('#qaTitle').insertAdjacentElement('afterend', tabs);
+    tabs.insertAdjacentElement('afterend', wrapV);
+    texto.remove(); fr.insertAdjacentElement('afterend', texto);
+  }
+  const chip = (txt, on, fn, cor) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'qa78-chip' + (on ? ' on' : '');
+    b.innerHTML = (cor ? `<span class="dot" style="background:${safeColor(cor)}"></span>` : '') + escapeHtml(txt);
+    b.onclick = fn; return b;
+  };
+  function catsMaisUsadas() {
+    const cont = {}, hoje = new Date();
+    for (let k = 0; k < 3; k++) {
+      const t = hoje.getFullYear() * 12 + hoje.getMonth() - k;
+      (getMonthData(Math.floor(t / 12), t % 12).items || []).forEach(i => { if (i.cat) cont[i.cat] = (cont[i.cat] || 0) + 1; });
+    }
+    return (db.categories || []).map(c => c.name).sort((a, b) => (cont[b] || 0) - (cont[a] || 0));
+  }
+  function desenharChips() {
+    const cat = $('qaCat'), met = $('qaMethod'), data = $('qaDate');
+    const bc = $('qa78Cats'), bm = $('qa78Mets'), bd = $('qa78Datas');
+    if (!bc) return;
+    // Categorias: escolhida/sugerida primeiro, depois as mais usadas (até 7) + "Outra…"
+    const todas = catsMaisUsadas(), atual = cat.value;
+    let lista = todas.slice(0, 7);
+    if (atual && !lista.includes(atual)) lista = [atual, ...lista.slice(0, 6)];
+    else if (atual) lista = [atual, ...lista.filter(x => x !== atual)];
+    bc.innerHTML = '';
+    lista.forEach(n => {
+      const c = (db.categories || []).find(x => x.name === n);
+      bc.appendChild(chip(n, n === atual, () => { cat.value = n === cat.value ? '' : n; cat.dataset.userSet = '1'; desenharChips(); }, c && c.color));
+    });
+    bc.appendChild(chip('Outra…', false, () => { cat.classList.toggle('qa78-oculto'); cat.focus(); }));
+    if (!cat.parentElement.isSameNode(bc.parentElement)) { cat.classList.add('qa78-oculto'); bc.parentElement.appendChild(cat); cat.addEventListener('change', desenharChips); }
+    // Formas de pagamento
+    bm.innerHTML = '';
+    [...met.options].forEach(o => bm.appendChild(chip(o.textContent, o.value === met.value, () => { met.value = o.value; desenharChips(); })));
+    // Data
+    const hoje = todayISO(), ontem = isoDay(new Date(Date.now() - 864e5));
+    bd.innerHTML = '';
+    const outra = data.value && data.value !== hoje && data.value !== ontem;
+    bd.appendChild(chip('Hoje', data.value === hoje, () => { data.value = hoje; data.classList.add('qa78-oculto'); desenharChips(); }));
+    bd.appendChild(chip('Ontem', data.value === ontem, () => { data.value = ontem; data.classList.add('qa78-oculto'); desenharChips(); }));
+    bd.appendChild(chip(outra ? data.value.split('-').reverse().join('/') : 'Outra data', outra, () => { data.classList.remove('qa78-oculto'); data.focus(); if (data.showPicker) try { data.showPicker(); } catch (e) {} }));
+  }
+  window.qa78Chips = desenharChips;
+  const envolver = (nome, depois) => {
+    const o = window[nome];
+    if (typeof o !== 'function') return;
+    const n = function () { const r = o.apply(this, arguments); try { depois(); } catch (e) { console.warn('[v78 add]', e); } return r; };
+    window[nome] = n;
+    return n;
+  };
+  const oa = envolver('openQuickAdd', () => {
+    montar(); desenharChips();
+    document.querySelector('#quickAddCard .qa-texto')?.classList.add('qa78-fechado');
+    $('qaDate').addEventListener('change', desenharChips);
+    $('qaDate').classList.add('qa78-oculto');
+    setTimeout(() => $('qaValue').focus(), 120);
+  });
+  if (oa) openQuickAdd = oa;
+  const sm = envolver('qaSetMode', desenharChips); if (sm) qaSetMode = sm;
+  const us = envolver('updateQASuggestions', desenharChips); if (us) updateQASuggestions = us;
+  const at = envolver('qaAplicarTexto', desenharChips); if (at) qaAplicarTexto = at;
+})();
 </script>
 </body>
 </html>
