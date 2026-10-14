@@ -2706,8 +2706,8 @@
 
   <!-- ============== METAS ============== -->
   <div id="metas" class="content">
-    <h1>Metas Financeiras</h1>
-    <p class="page-sub">Defina objetivos, registre aportes e acompanhe o progresso.</p>
+    <h1>Metas</h1>
+    <p class="page-sub">Cada meta tem a sua caixinha: o que você guarda nela é o progresso.</p>
     <div class="form-container">
       <div class="panel">
         <h2>Nova Meta</h2>
@@ -3153,21 +3153,14 @@ function ansGoal(t) {
       if (words.some(w => tn.includes(w))) { goal = g; break; }
     }
   }
-  if (goal) {
-    const total = Object.values(goal.contributions).reduce((a, b) => a + b, 0);
-    const pct = goal.total ? (total / goal.total * 100) : 0;
-    const status = pct >= 100 ? 'Concluída' : pct > 50 ? 'Mais da metade' : 'Em andamento';
-    const restante = Math.max(0, goal.total - total);
-    return `<strong>${escapeHtml(goal.name)}</strong> ${status}<br>
-      • Acumulado: <span class="num">${fmt(total)}</span> de <span class="num">${fmt(goal.total)}</span><br>
-      • Progresso: <strong>${pct.toFixed(1)}%</strong><br>
-      ${restante > 0 ? `• Falta: <span class="num">${fmt(restante)}</span>${goal.deadline ? ' até ' + parseLocalDate(goal.deadline).toLocaleDateString('pt-BR') : ''}` : '🎉 Meta batida!'}`;
+  if (goal) {   // v89: mesmo cálculo da aba Metas (caixinha ou anotações)
+    const i = metaInfo(goal);
+    return `<strong>${escapeHtml(goal.name)}</strong>: <span class="num">${fmt(i.guardado)}</span> de ${fmt(goal.total)} (${Math.round(i.pct)}%)<br>${escapeHtml(i.frase)}`;
   }
   // Lista todas
-  const lines = db.goals.map(g => {
-    const total = Object.values(g.contributions).reduce((a, b) => a + b, 0);
-    const pct = g.total ? (total / g.total * 100) : 0;
-    return `• <strong>${escapeHtml(g.name)}</strong>: ${fmt(total)} de ${fmt(g.total)} (${pct.toFixed(0)}%)`;
+  const lines = db.goals.filter(g => !g.realizada).map(g => {
+    const i = metaInfo(g);
+    return `• <strong>${escapeHtml(g.name)}</strong>: ${fmt(i.guardado)} de ${fmt(g.total)} (${Math.round(i.pct)}%)`;
   }).join('<br>');
   return `Suas metas:<br>${lines}`;
 }
@@ -5600,11 +5593,7 @@ async function submitQuickAdd() {
     if (!classe) return toast('Crie uma classe de investimento em Investimentos', 'error');
     const origem = document.querySelector('input[name="qaOrigem"]:checked')?.value || 'conta';
     if (origem === 'guardado') {
-      if (ancoraClasse(classe)) classe.ancora.value = Math.round((classe.ancora.value + value) * 100) / 100;   // v87
-      else {
-        if (!(safeNum(classe.opening, 0) > 0)) classe.openingDate = todayISO();   // v77
-        classe.opening = safeNum(classe.opening, 0) + value;
-      }
+      somarJaGuardado(classe, value);   // v89: ponto de partida hoje — os meses passados não mudam
       msg = `${fmt(value)} somados ao que já estava em ${classe.label} — a conta não muda`;
     } else {
       ensureYear(ref.y);
@@ -6218,7 +6207,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v88';
+const APP_VERSION = 'v89';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -6934,6 +6923,7 @@ function sanitizeData(data) {
         const s = { value: a.value, date: a.date, ts: safeNum(a.ts, 0),
           tab: { ap: safeNum(a.tab && a.tab.ap, 0), rs: safeNum(a.tab && a.tab.rs, 0) } };
         if (Number.isFinite(a.antes)) s.antes = a.antes;
+        if (a.motivo === 'guardado') s.motivo = 'guardado';   // v89
         return s;
       };
       if (c.ancora != null) { const a = saneiaAncoraClasse(c.ancora); if (a) c.ancora = a; else delete c.ancora; }
@@ -7043,6 +7033,9 @@ function sanitizeData(data) {
       const contrib = {};
       if (obj(g.contributions)) Object.keys(g.contributions).forEach(k => { contrib[k] = safeNum(g.contributions[k], 0); });
       g.contributions = contrib;
+      if (g.classe != null && !isSafeId(g.classe)) delete g.classe;   // v89: caixinha da meta
+      if (g.histAnotado != null) { if (g.histAnotado === true && g.classe) g.histAnotado = true; else delete g.histAnotado; }
+      if (g.realizada != null && !(obj(g.realizada) && /^\d{4}-\d{2}-\d{2}$/.test(String(g.realizada.data)))) delete g.realizada;
       return g;
     });
   });
@@ -8608,19 +8601,14 @@ function renderInsights(cur, prev) {
     }
   }
 
-  // Metas atrasadas / em dia
-  const goalsWithProgress = db.goals.map(g => {
-    const tot = Object.values(g.contributions).reduce((a, b) => a + b, 0);
-    return { ...g, total_acc: tot, pct: g.total ? (tot / g.total * 100) : 0 };
-  });
-  const completed = goalsWithProgress.filter(g => g.pct >= 100).length;
-  const onTrack = goalsWithProgress.filter(g => g.pct < 100 && g.pct > 0).length;
-  if (goalsWithProgress.length > 0) {
-    insights.push({
-      icon: '🎯',
-      title: `${completed} meta${completed === 1 ? '' : 's'} concluída${completed === 1 ? '' : 's'}, ${onTrack} em andamento`,
-      desc: `Total de ${goalsWithProgress.length} meta${goalsWithProgress.length === 1 ? '' : 's'} cadastrada${goalsWithProgress.length === 1 ? '' : 's'}.`
-    });
+  // v89: a meta ativa mais próxima do prazo, com o plano
+  if (typeof metaInfo === 'function') {
+    const ativas = db.goals.filter(g => !g.realizada).map(g => ({ g, i: metaInfo(g) })).filter(x => x.i.status !== 'concluida')
+      .sort((a, b) => (a.i.limiteT ?? 1e9) - (b.i.limiteT ?? 1e9));
+    if (ativas.length) {
+      const { g, i } = ativas[0];
+      insights.push({ icon: '🎯', title: `${g.name}: ${Math.round(i.pct)}% guardado`, desc: i.frase });
+    }
   }
 
   if (insights.length === 0) {
@@ -9205,7 +9193,7 @@ function renderInvestClasses(cart) {
       <span class="method-row-dot" style="background:${escapeHtml(c.color)}"></span>
       <div class="method-row-main">
         <div class="method-row-name">${escapeHtml(c.label)}${c.reserve ? '<span class="aporte-tag">reserva de emergência</span>' : ''}</div>
-        <div class="method-row-meta">${fmt(cart.porClasse[c.id] || 0)} aplicados${c.ancora && c.ancora.date ? ` · conferido em ${c.ancora.date.split('-').reverse().join('/')}` : safeNum(c.opening, 0) > 0 ? ` · inclui ${fmt(c.opening)} de saldo inicial` : ''}</div>
+        <div class="method-row-meta">${fmt(cart.porClasse[c.id] || 0)} aplicados${c.ancora && c.ancora.date ? ` · conferido em ${c.ancora.date.split('-').reverse().join('/')}` : safeNum(c.opening, 0) > 0 ? ` · inclui ${fmt(c.opening)} de saldo inicial` : ''}${(db.goals || []).some(g => g.classe === c.id) ? ' · 🎯 caixinha de meta' : ''}</div>
       </div>
       <div class="method-row-actions">
         <button class="btn-icon" title="Editar" onclick="openInvestClassModal(${jsArg(c.id)})">✎</button>
@@ -13318,6 +13306,44 @@ function renderRecentActivity() {
     #anual > #anualStats, #anual > .panel.an-velho { display: none !important; }
     #anual > .page-sub { display: none; }
   }
+
+  /* v89 · Metas com caixinha */
+  #metas > .form-container { display: none !important; }
+  #metas > .panel > h2 { display: none; }
+  #metas > .panel { background: none; border: none; box-shadow: none; padding: 0; }
+  .mt-topo { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .mt-resumo { font-size: .88rem; color: var(--text-muted); }
+  .mt-resumo strong { color: var(--text); }
+  .mt-lista { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+  .mt-card { background: var(--surface); border: 1px solid var(--border-soft); border-radius: 18px; padding: 16px; box-shadow: var(--shadow-xs, none); }
+  .mt-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+  .mt-nome { font-weight: 700; font-size: 1rem; line-height: 1.3; overflow-wrap: anywhere; }
+  .mt-onde { font-size: .74rem; color: var(--text-muted); margin-top: 2px; }
+  .mt-selo { flex: none; font-size: .68rem; font-weight: 700; padding: 3px 8px; border-radius: 999px; white-space: nowrap; background: var(--primary-tint, rgba(124,58,237,.12)); color: var(--primary); }
+  .mt-selo.ritmo, .mt-selo.concluida { background: rgba(18,183,106,.14); color: var(--pos); }
+  .mt-selo.abaixo { background: rgba(229,161,58,.16); color: var(--invest); }
+  .mt-selo.atrasada { background: rgba(240,68,56,.14); color: var(--neg); }
+  .mt-valores { display: flex; justify-content: space-between; align-items: baseline; margin: 12px 0 6px; gap: 8px; }
+  .mt-valores .v { font-size: 1.25rem; font-weight: 800; letter-spacing: -.01em; }
+  .mt-valores .de { font-size: .8rem; color: var(--text-muted); }
+  .mt-valores .pct { font-weight: 700; }
+  .mt-barra { height: 8px; border-radius: 999px; background: var(--border-soft); overflow: hidden; }
+  .mt-barra span { display: block; height: 100%; border-radius: 999px; background: var(--primary); }
+  .mt-barra span.ok { background: var(--pos); }
+  .mt-plano { font-size: .84rem; line-height: 1.55; margin-top: 10px; }
+  .mt-plano .muted { color: var(--text-muted); }
+  .mt-acoes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; align-items: center; }
+  .mt-acoes .btn { padding: 8px 14px; }
+  .mt-acoes .mt-menos { margin-left: auto; }
+  .mt-aviso { margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: var(--surface-warm, rgba(0,0,0,.03)); font-size: .82rem; line-height: 1.5; }
+  .mt-movs { margin-top: 10px; font-size: .8rem; line-height: 1.7; }
+  .mt-movs .linha { display: flex; justify-content: space-between; gap: 8px; border-bottom: 1px dashed var(--border-soft); }
+  .mt-sec { font-size: .74rem; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); margin: 18px 0 8px; }
+  .mt-realizada { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--border-soft); border-radius: 12px; margin-bottom: 8px; font-size: .88rem; }
+  .mt-opcao { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; margin-bottom: 8px; cursor: pointer; font-size: .9rem; text-transform: none; letter-spacing: normal; font-weight: 600; color: var(--text); }
+  .mt-opcao small { display: block; font-weight: 400; color: var(--text-muted); font-size: .78rem; margin-top: 2px; }
+  .mt-opcao:has(input:checked) { border-color: var(--primary); background: var(--primary-tint, rgba(124,58,237,.08)); }
+  @media (max-width: 768px) { .mt-lista { grid-template-columns: 1fr; } }
   /* v74 · Importar extrato */
   #modalBox:has(.extrato-revisao) { max-width: 720px; }
   .extrato-opcoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 12px; }
@@ -16294,7 +16320,7 @@ window.conferirNovoLugar = conferirNovoLugar;
             antes = Math.max(0, v - depoisNoMes);
           }
         }
-        out.push({ t: a.t, data: a.date, nome: c.label, conta: false, ajuste: a.value - antes });
+        out.push({ t: a.t, data: a.date, nome: c.label, conta: false, ajuste: a.value - antes, motivo: r.motivo });
       });
     });
     return out.filter(x => Math.abs(x.ajuste) >= 1);
@@ -16359,7 +16385,9 @@ window.conferirNovoLugar = conferirNovoLugar;
         else if (t === tHoje) partes.push(`Em conta hoje: <strong>${fmt(getContaExibida(y, i))}</strong> · no fim do mês: ${fmt(getSaldoAcumulado(y, i))}`);
         else partes.push(`Em conta no fim do mês${proj ? ' (previsto)' : ''}: <strong>${fmt(getSaldoAcumulado(y, i))}</strong>`);
         if (conhecido && !proj) partes.push(t === tHoje ? `Patrimônio hoje: <strong>${fmt(patrimonioHoje())}</strong>` : `Patrimônio no fim do mês: <strong>${fmt(getPatrimonio(y, i))}</strong>`);
-        ac.filter(a => a.t === t).forEach(a => partes.push(`Acerto da conferência de ${ddmm(a.data)} em ${escapeHtml(a.nome)}: <span class="${a.ajuste < 0 ? 'neg' : 'pos'}">${sinal(a.ajuste)}</span>`));
+        ac.filter(a => a.t === t).forEach(a => partes.push(a.motivo === 'guardado'
+          ? `Já estava guardado em ${escapeHtml(a.nome)} (${ddmm(a.data)}): <span class="pos">${sinal(a.ajuste)}</span>`
+          : `Acerto da conferência de ${ddmm(a.data)} em ${escapeHtml(a.nome)}: <span class="${a.ajuste < 0 ? 'neg' : 'pos'}">${sinal(a.ajuste)}</span>`));
         if (proj) partes.push('Projeção: só fixos, parcelas e rendas que se repetem.');
         det = `<div class="an-mes-det">${partes.join('<br>')}${proj ? '' : `<br><button type="button" class="link-btn" onclick="event.stopPropagation(); anualIrMes(${i})">Ver os lançamentos de ${monthsFull[i].toLowerCase()} ›</button>`}</div>`;
       }
@@ -16441,8 +16469,8 @@ window.conferirNovoLugar = conferirNovoLugar;
     const rot = p => p.hoje ? 'hoje' : `fim de ${months[p.m].toLowerCase()}`;
     const a = pts[0], b = pts[pts.length - 1], dif = b.v - a.v;
     const ac = acertos().filter(x => Math.floor(x.t / 12) === D.y);
-    const lista = ac.length ? `<div class="an-acertos"><strong>Acertos das conferências</strong><br>${ac.map(x => `${ddmm(x.data)} · ${escapeHtml(x.nome)}: <span class="${x.ajuste < 0 ? 'neg' : 'pos'}">${sinal(x.ajuste)}</span>`).join('<br>')}
-      <div class="an-dica" style="margin-top:6px">Diferença entre o que o app calculava e o que você informou ao conferir. Negativa numa conta costuma ser gasto que não foi registrado; num investimento, resgate não registrado ou rendimento.</div></div>` : '';
+    const lista = ac.length ? `<div class="an-acertos"><strong>Acertos e valores que já estavam guardados</strong><br>${ac.map(x => `${ddmm(x.data)} · ${escapeHtml(x.nome)}: <span class="${x.ajuste < 0 ? 'neg' : 'pos'}">${sinal(x.ajuste)}</span>${x.motivo === 'guardado' ? ' (já estava guardado)' : ''}`).join('<br>')}
+      <div class="an-dica" style="margin-top:6px">Acerto de conferência: diferença entre o que o app calculava e o que você informou — negativa numa conta costuma ser gasto não registrado; num investimento, resgate não registrado ou rendimento. "Já estava guardado": dinheiro que já existia e passou a ser contado no app.</div></div>` : '';
     return `<h2>Seu patrimônio</h2>
       <p class="an-patr-topo">${pts.length > 1 ? `De <strong>${fmt(a.v)}</strong> (${rot(a)}) para <strong>${fmt(b.v)}</strong> (${rot(b)}): <span class="${dif >= 0 ? 'pos' : 'neg'}">${sinal(dif)}</span>` : `${rot(b)[0].toUpperCase() + rot(b).slice(1)}: <strong>${fmt(b.v)}</strong>`}</p>
       <div class="an-graf" style="height:180px"><canvas id="anChartP" aria-label="Patrimônio no fim de cada mês"></canvas></div>
@@ -16522,6 +16550,315 @@ window.conferirNovoLugar = conferirNovoLugar;
     });
   } catch (e) { /* navegador antigo */ }
 })();
+</script>
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// v89 · METAS COM CAIXINHA. Cada meta aponta para uma classe de investimento
+// (g.classe): o progresso é o saldo dela (o mesmo da conferência e da Início).
+// Guardar = "Guardar dinheiro" do + (sai da conta); Tirar = resgate com data
+// (volta para a conta); "já estava guardado" = ponto de partida de hoje.
+// Metas antigas (anotações em g.contributions) seguem funcionando até serem
+// ligadas a uma caixinha. Meta realizada sai da lista (g.realizada).
+// ══════════════════════════════════════════════════════════════════════
+const mesAno = t => `${months[((t % 12) + 12) % 12].toLowerCase()}/${String(Math.floor(t / 12)).slice(2)}`;
+function classeDaMeta(g) { return g && g.classe ? getInvestClass(g.classe) : null; }
+// Soma "já estava guardado" como um ponto de partida datado de hoje
+function somarJaGuardado(classe, valor) {
+  const h = new Date(), Y = h.getFullYear(), M = h.getMonth(), hoje = todayISO();
+  const futuro = (getMonthData(Y, M).aportes || []).filter(it => it.investClass === classe.id && isoDay(it.date) > hoje).reduce((a, it) => a + it.value, 0);
+  const atual = (getCarteira(Y, M).porClasse[classe.id] || 0) - futuro;
+  definirAncoraClasse(classe, Object.assign(novaAncoraClasse(classe.id, atual + valor, atual), { motivo: 'guardado' }));
+}
+function criarCaixinha(nome) {
+  const base = String(nome).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'meta';
+  let id = 'meta-' + base, i = 2;
+  while (getInvestClasses().some(c => c.id === id) || id === 'withdrawals') id = `meta-${base}-${i++}`;
+  const cor = METHOD_PALETTE[(getInvestClasses().length + 3) % METHOD_PALETTE.length];
+  const c = { id, label: String(nome).slice(0, 40), color: cor, reserve: false };
+  db.investClasses.push(c);
+  if (typeof rebuildInvestClassDropdowns === 'function') rebuildInvestClassDropdowns();
+  return c;
+}
+function metaInfo(g) {
+  const h = new Date(), tNow = h.getFullYear() * 12 + h.getMonth();
+  const c = classeDaMeta(g);
+  let guardado = 0;
+  const fluxos = [];
+  if (c) {
+    const cm = getCarteiraMercado();
+    guardado = (cm.porClasse[c.id] || { mercado: 0 }).mercado;
+    for (let t = tNow - 11; t <= tNow; t++) fluxos.push({ t, v: (getMonthData(Math.floor(t / 12), t % 12).porClasse || {})[c.id] || 0 });
+    // caixinha que começou com o valor anotado: as anotações antigas seguem contando no ritmo
+    if (g.histAnotado) Object.entries(g.contributions || {}).forEach(([k, v]) => {
+      const [yy, mm] = k.split('-').map(Number);
+      if (Number.isInteger(yy) && Number.isInteger(mm)) fluxos.push({ t: yy * 12 + mm, v: Number(v) || 0, anot: true });
+    });
+  } else {
+    Object.entries(g.contributions || {}).forEach(([k, v]) => {
+      const [yy, mm] = k.split('-').map(Number), n = Number(v) || 0;
+      guardado += n;
+      if (Number.isInteger(yy) && Number.isInteger(mm)) fluxos.push({ t: yy * 12 + mm, v: n });
+    });
+  }
+  const total = safeNum(g.total, 0), falta = Math.max(0, total - guardado), pct = total > 0 ? guardado / total * 100 : 0;
+  // ritmo = média por mês desde o primeiro mês em que entrou dinheiro (últimos 12 meses)
+  const vivos = fluxos.filter(f => Math.abs(f.v) >= 0.005 && f.t <= tNow && f.t >= tNow - 11).sort((a, b) => a.t - b.t);
+  const ritmo = vivos.length ? vivos.reduce((a, f) => a + f.v, 0) / (tNow - vivos[0].t + 1) : null;
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(String(g.deadline || '')) ? g.deadline : null;
+  const dl = iso ? parseLocalDate(iso) : null;
+  const limiteT = dl ? dl.getFullYear() * 12 + dl.getMonth() - (dl.getDate() > 1 ? 0 : 1) : null;   // último mês para guardar
+  const atrasada = !!dl && falta > 0.005 && todayISO() > iso;
+  const meses = dl && !atrasada ? Math.max(1, limiteT - tNow + 1) : null;
+  const precisa = meses && falta > 0.005 ? falta / meses : null;
+  const chegaBruto = falta <= 0.005 ? tNow : (ritmo && ritmo > 0.5 ? tNow + Math.ceil(falta / ritmo) - 1 : null);
+  const longe = chegaBruto != null && chegaBruto - tNow > 120;   // mais de 10 anos: não vale prometer data
+  const chegaT = longe ? null : chegaBruto;
+  let status = 'sem-prazo';
+  if (g.realizada) status = 'realizada';
+  else if (falta <= 0.005 && total > 0) status = 'concluida';
+  else if (atrasada) status = 'atrasada';
+  else if (dl) status = chegaT != null && chegaT <= limiteT ? 'ritmo' : 'abaixo';
+  // Frase curta para Início e assistente
+  let frase;
+  if (status === 'concluida') frase = 'Meta batida! 🎉';
+  else if (status === 'atrasada') frase = `O prazo passou e faltam ${fmt(falta)}. Defina um novo prazo.`;
+  else if (precisa != null) frase = `Faltam ${fmt(falta)} — guarde ${fmt(precisa)}/mês até ${mesAno(limiteT)}` + (status === 'abaixo' ? (chegaT != null ? `; no ritmo atual, chega em ${mesAno(chegaT)}.` : longe ? '; no ritmo atual, levaria mais de 10 anos.' : '; ainda sem ritmo de aportes.') : ' (você está no ritmo).');
+  else frase = `Faltam ${fmt(falta)}` + (chegaT != null ? `; no ritmo atual, chega em ${mesAno(chegaT)}.` : longe ? '; no ritmo atual, levaria mais de 10 anos.' : '.');
+  return { c, guardado, total, falta, pct, ritmo, limiteT, atrasada, meses, precisa, chegaT, longe, status, frase, fluxos, tNow, manual: !c };
+}
+const SELO = { ritmo: 'no ritmo', abaixo: 'abaixo do ritmo', atrasada: 'atrasada', concluida: 'concluída 🎉', 'sem-prazo': 'sem prazo' };
+let _mtAbertos = {}, _mtVerRealizadas = false;
+
+function cardMeta(g) {
+  const i = metaInfo(g), id = jsArg(g.id);
+  const pctTxt = i.pct.toLocaleString('pt-BR', { maximumFractionDigits: i.pct < 10 ? 1 : 0 }) + '%';
+  const onde = i.c ? (i.c.label === g.name ? 'Caixinha própria' : `Caixinha: ${escapeHtml(i.c.label)}${i.c.reserve ? ' (reserva)' : ''}`) : 'Ainda não ligada a uma caixinha';
+  const linhas = [];
+  if (i.status === 'concluida') linhas.push('<strong>Meta batida! 🎉</strong> Quando usar o dinheiro, toque em <em>Realizei</em>.');
+  else if (i.atrasada) linhas.push(`O prazo era ${parseLocalDate(g.deadline).toLocaleDateString('pt-BR')} e faltam <strong>${fmt(i.falta)}</strong>. <button type="button" class="link-btn" onclick="editGoalModal(${id})">Definir novo prazo</button>`);
+  else {
+    linhas.push(`Faltam <strong>${fmt(i.falta)}</strong>${i.precisa != null ? ` · guarde <strong>${fmt(i.precisa)}/mês</strong> até ${mesAno(i.limiteT)}` : ''}`);
+    if (i.ritmo != null && i.ritmo > 0.5 && i.longe) {
+      linhas.push(`<span class="muted">No seu ritmo (${fmt(i.ritmo)}/mês), levaria mais de 10 anos.</span>`);
+    } else if (i.ritmo != null && i.ritmo > 0.5) {
+      const atraso = i.limiteT != null && i.chegaT != null ? i.chegaT - i.limiteT : 0;
+      linhas.push(`<span class="muted">No seu ritmo (${fmt(i.ritmo)}/mês), chega em ${mesAno(i.chegaT)}${atraso > 0 ? ` — ${atraso} ${atraso === 1 ? 'mês' : 'meses'} depois do prazo` : ''}.</span>`);
+    } else linhas.push('<span class="muted">Ainda sem ritmo: guarde todo mês para eu estimar quando você chega.</span>');
+  }
+  const aviso = i.manual ? `<div class="mt-aviso">Esta meta ainda é só uma anotação (${fmt(i.guardado)} registrados) e não mexe na conta nem nos investimentos. <button type="button" class="link-btn" onclick="ligarMetaModal(${id})">Ligar a uma caixinha</button></div>` : '';
+  let movs = '';
+  if (_mtAbertos[g.id]) {
+    const itens = i.manual
+      ? Object.keys(g.contributions || {}).map(k => { const [yy, mm] = k.split('-').map(Number); return { t: yy * 12 + mm, v: Number(g.contributions[k]) || 0, k }; })
+          .filter(x => x.v && Number.isInteger(x.t)).sort((a, b) => b.t - a.t)
+          .map(x => `<div class="linha"><span>${monthsFull[x.t % 12]}/${Math.floor(x.t / 12)}: ${fmt(x.v)}</span><button type="button" class="link-btn" onclick="deleteContribution(${id}, ${jsArg(x.k)})">remover</button></div>`)
+      : i.fluxos.filter(f => Math.abs(f.v) >= 0.005).sort((a, b) => b.t - a.t)
+          .map(f => `<div class="linha"><span>${monthsFull[f.t % 12]}/${Math.floor(f.t / 12)}</span><span class="${f.anot ? '' : f.v >= 0 ? 'pos' : 'neg'}">${f.anot ? 'anotou' : f.v >= 0 ? 'guardou' : 'tirou'} ${fmt(Math.abs(f.v))}</span></div>`);
+    const anc = i.c && i.c.ancora ? `<div class="linha"><span>${i.c.ancora.motivo === 'guardado' ? 'Já estava guardado' : 'Saldo conferido'} em ${i.c.ancora.date.split('-').reverse().join('/')}</span><span>${fmt(i.c.ancora.value)}</span></div>` : '';
+    movs = `<div class="mt-movs">${itens.join('') + anc || '<span class="muted">Nenhum movimento nos últimos 12 meses.</span>'}
+      <div style="margin-top:8px"><button type="button" class="link-btn" onclick="editGoalModal(${id})">Editar meta</button> · <button type="button" class="link-btn" onclick="deleteGoal(${id})">Excluir meta</button></div></div>`;
+  }
+  const nMov = i.manual ? Object.values(g.contributions || {}).filter(v => Number(v)).length : i.fluxos.filter(f => Math.abs(f.v) >= 0.005).length;
+  return `<div class="mt-card">
+    <div class="mt-head"><div><div class="mt-nome">${escapeHtml(g.name)}</div><div class="mt-onde">${onde}${g.deadline && /^\d{4}-\d{2}-\d{2}$/.test(g.deadline) ? ` · prazo ${parseLocalDate(g.deadline).toLocaleDateString('pt-BR')}` : ''}</div></div>
+      <span class="mt-selo ${i.status}">${SELO[i.status] || ''}</span></div>
+    <div class="mt-valores"><span><span class="v">${fmt(i.guardado)}</span> <span class="de">de ${fmt(i.total)}</span></span><span class="pct">${pctTxt}</span></div>
+    <div class="mt-barra"><span class="${i.status === 'concluida' ? 'ok' : ''}" style="width:${Math.min(100, i.pct)}%"></span></div>
+    <div class="mt-plano">${linhas.join('<br>')}</div>${aviso}
+    <div class="mt-acoes">
+      <button type="button" class="btn primary" onclick="guardarNaMeta(${id})">Guardar</button>
+      ${i.c && i.guardado > 0.004 ? `<button type="button" class="btn" onclick="tirarDaMeta(${id})">Tirar</button>` : ''}
+      ${i.status === 'concluida' ? `<button type="button" class="btn" onclick="realizarMeta(${id})">Realizei</button>` : ''}
+      <button type="button" class="link-btn mt-menos" onclick="metaMovs(${id})" aria-expanded="${_mtAbertos[g.id] ? 'true' : 'false'}">${_mtAbertos[g.id] ? 'Menos ▴' : `Mais${nMov ? ` (${nMov})` : ''} ▾`}</button>
+    </div>${movs}
+  </div>`;
+}
+
+function renderGoalsV89() {
+  const list = document.getElementById('goalsList');
+  if (!list || typeof db === 'undefined' || !db) return;
+  const ativas = db.goals.filter(g => !g.realizada), feitas = db.goals.filter(g => g.realizada);
+  if (!db.goals.length) {
+    list.innerHTML = `<div class="mt-topo"><span class="mt-resumo">Nenhuma meta ainda.</span><button type="button" class="btn primary" onclick="novaMetaModal()">+ Nova meta</button></div>
+      <div class="mt-card"><div class="mt-nome">Para que você está guardando?</div><p class="mt-plano">Uma viagem, um notebook, a reserva de emergência… Cada meta ganha uma caixinha: o que você guardar nela vira o progresso, e o app diz quanto guardar por mês para chegar no prazo.</p>
+      <div class="mt-acoes"><button type="button" class="btn primary" onclick="novaMetaModal()">Criar minha primeira meta</button></div></div>`;
+    return;
+  }
+  const infos = ativas.map(metaInfo), guardado = infos.reduce((a, i) => a + i.guardado, 0), falta = infos.reduce((a, i) => a + i.falta, 0);
+  list.innerHTML = `
+    <div class="mt-topo"><span class="mt-resumo"><strong>${ativas.length}</strong> meta${ativas.length === 1 ? '' : 's'} · <strong>${fmt(guardado)}</strong> guardados · faltam <strong>${fmt(falta)}</strong></span>
+      <button type="button" class="btn primary" onclick="novaMetaModal()">+ Nova meta</button></div>
+    <div class="mt-lista">${ativas.map(cardMeta).join('')}</div>
+    ${feitas.length ? `<div class="mt-sec">Realizadas (${feitas.length}) · <button type="button" class="link-btn" onclick="metaVerRealizadas()">${_mtVerRealizadas ? 'esconder' : 'ver'}</button></div>
+      ${_mtVerRealizadas ? feitas.map(g => `<div class="mt-realizada"><span>✅ <strong>${escapeHtml(g.name)}</strong> · ${fmt(g.total)} · em ${g.realizada.data.split('-').reverse().join('/')}</span>
+        <span><button type="button" class="link-btn" onclick="desfazerRealizada(${jsArg(g.id)})">desfazer</button> · <button type="button" class="link-btn" onclick="deleteGoal(${jsArg(g.id)})">excluir</button></span></div>`).join('') : ''}` : ''}`;
+}
+function depoisDeMeta() {
+  saveDB();
+  renderGoalsV89();
+  if (document.getElementById('dashboard')?.classList.contains('active') && typeof renderDashboard === 'function') renderDashboard();
+}
+function opcoesClasseLivre(atualId) {
+  const usadas = new Set(db.goals.filter(g => g.classe && getInvestClass(g.classe)).map(g => g.classe));
+  return getInvestClasses().filter(c => !usadas.has(c.id) || c.id === atualId);
+}
+function novaMetaModal() {
+  const livres = opcoesClasseLivre();
+  modal.show('Nova meta', `
+    <div class="input-group"><label>Para que é?</label><input id="nmNome" maxlength="40" placeholder="Ex.: Viagem para o Chile"></div>
+    <div class="input-group"><label>Quanto você precisa (R$)</label><input id="nmTotal" type="text" inputmode="decimal" placeholder="0,00"></div>
+    <div class="input-group"><label>Até quando (opcional)</label><input id="nmPrazo" type="date"></div>
+    <div class="input-group"><label>Onde vai ficar o dinheiro</label>
+      <select id="nmOnde"><option value="__nova">Uma caixinha nova para esta meta</option>${livres.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.label)} (${fmt((getCarteiraMercado().porClasse[c.id] || { mercado: 0 }).mercado)})</option>`).join('')}</select></div>
+    <div class="input-group" id="nmJaWrap"><label>Já tem guardado para ela? (opcional)</label><input id="nmJa" type="text" inputmode="decimal" placeholder="0,00">
+      <small class="muted" style="display:block;margin-top:4px;font-size:.75rem">Só se esse dinheiro já está separado (caixinha do banco, cofrinho) e ainda não está no app. Não mexe na conta.</small></div>`, {
+    confirmLabel: 'Criar meta',
+    onConfirm: () => {
+      const nome = document.getElementById('nmNome').value.trim().slice(0, 40), total = readMoney('nmTotal');
+      if (!nome) { toast('Dê um nome à meta', 'error'); return false; }
+      if (!(total > 0)) { toast('Quanto você precisa? Ex.: 12.000,00', 'error'); return false; }
+      const prazo = isoDay(document.getElementById('nmPrazo').value) || '';
+      const onde = document.getElementById('nmOnde').value;
+      let classe;
+      if (onde === '__nova') {
+        classe = criarCaixinha(nome);
+        const ja = readMoney('nmJa');
+        if (Number.isFinite(ja) && ja > 0) somarJaGuardado(classe, ja);
+      } else classe = getInvestClass(onde);
+      db.goals.push({ id: Date.now(), name: nome, total, deadline: prazo, contributions: {}, classe: classe ? classe.id : undefined });
+      depoisDeMeta();
+      toast(`Meta criada${classe ? ` — caixinha ${classe.label}` : ''}`, 'success');
+    }
+  });
+  const sel = document.getElementById('nmOnde');
+  sel.addEventListener('change', () => { document.getElementById('nmJaWrap').style.display = sel.value === '__nova' ? '' : 'none'; });
+}
+function ligarMetaModal(id) {
+  const g = db.goals.find(x => x.id === id);
+  if (!g) return;
+  const soma = metaInfo(g).guardado, livres = opcoesClasseLivre();
+  const cm = getCarteiraMercado();
+  modal.show(`Ligar "${g.name}" a uma caixinha`, `
+    <p class="muted" style="margin:0 0 12px;font-size:.86rem">Hoje esta meta tem ${fmt(soma)} anotados, que não aparecem na conta nem nos investimentos. Onde está esse dinheiro de verdade?</p>
+    <label class="mt-opcao"><input type="radio" name="lgOp" value="nova-ja" checked><span>Numa caixinha que o app ainda não conhece<small>Cria a caixinha "${escapeHtml(g.name)}" começando com ${fmt(soma)} (já estava guardado; não mexe na conta).</small></span></label>
+    ${livres.length ? `<label class="mt-opcao"><input type="radio" name="lgOp" value="existente"><span>Numa classe que já está no app<small><select id="lgClasse" style="margin-top:6px;width:100%">${livres.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.label)} — ${fmt((cm.porClasse[c.id] || { mercado: 0 }).mercado)}</option>`).join('')}</select>O progresso passa a ser o saldo dessa classe.</small></span></label>` : ''}
+    <label class="mt-opcao"><input type="radio" name="lgOp" value="nova-zero"><span>Ainda não separei esse dinheiro<small>Cria a caixinha vazia; use <em>Guardar</em> para separar a partir de agora.</small></span></label>`, {
+    confirmLabel: 'Ligar',
+    onConfirm: () => {
+      const op = (document.querySelector('input[name="lgOp"]:checked') || {}).value;
+      let classe;
+      if (op === 'existente') classe = getInvestClass(document.getElementById('lgClasse').value);
+      else { classe = criarCaixinha(g.name); if (op === 'nova-ja' && soma > 0) somarJaGuardado(classe, soma); }
+      if (!classe) { toast('Escolha a classe', 'error'); return false; }
+      g.classe = classe.id;
+      if (op === 'nova-ja') g.histAnotado = true; else delete g.histAnotado;
+      depoisDeMeta();
+      toast(`${g.name} agora acompanha a caixinha ${classe.label}`, 'success');
+    }
+  });
+}
+function guardarNaMeta(id) {
+  const g = db.goals.find(x => x.id === id);
+  if (!g) return;
+  const c = classeDaMeta(g);
+  if (!c) return ligarMetaModal(id);
+  openQuickAdd('guardar');
+  setTimeout(() => {
+    const sel = document.getElementById('qaInvestClass'), d = document.getElementById('qaDesc');
+    if (sel) sel.value = c.id;
+    if (d && !d.value) d.value = g.name;
+  }, 60);
+}
+function tirarDaMeta(id) {
+  const g = db.goals.find(x => x.id === id);
+  const c = classeDaMeta(g);
+  if (!g || !c) return;
+  const tem = metaInfo(g).guardado, contas = getContas();
+  modal.show(`Tirar de "${g.name}"`, `
+    <p class="muted" style="margin:0 0 12px;font-size:.86rem">O dinheiro sai da caixinha e volta para a conta hoje. Não é gasto — se for usar, lance os gastos normalmente.</p>
+    <div class="input-group"><label>Quanto (tem ${fmt(tem)})</label><input id="tmValor" type="text" inputmode="decimal" value="${escapeHtml(fmtInput(tem))}"></div>
+    ${contas.length > 1 ? `<div class="input-group"><label>Para qual conta</label><select id="tmConta">${contas.map(x => `<option value="${escapeHtml(x.id)}">${escapeHtml(x.nome)}</option>`).join('')}</select></div>` : ''}`, {
+    confirmLabel: 'Tirar',
+    onConfirm: () => {
+      const v = readMoney('tmValor');
+      if (!(v > 0)) { toast('Valor inválido', 'error'); return false; }
+      if (v > tem + 0.005) { toast(`A caixinha tem ${fmt(tem)}`, 'error'); return false; }
+      resgatarDaCaixinha(c, v, `Resgate · ${g.name}`, (document.getElementById('tmConta') || {}).value);
+      depoisDeMeta();
+      toast(`${fmt(v)} voltaram para a conta`, 'success');
+    }
+  });
+}
+// Resgate com data: um lançamento de investimento negativo (volta para a conta)
+function resgatarDaCaixinha(c, v, desc, contaId) {
+  const h = new Date(), date = todayISO();
+  ensureYear(h.getFullYear());
+  const key = getKey(h.getFullYear(), h.getMonth());
+  (db.events[key] = db.events[key] || []).push({ id: Date.now(), desc: desc.slice(0, 80), value: -Math.round(v * 100) / 100, cat: '', method: formaInvestimento(),
+    type: 'eventual', date, investClass: c.id, ...(contaId ? { conta: contaId } : {}) });
+}
+function realizarMeta(id) {
+  const g = db.goals.find(x => x.id === id);
+  if (!g) return;
+  const c = classeDaMeta(g), tem = c ? metaInfo(g).guardado : 0;
+  modal.show('Meta realizada 🎉', `
+    <p style="margin:0 0 12px">Parabéns por <strong>${escapeHtml(g.name)}</strong>!</p>
+    ${c && tem > 0.004 ? `<label class="mt-opcao"><input type="radio" name="rmOp" value="tirar" checked><span>Tirar ${fmt(tem)} da caixinha para a conta<small>Para pagar o que você comprou. Lance os gastos normalmente.</small></span></label>
+    <label class="mt-opcao"><input type="radio" name="rmOp" value="ficar"><span>Deixar o dinheiro na caixinha<small>A meta vai para as realizadas e o dinheiro continua guardado.</small></span></label>` : ''}`, {
+    confirmLabel: 'Marcar como realizada',
+    onConfirm: () => {
+      const op = (document.querySelector('input[name="rmOp"]:checked') || {}).value;
+      if (c && op === 'tirar' && tem > 0.004) resgatarDaCaixinha(c, tem, `Resgate · ${g.name}`);
+      g.realizada = { data: todayISO() };
+      depoisDeMeta();
+      toast(`${g.name} foi para as realizadas`, 'success');
+    }
+  });
+}
+function desfazerRealizada(id) { const g = db.goals.find(x => x.id === id); if (g) { delete g.realizada; depoisDeMeta(); } }
+window.metaMovs = id => { _mtAbertos[id] = !_mtAbertos[id]; renderGoalsV89(); };
+window.metaVerRealizadas = () => { _mtVerRealizadas = !_mtVerRealizadas; renderGoalsV89(); };
+// Excluir: a caixinha continua nos investimentos
+(function () {
+  const novo = async function (id) {
+    const g = db.goals.find(x => x.id === id);
+    if (!g) return;
+    const c = classeDaMeta(g), tem = c ? metaInfo(g).guardado : 0;
+    const ok = await confirmDialog(c ? `Excluir a meta "${g.name}"? A caixinha ${c.label} continua nos seus investimentos${tem > 0.004 ? ` com ${fmt(tem)}` : ''}.` : `Excluir a meta "${g.name}"?`);
+    if (!ok) return;
+    db.goals = db.goals.filter(x => x.id !== id);
+    depoisDeMeta();
+    toast('Meta excluída', 'success');
+  };
+  window.deleteGoal = novo;
+  deleteGoal = novo;
+})();
+// Editar e remover anotação antiga redesenham a lista nova
+(function () {
+  ['editGoalModal', 'deleteContribution'].forEach(n => {
+    const o = window[n];
+    if (typeof o !== 'function') return;
+    window[n] = function () { const r = o.apply(this, arguments); Promise.resolve(r).then(() => setTimeout(renderGoalsV89, 0)); return r; };
+  });
+  editGoalModal = window.editGoalModal;
+  deleteContribution = window.deleteContribution;
+  const og = window.renderGoals;
+  window.renderGoals = function () { try { if (typeof og === 'function') og.apply(this, arguments); } catch (e) {} renderGoalsV89(); };
+  renderGoals = window.renderGoals;
+  // Depois de guardar pelo +, a aba Metas atualiza
+  const sq = window.submitQuickAdd;
+  if (typeof sq === 'function') submitQuickAdd = window.submitQuickAdd = function () {
+    const r = sq.apply(this, arguments);
+    Promise.resolve(r).then(() => { if (document.getElementById('metas')?.classList.contains('active')) renderGoalsV89(); });
+    return r;
+  };
+})();
+window.novaMetaModal = novaMetaModal;
+window.ligarMetaModal = ligarMetaModal;
+window.guardarNaMeta = guardarNaMeta;
+window.tirarDaMeta = tirarDaMeta;
+window.realizarMeta = realizarMeta;
+window.desfazerRealizada = desfazerRealizada;
 </script>
 </body>
 </html>
