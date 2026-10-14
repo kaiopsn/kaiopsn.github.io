@@ -6212,7 +6212,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v79';
+const APP_VERSION = 'v80';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -13030,6 +13030,13 @@ function renderRecentActivity() {
   #quickAddCard .qa79-rep .qa78-chip b { font-weight: 700; }
   #quickAddCard .qa-submit { position: sticky; bottom: 0; z-index: 2; box-shadow: 0 -8px 16px var(--bg, #fff); }
   #quickAddCard .qa-hint.qa-kbd { display: none; }
+
+  /* v80 · Repete? (uma vez / todo mês / parcelado) */
+  #quickAddCard .qa80-parc { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; font-size: .88rem; }
+  #quickAddCard .qa80-step { display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+  #quickAddCard .qa80-step button { width: 36px; height: 34px; border: none; background: transparent; color: var(--primary); font: 700 1.1rem/1 inherit; cursor: pointer; }
+  #quickAddCard .qa80-step input { width: 44px !important; height: 34px !important; padding: 0 !important; border: none !important; background: transparent !important; text-align: center; font: 700 .95rem/1 inherit; box-shadow: none !important; }
+  #quickAddCard .qa80-conta { width: 100%; color: var(--text-muted); font-size: .8rem; }
   /* v74 · Importar extrato */
   #modalBox:has(.extrato-revisao) { max-width: 720px; }
   .extrato-opcoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 12px; }
@@ -15526,6 +15533,85 @@ window.openIndicesManual = openIndicesManual;
     if (d && !d.value.trim()) {
       const cat = $('qaCat') && $('qaCat').value;
       d.value = _qaMode === 'gasto' ? (cat || 'Gasto') : _qaMode === 'entrada' ? 'Entrada' : 'Guardado';
+    }
+    return sq.apply(this, arguments);
+  };
+})();
+</script>
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// v80 · "REPETE?" NO ADICIONAR — gasto de uma vez, todo mês (fixo) ou
+// parcelado (nº de parcelas; valor digitado = da parcela ou o total).
+// Usa o mesmo caminho do texto livre (window._qaTexto.parcelas/recorrente).
+// ══════════════════════════════════════════════════════════════════════
+(function () {
+  const $ = id => document.getElementById(id);
+  let rep = 'uma', n = 2, eTotal = false;
+  function montar() {
+    const card = $('quickAddCard');
+    if (!card || card.dataset.v80 || !$('qa78Mets')) return;
+    card.dataset.v80 = '1';
+    const box = document.createElement('div');
+    box.setAttribute('data-only', 'gasto');
+    box.innerHTML = `<div class="qa78-label">Repete?</div><div class="qa78-chips" id="qa80Rep"></div>
+      <div class="qa80-parc" id="qa80Parc" style="display:none">
+        <span class="qa80-step"><button type="button" id="qa80Menos" aria-label="Menos parcelas">−</button><input id="qa80N" type="text" inputmode="numeric" aria-label="Número de parcelas"><button type="button" id="qa80Mais" aria-label="Mais parcelas">+</button></span>
+        <span>parcelas</span>
+        <span class="qa78-chips" id="qa80Tipo"></span>
+        <div class="qa80-conta" id="qa80Conta"></div>
+      </div>`;
+    $('qa78Mets').parentElement.insertAdjacentElement('afterend', box);
+    $('qa80Menos').onclick = () => { n = Math.max(2, n - 1); desenhar(); };
+    $('qa80Mais').onclick = () => { n = Math.min(72, n + 1); desenhar(); };
+    $('qa80N').oninput = e => { const v = parseInt(e.target.value.replace(/\D/g, ''), 10); if (v >= 2 && v <= 72) { n = v; contaParcela(); } };
+    $('qaValue').addEventListener('input', contaParcela);
+  }
+  const chip = (txt, on, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'qa78-chip' + (on ? ' on' : ''); b.textContent = txt; b.onclick = fn; return b; };
+  function contaParcela() {
+    const el = $('qa80Conta'); if (!el) return;
+    const v = readMoney('qaValue');
+    if (rep !== 'parc' || !(v > 0)) { el.textContent = ''; return; }
+    const parc = eTotal ? v / n : v;
+    el.textContent = `${n}× de ${fmt(parc)} = ${fmt(parc * n)} no total · a 1ª entra no mês da data`;
+  }
+  function desenhar() {
+    const r = $('qa80Rep'); if (!r) return;
+    r.innerHTML = '';
+    [['uma', 'Só esta vez'], ['mes', 'Todo mês'], ['parc', 'Parcelado']].forEach(([k, t]) =>
+      r.appendChild(chip(t, rep === k, () => { rep = k; desenhar(); })));
+    $('qa80Parc').style.display = rep === 'parc' ? '' : 'none';
+    $('qa80N').value = n;
+    const tp = $('qa80Tipo'); tp.innerHTML = '';
+    tp.appendChild(chip('valor da parcela', !eTotal, () => { eTotal = false; desenhar(); }));
+    tp.appendChild(chip('valor total', eTotal, () => { eTotal = true; desenhar(); }));
+    contaParcela();
+  }
+  const oa = window.openQuickAdd;
+  if (typeof oa === 'function') openQuickAdd = window.openQuickAdd = function () {
+    rep = 'uma'; n = 2; eTotal = false;
+    const r = oa.apply(this, arguments);
+    try { montar(); desenhar(); qaSetMode(_qaMode); } catch (e) { console.warn('[v80]', e); }
+    return r;
+  };
+  // a frase ("12x de 290", "netflix 55 todo mês") marca os botões
+  const at = window.qaAplicarTexto;
+  if (typeof at === 'function') qaAplicarTexto = window.qaAplicarTexto = function () {
+    const r = at.apply(this, arguments);
+    const p = window._qaTexto;
+    if (p) { if (p.parcelas >= 2) { rep = 'parc'; n = p.parcelas; eTotal = false; } else if (p.recorrente) rep = 'mes'; else rep = 'uma'; desenhar(); }
+    return r;
+  };
+  const sq = window.submitQuickAdd;
+  if (typeof sq === 'function') submitQuickAdd = window.submitQuickAdd = function () {
+    if (_qaMode === 'gasto') {
+      const t = Object.assign({}, window._qaTexto || {});
+      t.parcelas = rep === 'parc' ? n : null;
+      t.recorrente = rep === 'mes';
+      window._qaTexto = t;
+      if (rep === 'parc' && eTotal) {
+        const v = readMoney('qaValue');
+        if (v > 0) $('qaValue').value = fmtInput(Math.round(v / n * 100) / 100);
+      }
     }
     return sq.apply(this, arguments);
   };
