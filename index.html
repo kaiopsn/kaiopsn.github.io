@@ -6215,7 +6215,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v83';
+const APP_VERSION = 'v84';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -13053,8 +13053,8 @@ function renderRecentActivity() {
     /* filtros: uma linha que rola de lado + busca */
     #gastos .filter-bar { display: flex !important; flex-wrap: nowrap !important; overflow-x: auto; gap: 6px; padding: 0 0 8px !important; margin-bottom: 8px; scrollbar-width: none; background: none !important; border: none !important; box-shadow: none !important; }
     #gastos .filter-bar::-webkit-scrollbar { display: none; }
-    #gastos .filter-bar > * { flex: none; margin: 0 !important; }
-    #gastos .filter-bar .filterBtn { padding: 8px 14px !important; border-radius: 999px !important; font-size: .84rem !important; }
+    #gastos .filter-bar > * { flex: 0 0 auto !important; width: auto !important; min-width: max-content !important; margin: 0 !important; }   /* v84: antes ficavam com 30px ("Tud", "Fixo") */
+    #gastos .filter-bar .filterBtn { padding: 8px 14px !important; border-radius: 999px !important; font-size: .84rem !important; flex: 0 0 auto !important; width: auto !important; min-width: max-content !important; }
     #gastos .filter-bar #monthSelect { display: none; }
     #gastos .filter-bar select, #gastos .filter-bar input { max-width: 150px !important; height: 36px; border-radius: 999px !important; font-size: .84rem !important; padding: 0 12px !important; }
     /* lista */
@@ -13074,6 +13074,7 @@ function renderRecentActivity() {
     }
     #gastos #mainTable, #gastos #mainTable tbody { display: block !important; width: 100% !important; min-width: 0 !important; }
     #gastos > .panel .table-wrap { overflow: visible !important; min-width: 0 !important; }
+    #gastos > .panel .table-wrap::after { display: none !important; }   /* v84: faixa de "role para o lado" cobria os valores */
     #gastos #mainTable tbody tr:not(.method-group-header) > td { display: block !important; padding: 0 !important; border: none !important; background: none !important; min-height: 0 !important; min-width: 0; width: auto !important; }
     #gastos #mainTable tbody tr:not(.method-group-header) > td::before { content: none !important; display: none !important; }
     #gastos #mainTable tbody tr:not(.method-group-header) > td:nth-child(1) { display: none !important; }                       /* seleção */
