@@ -2584,9 +2584,10 @@
   <!-- ============== REGISTRAR ============== -->
   <div id="registro" class="content">
     <h1>Fixos e recorrentes</h1>
-    <p class="page-sub">Gastos fixos e rendas que se repetem todo mês. Para lançar algo novo, use o <strong>+</strong>.</p>
-    <!-- v81: os formulários antigos ficam escondidos (o "+" substituiu); só as listas aparecem -->
-    <div class="panel">
+    <p class="page-sub">O que entra e sai todo mês. Mudou um valor? Ele vale do mês que você escolher em diante — os meses passados ficam como estão.</p>
+    <!-- v91: tela única (celular e computador). As listas antigas ficam escondidas. -->
+    <div id="fxNovo"></div>
+    <div class="panel" id="fxVelho" style="display:none" aria-hidden="true">
       <h2>Gastos fixos cadastrados</h2>
       <div id="recurringExpensesList"></div>
       <h2 style="margin-top: 28px;">Rendas recorrentes ativas</h2>
@@ -4372,7 +4373,7 @@ window.renderDashboard = function() {
           <div class="we-icon"><svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.7 4.4L18 9l-4.3 1.6L12 15l-1.7-4.4L6 9l4.3-1.6z"/><path d="M18 14l.7 1.8L20.5 16.5 18.7 17.2 18 19l-.7-1.8L15.5 16.5l1.8-.7z"/></svg></div>
           <div class="we-title">Bem-vindo, ${escapeHtml(currentUser)}!</div>
           <div class="we-sub">Sua conta está pronta. Comece registrando seus primeiros gastos e entradas para ver seu dashboard ganhar vida.</div>
-          <button class="we-btn" onclick="document.querySelector('.tabBtn[data-tab=\\"registro\\"]').click()">
+          <button class="we-btn" onclick="openQuickAdd()">
             Registrar primeiro gasto
           </button>
         </div>`;
@@ -4859,22 +4860,18 @@ function generateSmartInsights() {
     }
   }
 
-  // 3. Total de gastos fixos como % da renda
-  const fixos = (d.items || []).filter(i => i.type === 'fixo').reduce((s, i) => s + i.value, 0);
-  if (d.entradas > 0 && fixos > 0) {
-    const pctFixos = (fixos / d.entradas) * 100;
+  // 3. v91: contas fixas + parcelas sobre o que entra todo mês — a MESMA conta
+  // da aba Fixos e recorrentes (compromissosDoMes). Antes: só fixos ÷ entradas.
+  const cpm = typeof compromissosDoMes === 'function' ? compromissosDoMes(currentYear, currentMonth) : null;
+  if (cpm && cpm.pct != null && cpm.comprometido > 0) {
+    const pctFixos = cpm.pct;
+    const sobre = cpm.temRecorrente ? 'do que entra todo mês' : `do que entrou em ${monthsFull[currentMonth].toLowerCase()}`;
     if (pctFixos > 70) {
-      insights.push({
-        icon: '⚠️',
-        type: 'warning',
-        text: `Seus gastos fixos consomem <strong>${pctFixos.toFixed(0)}%</strong> da renda. Acima de 70% indica pouca margem de manobra.`
-      });
+      insights.push({ icon: '⚠️', type: 'warning',
+        text: `Contas fixas e parcelas levam <strong>${Math.round(pctFixos)}%</strong> ${sobre}. Acima de 70% sobra pouca margem de manobra.` });
     } else if (pctFixos < 40) {
-      insights.push({
-        icon: '✅',
-        type: 'success',
-        text: `Gastos fixos representam apenas <strong>${pctFixos.toFixed(0)}%</strong> da renda — boa folga financeira.`
-      });
+      insights.push({ icon: '✅', type: 'success',
+        text: `Contas fixas e parcelas levam <strong>${Math.round(pctFixos)}%</strong> ${sobre} — boa folga.` });
     }
   }
 
@@ -6207,7 +6204,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v90';
+const APP_VERSION = 'v91';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -6970,6 +6967,13 @@ function sanitizeData(data) {
       else if (it.endYear != null || it.endMonth != null) { delete it.endYear; delete it.endMonth; }
     }
     if ('total' in it && typeof it.total !== 'number') { const n = safeInt(it.total); it.total = n !== null && n > 0 ? n : 1; }
+    // v91: série (id do 1º registro), meses pulados ("2026-9") e total antes de quitar
+    if (it.serie != null && !isSafeId(it.serie)) delete it.serie;
+    if (it.pular != null) {
+      const pl = Array.isArray(it.pular) ? [...new Set(it.pular.filter(k => typeof k === 'string' && /^\d{4}-\d{1,2}$/.test(k)))].slice(-240) : [];
+      if (pl.length) it.pular = pl; else delete it.pular;
+    }
+    if (it.totalOriginal != null) { const n = safeInt(it.totalOriginal); if (n !== null && n > 0) it.totalOriginal = n; else delete it.totalOriginal; }
     return it;
   };
   const saneiaArray = arr => (Array.isArray(arr) ? arr : []).map(saneiaItem).filter(Boolean);
@@ -7588,6 +7592,16 @@ function isInRange(year, month, startY, startM, endY, endM) {
   return true;
 }
 
+// v91: mês pulado ("este mês não teve") e a data do recorrente/parcela dentro
+// do mês exibido (antes aparecia a data do cadastro: "05/01" em outubro).
+function mesPulado(r, key) { return !!r && Array.isArray(r.pular) && r.pular.includes(key); }
+function dataNoMes(d, y, m) {
+  const s = isoDay(d);
+  if (!s) return d;
+  const dia = Math.min(Number(s.slice(8, 10)) || 1, new Date(y, m + 1, 0).getDate());
+  return `${y}-${String(m + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+}
+
 function getMonthData(year, month) {
   const key = getKey(year, month);
   const items = [];
@@ -7597,10 +7611,10 @@ function getMonthData(year, month) {
     items.push({ ...i, type: i.type || 'eventual', detail: i.detail || 'Único' });
   });
 
-  // Recorrentes ativas no mês
+  // Recorrentes ativas no mês (v91: menos os meses pulados; data dentro do mês)
   db.recurringExpenses.forEach(r => {
-    if (isInRange(year, month, r.startYear, r.startMonth, r.endYear, r.endMonth)) {
-      items.push({ ...r, type: 'fixo', detail: 'Recorrente' });
+    if (isInRange(year, month, r.startYear, r.startMonth, r.endYear, r.endMonth) && !mesPulado(r, key)) {
+      items.push({ ...r, type: 'fixo', detail: 'Recorrente', date: dataNoMes(r.date, year, month) });
     }
   });
 
@@ -7621,8 +7635,9 @@ function getMonthData(year, month) {
         : `${endMonth+1}/${endYear}`;
       items.push({
         ...inst,
+        date: dataNoMes(inst.date, year, month),   // v91: a parcela do mês, no dia da compra
         type: 'parc',
-        detail: `${parc}/${inst.total}`,
+        detail: `${parc}/${inst.totalOriginal || inst.total}`,   // v91: quitada antes, a parcela segue como 3/10
         _remaining: remaining,
         _remainingValue: remainingValue,
         _endLabel: endLabel
@@ -7651,8 +7666,8 @@ function getMonthData(year, month) {
   // Renda do mês + recorrente
   const monthInc = db.income[key] || [];
   const recInc = db.recurringIncome.filter(r =>
-    isInRange(year, month, r.startYear, r.startMonth, r.endYear, r.endMonth)
-  ).map(r => ({ ...r, recurring: true }));
+    isInRange(year, month, r.startYear, r.startMonth, r.endYear, r.endMonth) && !mesPulado(r, key)
+  ).map(r => ({ ...r, recurring: true, date: dataNoMes(r.date, year, month) }));
   const incomeAll = [...monthInc, ...recInc];
   const entradas = incomeAll.reduce((a, b) => a + b.value, 0);
 
@@ -12631,7 +12646,7 @@ function renderMoneyPanel(cur) {
             ? `<div class="money-prog"><span style="width:${reservaProg * 100}%;background:${corReserva}"></span></div>` : '') : ''}
       ${linha('var(--accent)', 'Investimentos', cart.investimentos, investSub)}
       ${devolver > 0 ? linha('var(--text-muted)', 'Talvez tenha que devolver', -devolver,
-          `Está na conta, mas não entra no patrimônio · <button type="button" class="link-btn" onclick="abrirConferirSaldos()">resolver</button>`) : ''}
+          `${typeof ondeDevolver === 'function' ? ondeDevolver(currentYear, currentMonth) : 'Está na conta'}, mas não entra no patrimônio · <button type="button" class="link-btn" onclick="abrirConferirSaldos()">resolver</button>`) : ''}
       ${rodape ? `<p class="money-foot">${rodape}</p>` : ''}
       <button type="button" class="link-btn money-link" onclick="navTo('investimentos')">Ver investimentos ›</button>
     </section>`;
@@ -12641,7 +12656,8 @@ function renderRecentActivity() {
   const dash = document.getElementById('dashboard');
   if (!dash) return;
   const cur = getMonthData(currentYear, currentMonth);
-  const dated = [...(cur.items || []), ...(cur.aportes || [])].filter(i => i.date)
+  const _fimHoje = new Date(); _fimHoje.setHours(23, 59, 59, 999);   // v91: fixo/parcela do resto do mês ainda não aconteceu
+  const dated = [...(cur.items || []), ...(cur.aportes || [])].filter(i => i.date && parseLocalDate(i.date) <= _fimHoje)
     .sort((a, b) => parseLocalDate(b.date) - parseLocalDate(a.date)).slice(0, 5);
 
   let panel = document.getElementById('recentActivity');
@@ -13397,6 +13413,85 @@ function renderRecentActivity() {
     #investimentos > #invStats, #investimentos > #profitabilityPanel, #investimentos > #futureCommitPanel,
     #investimentos > .grid.grid-2, #investimentos > .panel.inv-velho, #investimentos > #invSub { display: none !important; }
   }
+
+  /* v91 · Fixos e recorrentes */
+  #fxNovo { margin-top: 4px; }
+  #fxNovo .panel { margin-bottom: 14px; }
+  .fx-topo { padding: 18px 18px 16px; }
+  .fx-topo-cab { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+  .fx-eyebrow { font-size: .72rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); }
+  .fx-mes { font-size: .78rem; color: var(--text-muted); }
+  .fx-es { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+  .fx-es > div { padding: 10px 12px; border-radius: 14px; background: var(--surface-warm, rgba(0,0,0,.03)); min-width: 0; }
+  .fx-l { display: block; font-size: .76rem; color: var(--text-muted); font-weight: 600; }
+  .fx-v { display: block; font-size: 1.3rem; font-weight: 800; letter-spacing: -.02em; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+  .fx-barra { display: flex; height: 12px; border-radius: 999px; overflow: hidden; background: var(--border-soft); margin: 2px 0 10px; }
+  .fx-barra span { display: block; height: 100%; }
+  .fx-barra span + span { box-shadow: -2px 0 0 var(--surface); }
+  .fx-leg { display: grid; gap: 5px; margin-bottom: 4px; }
+  .fx-leg-i { display: flex; align-items: center; gap: 8px; font-size: .86rem; }
+  .fx-leg-i i { width: 9px; height: 9px; border-radius: 3px; flex: none; }
+  .fx-leg-i span { flex: 1; min-width: 0; color: var(--text-muted); }
+  .fx-leg-i b { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .fx-frase { font-size: .84rem; color: var(--text-muted); margin: 8px 0 12px; line-height: 1.5; }
+  .fx-acoes { display: flex; gap: 8px; flex-wrap: wrap; }
+  .fx-topo .fx-acoes .btn { flex: 1 1 0; min-width: 0; }
+  .fx-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 16px; }
+  .fx-col { min-width: 0; }
+  @media (min-width: 1100px) { .fx-grid { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); align-items: start; } }
+  .fx-sec { padding: 16px 16px 8px; }
+  .fx-h { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+  .fx-h h2 { margin: 0; font-size: 1.05rem; }
+  .fx-h-v { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .fx-sub-h { margin: 14px 0 2px; font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
+  .fx-item { display: flex; gap: 12px; align-items: center; padding: 10px 2px; border-bottom: 1px solid var(--border-soft); cursor: pointer; }
+  .fx-item:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 10px; }
+  .fx-dia { flex: none; width: 42px; height: 44px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; }
+  .fx-dia small { font-size: .55rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 3px; }
+  .fx-dia b { font-size: 1.05rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .fx-dia.hoje { border-color: var(--primary); background: var(--primary-tint, rgba(109,94,246,.1)); }
+  .fx-dia.hoje b, .fx-dia.hoje small { color: var(--primary); }
+  .fx-corpo { flex: 1; min-width: 0; }
+  .fx-top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .fx-nome { font-weight: 600; font-size: .93rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .fx-val { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .fx-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: .76rem; color: var(--text-muted); margin-top: 3px; }
+  .fx-sub > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+  .fx-pago { border: 1px solid var(--border); background: transparent; color: var(--text-muted); border-radius: 999px; padding: 1px 9px; font: 600 .72rem/1.6 inherit; cursor: pointer; }
+  .fx-pago.on { border-color: transparent; background: var(--pos-soft, rgba(18,183,106,.14)); color: var(--pos); }
+  .fx-tag { font-size: .68rem; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--border-soft); color: var(--text-muted); white-space: nowrap; line-height: 1.6; }
+  .fx-item.pulado .fx-val, .fx-item.pulado .fx-nome { text-decoration: line-through; color: var(--text-muted); }
+  .fx-item.fora { opacity: .72; }
+  .fx-item.aberto { border-bottom-color: transparent; }
+  .fx-det { margin: 0 0 10px 54px; padding: 10px 12px; border-radius: 12px; background: var(--surface-warm, rgba(0,0,0,.03)); font-size: .82rem; line-height: 1.6; }
+  .fx-det .fx-acoes { margin-top: 8px; }
+  .fx-det .btn { padding: 6px 12px; font-size: .82rem; }
+  .fx-mais { display: block; width: 100%; margin: 10px 0 6px; padding: 10px; border: 1px dashed var(--border); border-radius: 12px; background: transparent; color: var(--text-muted); font: 600 .82rem/1.2 inherit; cursor: pointer; }
+  .fx-vazio { padding: 10px 2px 12px; font-size: .86rem; color: var(--text-muted); line-height: 1.5; }
+  .fx-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0 10px; }
+  .fx-desde { padding-top: 10px; border-top: 1px solid var(--border-soft); }
+  .fx-desde .link-btn { display: block; margin-top: 6px; text-align: left; }
+  #fxDesdeDica, #fxAteDica, #fxVoltaDica, #fxQDica { display: block; margin-top: 6px; font-size: .78rem; line-height: 1.45; }
+  .fx-opcoes { display: grid; gap: 8px; }
+  .fx-opcoes label { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; cursor: pointer; text-transform: none; letter-spacing: normal; font-size: .9rem; color: var(--text); }
+  .fx-opcoes label small { display: block; color: var(--text-muted); font-size: .78rem; margin-top: 2px; font-weight: 400; }
+  .fx-opcoes input { margin-top: 3px; flex: none; }
+  .fx-ent-tot { display: flex; justify-content: space-between; align-items: baseline; font-size: .9rem; margin: 0 0 4px; }
+  .fx-ent { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 10px 0; border-bottom: 1px solid var(--border-soft); }
+  .fx-ent-n { font-weight: 600; font-size: .92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fx-ent-s { font-size: .76rem; color: var(--text-muted); }
+  .fx-ent-a { grid-column: 1 / -1; display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  .fx-ent-a .btn { padding: 5px 12px; font-size: .8rem; }
+  #mainStats .card.fx-clicavel { cursor: pointer; }
+  .fx-ver { font-size: .72rem; font-weight: 600; color: var(--primary); text-transform: none; letter-spacing: 0; }
+  .iv-tag.dev { background: var(--border-soft); color: var(--text-muted); }
+  .conferir-dev .acoes { align-items: flex-start; }
+  @media (max-width: 768px) { .conferir-dev { grid-template-columns: 1fr; } .conferir-dev .acoes { justify-content: flex-start; } }
+  .v86-check input[type="checkbox"] { width: 20px !important; height: 20px !important; min-height: 0 !important; flex: none; margin: 2px 0 0; padding: 0; }
+  @media (max-width: 768px) {
+    .fx-det { margin-left: 0; }
+    .fx-v { font-size: 1.2rem; }
+  }
   /* v74 · Importar extrato */
   #modalBox:has(.extrato-revisao) { max-width: 720px; }
   .extrato-opcoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 12px; }
@@ -13680,7 +13775,7 @@ function radarProjecao(hoje) {
 // MÊS · cobranças que se repetem todo mês com o mesmo valor (assinaturas)
 function radarAssinaturas(hoje) {
   const Y = hoje.getFullYear(), M = hoje.getMonth(), agora = Y * 12 + M;
-  const ativos = (db.recurringExpenses || []).filter(r => r.endYear == null || (r.endYear * 12 + r.endMonth) >= agora);
+  const ativos = (db.recurringExpenses || []).filter(r => (r.endYear == null || (r.endYear * 12 + r.endMonth) >= agora) && (r.startYear * 12 + r.startMonth) <= agora);   // v91
   const chavesFixas = new Set(ativos.map(r => radarMerchant(r.desc)));
   const porMerc = {};
   // Categorias que variam por natureza não viram "assinatura" (um Uber por mês)
@@ -16146,6 +16241,7 @@ function aDevolverLista() {
   const iso = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
   db.aDevolver = db.aDevolver.filter(x => x && typeof x.desc === 'string' && Number.isFinite(x.valor) && x.valor > 0 && iso(x.data)
     && (!x.resolvido || (iso(x.resolvido.data) && ['meu', 'devolvido'].includes(x.resolvido.como))));
+  db.aDevolver.forEach(x => { if (x.classe != null && !isSafeId(x.classe)) delete x.classe; });   // v91: dinheiro num investimento
   return db.aDevolver;
 }
 function aDevolverEm(y, m) {
@@ -16162,7 +16258,7 @@ function abrirConferirSaldos() {
       <input id="${id}" type="text" inputmode="decimal" value="${escapeHtml(fmtInput(valor))}" aria-label="Quanto tem hoje em ${escapeHtml(nome)}">
     </div>`;
   const abertos = aDevolverLista().filter(x => !x.resolvido);
-  const optsConta = contas.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.nome)}</option>`).join('');
+  const optsOnde = opcoesOndeDevolver('c:' + contas[0].id);   // v91: numa conta ou num investimento
   modal.show('Conferir saldos', `
     <div class="conferir">
       <p class="muted" style="margin:0 0 10px;font-size:.86rem">Abra o app do banco e da corretora e corrija só o que estiver diferente. Nada vira gasto nem aporte: o app passa a contar a partir de hoje, e os meses anteriores ficam como estão.</p>
@@ -16174,15 +16270,15 @@ function abrirConferirSaldos() {
       <button type="button" class="link-btn" style="margin-top:8px" onclick="conferirNovoLugar()">+ Tenho dinheiro em outro lugar</button>
       <h4>Talvez tenha que devolver</h4>
       ${abertos.length ? abertos.map(x => `
-        <div class="conferir-dev"><div><strong>${escapeHtml(x.desc)}</strong> · ${fmt(x.valor)}<div class="muted" style="font-size:.76rem">na conta ${escapeHtml((getConta(x.conta) || {}).nome || '—')} desde ${x.data.split('-').reverse().join('/')}</div></div>
+        <div class="conferir-dev"><div><strong>${escapeHtml(x.desc)}</strong> · ${fmt(x.valor)}<div class="muted" style="font-size:.76rem">${escapeHtml(ondeDevolverItem(x))} desde ${x.data.split('-').reverse().join('/')} · <button type="button" class="link-btn" onclick="editarDevolver(${jsArg(x.id)})">editar</button></div></div>
           <div class="acoes"><button type="button" class="btn" onclick="resolverDevolver(${jsArg(x.id)}, 'meu')">É meu</button><button type="button" class="btn" onclick="resolverDevolver(${jsArg(x.id)}, 'devolvido')">Devolvi</button></div></div>`).join('')
-        : '<p class="muted" style="font-size:.84rem;margin:0">Dinheiro que está na conta mas pode não ser seu. Ele continua no saldo (bate com o banco) e fica fora do seu patrimônio até você resolver.</p>'}
+        : '<p class="muted" style="font-size:.84rem;margin:0">Dinheiro que está com você — na conta ou num investimento — mas pode não ser seu. Ele continua no saldo (bate com o banco) e fica fora do seu patrimônio até você resolver.</p>'}
       <div class="conferir-novo">
         <input id="cfDevDesc" type="text" maxlength="80" placeholder="Ex.: dinheiro do projeto">
         <input id="cfDevValor" type="text" inputmode="decimal" placeholder="0,00" aria-label="Valor que talvez devolva">
-        ${contas.length > 1 ? `<select id="cfDevConta" aria-label="Em qual conta">${optsConta}</select>` : ''}
+        <select id="cfDevOnde" aria-label="Onde está esse dinheiro">${optsOnde}</select>
       </div>
-      <p class="conferir-nota">Se esse dinheiro foi lançado como <strong>entrada</strong>, ele também aparece na sobra do mês — edite ou exclua a entrada em Gastos no mês.</p>
+      <p class="conferir-nota">Se esse dinheiro foi lançado como <strong>entrada</strong>, ele também aparece na sobra do mês — toque em <strong>Entradas</strong> em Gastos do mês para editar ou excluir.</p>
     </div>`, {
     confirmLabel: 'Salvar conferência',
     onConfirm: () => salvarConferencia()
@@ -16220,8 +16316,10 @@ function salvarConferencia() {
   const dv = readMoney('cfDevValor');
   if (Number.isFinite(dv) && dv > 0) {
     db.aDevolver = aDevolverLista();
-    db.aDevolver.push({ id: Date.now(), desc: (document.getElementById('cfDevDesc').value.trim() || 'Dinheiro a confirmar').slice(0, 80),
-      valor: Math.round(dv * 100) / 100, conta: (document.getElementById('cfDevConta') || {}).value || getContas()[0].id, data: todayISO() });
+    const novoDev = { id: Date.now(), desc: (document.getElementById('cfDevDesc').value.trim() || 'Dinheiro a confirmar').slice(0, 80),
+      valor: Math.round(dv * 100) / 100, conta: getContas()[0].id, data: todayISO() };
+    aplicarOndeDevolver(novoDev, (document.getElementById('cfDevOnde') || {}).value);   // v91: conta ou investimento
+    db.aDevolver.push(novoDev);
     mudou++;
   }
   db.conferidoEm = todayISO();
@@ -16241,8 +16339,9 @@ function resolverDevolver(id, como) {
   modal.close();
   depoisDeConferir();
   if (como === 'devolvido') {
-    toast('Agora informe o saldo da conta depois da devolução', 'info', 3500);
-    setTimeout(() => ajustarSaldoConta(x.conta), 250);
+    const cl = x.classe != null ? getInvestClass(x.classe) : null;   // v91: saiu de um investimento
+    if (cl) { toast(`Agora informe quanto ficou em ${cl.label} depois da devolução`, 'info', 4000); setTimeout(abrirConferirSaldos, 250); }
+    else { toast('Agora informe o saldo da conta depois da devolução', 'info', 3500); setTimeout(() => ajustarSaldoConta(x.conta), 250); }
   } else toast(`${x.desc} agora conta no seu patrimônio`, 'success');
 }
 function conferirNovoLugar() {
@@ -16295,7 +16394,7 @@ function conferirNovoLugar() {
         const did = `devolver:${x.id}:${h.getFullYear()}-${h.getMonth()}`;
         if (!ign[did]) base.push({ id: did, ritmo: 'mes', nivel: 'info', icone: '↩️',
           titulo: `${escapeHtml(x.desc)}: talvez devolva ${fmt(x.valor)}`,
-          texto: 'Está na conta e fora do seu patrimônio até você decidir.',
+          texto: `Está ${escapeHtml(ondeDevolverItem(x))} e fora do seu patrimônio até você decidir.`,
           acoes: [{ rotulo: 'Resolver', fn: 'abrirConferirSaldos()' }] });
       });
     } catch (e) { console.warn('[v87 radar]', e); }
@@ -16310,7 +16409,7 @@ function conferirNovoLugar() {
   if (typeof orig !== 'function') return;
   const novo = function () {
     const r = orig.apply(this, arguments);
-    const h = new Date(), dev = aDevolverEm(h.getFullYear(), h.getMonth());
+    const h = new Date(), dev = aDevolverEm(h.getFullYear(), h.getMonth()) - (typeof aDevolverInvestido === 'function' ? aDevolverInvestido() : 0);   // v91: só o que está na conta
     return dev > 0 && typeof r === 'string' ? r + `<br>Disso, ${fmt(dev)} talvez você tenha que devolver.` : r;
   };
   window.ansConta = novo;
@@ -16639,7 +16738,7 @@ function metaInfo(g) {
   const fluxos = [];
   if (c) {
     const cm = getCarteiraMercado();
-    guardado = (cm.porClasse[c.id] || { mercado: 0 }).mercado;
+    guardado = Math.max(0, (cm.porClasse[c.id] || { mercado: 0 }).mercado - (typeof aDevolverNaClasse === 'function' ? aDevolverNaClasse(c.id) : 0));   // v91: o que talvez devolva não conta
     for (let t = tNow - 11; t <= tNow; t++) fluxos.push({ t, v: (getMonthData(Math.floor(t / 12), t % 12).porClasse || {})[c.id] || 0 });
     // caixinha que começou com o valor anotado: as anotações antigas seguem contando no ritmo
     if (g.histAnotado) Object.entries(g.contributions || {}).forEach(([k, v]) => {
@@ -16698,7 +16797,9 @@ function cardMeta(g) {
       linhas.push(`<span class="muted">No seu ritmo (${fmt(i.ritmo)}/mês), chega em ${mesAno(i.chegaT)}${atraso > 0 ? ` — ${atraso} ${atraso === 1 ? 'mês' : 'meses'} depois do prazo` : ''}.</span>`);
     } else linhas.push('<span class="muted">Ainda sem ritmo: guarde todo mês para eu estimar quando você chega.</span>');
   }
-  const aviso = i.manual ? `<div class="mt-aviso">Esta meta ainda é só uma anotação (${fmt(i.guardado)} registrados) e não mexe na conta nem nos investimentos. <button type="button" class="link-btn" onclick="ligarMetaModal(${id})">Ligar a uma caixinha</button></div>` : '';
+  const dvM = i.c && typeof aDevolverNaClasse === 'function' ? aDevolverNaClasse(i.c.id) : 0;   // v91
+  const aviso = (i.manual ? `<div class="mt-aviso">Esta meta ainda é só uma anotação (${fmt(i.guardado)} registrados) e não mexe na conta nem nos investimentos. <button type="button" class="link-btn" onclick="ligarMetaModal(${id})">Ligar a uma caixinha</button></div>` : '')
+    + (dvM > 0.004 ? `<div class="mt-aviso">${fmt(dvM)} desta caixinha talvez tenham que ser devolvidos — ficam fora do progresso até você resolver em <button type="button" class="link-btn" onclick="abrirConferirSaldos()">Conferir saldos</button>.</div>` : '');
   let movs = '';
   if (_mtAbertos[g.id]) {
     const itens = i.manual
@@ -16826,7 +16927,7 @@ function tirarDaMeta(id) {
   const g = db.goals.find(x => x.id === id);
   const c = classeDaMeta(g);
   if (!g || !c) return;
-  const tem = metaInfo(g).guardado, contas = getContas();
+  const tem = (getCarteiraMercado().porClasse[c.id] || { mercado: 0 }).mercado, contas = getContas();   // v91: tudo o que está na caixinha
   modal.show(`Tirar de "${g.name}"`, `
     <p class="muted" style="margin:0 0 12px;font-size:.86rem">O dinheiro sai da caixinha e volta para a conta hoje. Não é gasto — se for usar, lance os gastos normalmente.</p>
     <div class="input-group"><label>Quanto (tem ${fmt(tem)})</label><input id="tmValor" type="text" inputmode="decimal" value="${escapeHtml(fmtInput(tem))}"></div>
@@ -16935,6 +17036,7 @@ window.desfazerRealizada = desfazerRealizada;
       <div class="iv-v">${fmt(cm.mercado)}</div>
       <div class="iv-s">${temM ? `aplicado ${fmt(cm.aplicado)} · rendeu <span class="${rend >= 0 ? 'pos' : 'neg'}">${sinal(rend)}</span>${cm.aplicado > 0 ? ` (${(rend >= 0 ? '+' : '−') + pct1(Math.abs(rend / cm.aplicado * 100))})` : ''}`
         : cm.legado ? 'valor de mercado da carteira toda' : 'valor aplicado — informe o valor de mercado para ver quanto rendeu'}</div>
+      ${(dv => dv > 0.004 ? `<div class="iv-s">Inclui ${fmt(dv)} que talvez você tenha que devolver — fica fora do seu patrimônio.</div>` : '')(typeof aDevolverInvestido === 'function' ? aDevolverInvestido() : 0)}
       <div class="iv-acoes"><button type="button" class="btn primary" onclick="abrirConferirSaldos()">Conferir saldos</button><button type="button" class="btn" onclick="openMercadoModal()">Valor de mercado</button></div>
     </div>`;
   }
@@ -16952,7 +17054,8 @@ window.desfazerRealizada = desfazerRealizada;
       const peso = cm.mercado > 0 ? p.mercado / cm.mercado * 100 : 0, alvo = safeNum(c.target, 0);
       const sub = [`${pct1(peso)} da carteira`, alvo > 0 ? `alvo ${pct1(alvo)}` : '', p.informado && Math.abs(r) >= 0.005 ? `<span class="${r >= 0 ? 'pos' : 'neg'}">${sinal(r)}</span>` : ''].filter(Boolean).join(' · ');
       const mi = meta && typeof metaInfo === 'function' ? metaInfo(meta) : null;
-      const tags = (c.reserve ? '<span class="iv-tag">reserva</span>' : '') + (mi ? `<span class="iv-tag meta">🎯 ${Math.round(mi.pct)}%</span>` : '');
+      const dvC = typeof aDevolverNaClasse === 'function' ? aDevolverNaClasse(c.id) : 0;   // v91
+      const tags = (c.reserve ? '<span class="iv-tag">reserva</span>' : '') + (mi ? `<span class="iv-tag meta">🎯 ${Math.round(mi.pct)}%</span>` : '') + (dvC > 0.004 ? '<span class="iv-tag dev">talvez devolva</span>' : '');
       let det = '';
       if (aberta === c.id) {
         const partes = [`Aplicado: <strong>${fmt(p.aplicado)}</strong>`];
@@ -16962,6 +17065,7 @@ window.desfazerRealizada = desfazerRealizada;
         if (c.reserve) partes.push(coberturaReserva(cm.reserva, h.getFullYear(), h.getMonth()).texto);
         if ((prov.porClasse[c.id] || 0) > 0) partes.push(`Proventos nos últimos 12 meses: ${fmt(prov.porClasse[c.id])}`);
         if (mi) partes.push(`Meta <strong>${escapeHtml(meta.name)}</strong>: ${escapeHtml(mi.frase)}`);
+        if (dvC > 0.004) partes.push(`Talvez tenha que devolver: <strong>${fmt(dvC)}</strong> — está aqui, mas fica fora do seu patrimônio.`);
         det = `<div class="iv-det" onclick="event.stopPropagation()">${partes.join('<br>')}
           <div class="iv-acoes"><button type="button" class="btn primary" onclick="ivGuardar(${id})">Guardar</button><button type="button" class="btn" onclick="openInvestClassModal(${id})">Editar</button><button type="button" class="btn" onclick="deleteInvestClass(${id})">Excluir</button></div></div>`;
       }
@@ -17087,6 +17191,799 @@ window.desfazerRealizada = desfazerRealizada;
       return r;
     };
   }
+})();
+</script>
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// v91 · FIXOS E RECORRENTES — o passado só muda se você pedir.
+// Cada fixo/entrada mensal é uma SÉRIE de registros (campo `serie` = id do
+// primeiro). Editar "a partir de" um mês divide o registro: o antigo termina
+// no mês anterior e o novo começa ali — os meses passados não mudam. Excluir
+// vira: pular só o mês (r.pular = ["2026-9"]), parar a partir de um mês (fim)
+// ou apagar de todos os meses (cadastro errado, com Desfazer). Reativar não
+// preenche o intervalo. Parcelas: "Quitei antes". A conta de "comprometido"
+// (compromissosDoMes) é a mesma na aba e no insight da Início.
+// "Talvez tenha que devolver" passa a saber ONDE está o dinheiro: numa conta
+// ou num investimento (x.classe) — os textos e o "Devolvi" seguem o lugar.
+// ══════════════════════════════════════════════════════════════════════
+function ondeDevolverItem(x) {
+  const cl = x && x.classe != null ? getInvestClass(x.classe) : null;
+  if (cl) return `em ${cl.label}`;
+  const cs = getContas();
+  return cs.length > 1 ? `na conta ${(getConta(x && x.conta) || cs[0]).nome}` : 'na conta';
+}
+function aDevolverAbertos(y, m) {   // em aberto no fim de (y, m) — mesma regra do aDevolverEm
+  const fim = isoDay(new Date(y, m + 1, 0));
+  return aDevolverLista().filter(x => x.data <= fim && !(x.resolvido && x.resolvido.data <= fim));
+}
+function ondeDevolver(y, m) {
+  const l = [...new Set(aDevolverAbertos(y, m).map(ondeDevolverItem))];
+  const txt = l.length <= 1 ? (l[0] || 'na conta') : l.slice(0, -1).join(', ') + ' e ' + l[l.length - 1];
+  return escapeHtml('Está ' + txt);
+}
+function aDevolverNaClasse(id) {
+  const h = new Date();
+  return aDevolverAbertos(h.getFullYear(), h.getMonth()).filter(x => x.classe === id).reduce((a, x) => a + x.valor, 0);
+}
+function aDevolverInvestido() {
+  const h = new Date();
+  return aDevolverAbertos(h.getFullYear(), h.getMonth()).filter(x => x.classe != null && getInvestClass(x.classe)).reduce((a, x) => a + x.valor, 0);
+}
+function opcoesOndeDevolver(sel) {
+  const cs = getContas();
+  return cs.map(c => `<option value="c:${escapeHtml(c.id)}"${sel === 'c:' + c.id ? ' selected' : ''}>${cs.length > 1 ? 'Na conta ' + escapeHtml(c.nome) : 'Na conta'}</option>`).join('')
+    + getInvestClasses().map(c => `<option value="i:${escapeHtml(c.id)}"${sel === 'i:' + c.id ? ' selected' : ''}>Em ${escapeHtml(c.label)}</option>`).join('');
+}
+function aplicarOndeDevolver(x, v) {
+  v = String(v || '');
+  if (v.startsWith('i:') && getInvestClass(v.slice(2))) { x.classe = v.slice(2); return; }
+  delete x.classe;
+  if (v.startsWith('c:') && getConta(v.slice(2))) x.conta = v.slice(2);
+}
+function fxDesfazer(msg, fn) {
+  document.querySelectorAll('.undo-toast').forEach(t => t.remove());
+  const t = document.createElement('div');
+  t.className = 'undo-toast';
+  t.innerHTML = `<span>${escapeHtml(msg)}</span><button class="undo-btn" type="button">Desfazer</button>`;
+  t.querySelector('button').onclick = () => { t.remove(); try { fn(); toast('Desfeito', 'success'); } catch (e) { console.warn('[v91 desfazer]', e); } };
+  document.body.appendChild(t);
+  setTimeout(() => t.classList.add('show'), 10);
+  setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 6000);
+}
+function editarDevolver(id) {
+  const x = aDevolverLista().find(i => i.id === Number(id));
+  if (!x) return;
+  const sel = x.classe != null && getInvestClass(x.classe) ? 'i:' + x.classe : 'c:' + (getConta(x.conta) || getContas()[0]).id;
+  modal.show('Talvez tenha que devolver', `
+    <div class="input-group"><label>Descrição</label><input id="edDevDesc" type="text" maxlength="80" value="${escapeHtml(x.desc)}"></div>
+    <div class="input-group"><label>Valor</label><input id="edDevValor" type="text" inputmode="decimal" value="${escapeHtml(fmtInput(x.valor))}"></div>
+    <div class="input-group"><label>Onde está esse dinheiro</label><select id="edDevOnde">${opcoesOndeDevolver(sel)}</select></div>
+    <p class="muted" style="font-size:.8rem;margin:0 0 12px;line-height:1.5">Fica fora do seu patrimônio desde ${x.data.split('-').reverse().join('/')} até você resolver (É meu ou Devolvi). Num investimento, ele continua no saldo do investimento — só não conta como seu.</p>
+    <button type="button" class="link-btn" style="color:var(--neg)" onclick="apagarDevolver(${jsArg(x.id)})">Cadastrei por engano — apagar</button>`, {
+    confirmLabel: 'Salvar',
+    onConfirm: () => {
+      const v = readMoney('edDevValor');
+      if (!(v > 0)) { toast('Valor inválido', 'error'); return false; }
+      x.desc = (document.getElementById('edDevDesc').value.trim() || x.desc).slice(0, 80);
+      x.valor = Math.round(v * 100) / 100;
+      aplicarOndeDevolver(x, document.getElementById('edDevOnde').value);
+      depoisDeConferir();
+      toast(`${x.desc}: ${ondeDevolverItem(x)}, fora do patrimônio`, 'success', 3500);
+      setTimeout(abrirConferirSaldos, 250);
+    }
+  });
+}
+function apagarDevolver(id) {
+  const x = aDevolverLista().find(i => i.id === Number(id));
+  if (!x) return;
+  modal.close();
+  db.aDevolver = aDevolverLista().filter(i => i !== x);
+  depoisDeConferir();
+  fxDesfazer(`"${x.desc}" apagado`, () => { db.aDevolver = aDevolverLista().concat([x]); depoisDeConferir(); });
+}
+window.editarDevolver = editarDevolver;
+window.apagarDevolver = apagarDevolver;
+window.fxDesfazer = fxDesfazer;
+
+(function () {
+  const $ = id => document.getElementById(id);
+  const T = (y, m) => y * 12 + m;
+  const tIni = r => r.startYear * 12 + r.startMonth;
+  const tFim = r => (r.endYear != null && r.endMonth != null) ? r.endYear * 12 + r.endMonth : Infinity;
+  const yOf = t => Math.floor(t / 12), mOf = t => ((t % 12) + 12) % 12;
+  const keyT = t => getKey(yOf(t), mOf(t));
+  const tKey = k => { const [y, m] = String(k).split('-').map(Number); return y * 12 + m; };
+  const nomeMes = t => monthsFull[mOf(t)].toLowerCase();
+  const mesCurto = t => `${monthsFull[mOf(t)].slice(0, 3).toLowerCase()}/${String(yOf(t)).slice(2)}`;
+  const mesLongo = t => `${nomeMes(t)}/${yOf(t)}`;
+  const valMes = t => `${yOf(t)}-${String(mOf(t) + 1).padStart(2, '0')}`;
+  const lerMes = v => { const x = /^(\d{4})-(\d{2})$/.exec(String(v || '')); return x ? Number(x[1]) * 12 + Number(x[2]) - 1 : null; };
+  const dd = n => String(n).padStart(2, '0');
+  const diaDe = r => { const x = isoDay(r && r.date); return x ? (Number(x.slice(8, 10)) || 1) : null; };
+  const tVisto = () => T(currentYear, currentMonth);
+  const tHoje = () => { const h = new Date(); return T(h.getFullYear(), h.getMonth()); };
+  const LISTA = { g: () => db.recurringExpenses, r: () => db.recurringIncome };
+  const setLista = (tipo, arr) => { if (tipo === 'g') db.recurringExpenses = arr; else db.recurringIncome = arr; };
+  const NOME = { g: 'gasto fixo', r: 'entrada mensal' };
+  const raiz = r => (r.serie != null ? r.serie : r.id);
+  const daSerie = (tipo, s) => LISTA[tipo]().filter(r => raiz(r) === s).sort((a, b) => tIni(a) - tIni(b));
+  const acharRec = (tipo, id) => LISTA[tipo]().find(r => r.id === Number(id)) || null;
+  const ativoEm = (r, t) => tIni(r) <= t && t <= tFim(r);
+  const tomb = id => { db.deletedIds = Array.isArray(db.deletedIds) ? db.deletedIds : []; if (!db.deletedIds.includes(id)) db.deletedIds.push(id); };
+  const desTomb = id => { if (Array.isArray(db.deletedIds)) db.deletedIds = db.deletedIds.filter(x => x !== id); };
+  let ultimoId = 0, aberto = null, pend = false, edicao = null;
+  const verOutros = { g: false, r: false };
+
+  function novoId() {
+    const usados = new Set(), add = it => { if (it && it.id != null) usados.add(it.id); };
+    Object.values(db.events || {}).forEach(a => (a || []).forEach(add));
+    Object.values(db.income || {}).forEach(a => (a || []).forEach(add));
+    [db.recurringExpenses, db.recurringIncome, db.installments].forEach(a => (a || []).forEach(add));
+    let id = Math.max(Date.now(), ultimoId + 1);
+    while (usados.has(id)) id++;
+    ultimoId = id;
+    return id;
+  }
+  function salvar() {
+    saveDB();
+    if (typeof renderAll === 'function') renderAll(); else agendar();
+  }
+
+  // ── Séries ────────────────────────────────────────────────────────────
+  const CAMPOS = { g: ['desc', 'value', 'cat', 'method', 'investClass', 'faturaMais'], r: ['desc', 'value', 'conta', 'provento', 'investClass', 'note'] };
+  const assinatura = (tipo, r) => JSON.stringify(CAMPOS[tipo].map(f => r[f] == null ? null : r[f]).concat([diaDe(r)]));
+  function moverPago(de, para, desde) {   // "pago" de (desde) em diante vai para o registro novo
+    const ps = db.paidStatus;
+    if (!ps || typeof ps !== 'object') return;
+    Object.keys(ps).forEach(k => {
+      const p = k.split('-');
+      if (p.length !== 3 || p[0] !== String(de) || T(Number(p[1]), Number(p[2])) < desde) return;
+      if (ps[k]) ps[`${para}-${p[1]}-${p[2]}`] = true;
+      delete ps[k];
+    });
+  }
+  function aplicarMud(r, mud) {
+    Object.keys(mud).forEach(f => { if (mud[f] === undefined || mud[f] === null) delete r[f]; else r[f] = mud[f]; });
+  }
+  function juntarIguais(tipo, s) {   // registros vizinhos que ficaram iguais viram um só
+    const recs = daSerie(tipo, s);
+    for (let i = 1; i < recs.length; i++) {
+      const a = recs[i - 1], b = recs[i];
+      if (tFim(a) + 1 !== tIni(b) || assinatura(tipo, a) !== assinatura(tipo, b)) continue;
+      if (b.endYear != null) { a.endYear = b.endYear; a.endMonth = b.endMonth; } else { delete a.endYear; delete a.endMonth; }
+      const pul = [...new Set([...(a.pular || []), ...(b.pular || [])])];
+      if (pul.length) a.pular = pul; else delete a.pular;
+      moverPago(b.id, a.id, -Infinity);
+      setLista(tipo, LISTA[tipo]().filter(x => x !== b));
+      tomb(b.id);
+      recs.splice(i, 1); i--;
+    }
+  }
+  // Mudança vale de X em diante: registro que atravessa X é dividido
+  function aplicarDesde(tipo, s, X, mud) {
+    daSerie(tipo, s).forEach(r => {
+      const a = tIni(r), b = tFim(r);
+      if (b < X) return;
+      if (a >= X) { aplicarMud(r, mud); return; }
+      const novo = JSON.parse(JSON.stringify(r));
+      novo.id = novoId(); novo.serie = s;
+      novo.startYear = yOf(X); novo.startMonth = mOf(X);
+      aplicarMud(novo, mud);
+      r.endYear = yOf(X - 1); r.endMonth = mOf(X - 1);
+      if (Array.isArray(r.pular)) {
+        const antes = r.pular.filter(k => tKey(k) < X), depois = r.pular.filter(k => tKey(k) >= X);
+        if (antes.length) r.pular = antes; else delete r.pular;
+        if (depois.length) novo.pular = depois; else delete novo.pular;
+      }
+      moverPago(r.id, novo.id, X);
+      LISTA[tipo]().push(novo);
+    });
+    juntarIguais(tipo, s);
+  }
+  function encerrarSerie(tipo, s, P) {   // P = primeiro mês SEM o lançamento
+    daSerie(tipo, s).forEach(r => {
+      if (tIni(r) >= P) { setLista(tipo, LISTA[tipo]().filter(x => x !== r)); tomb(r.id); return; }
+      if (tFim(r) >= P) { r.endYear = yOf(P - 1); r.endMonth = mOf(P - 1); }
+      if (Array.isArray(r.pular)) { r.pular = r.pular.filter(k => tKey(k) < P); if (!r.pular.length) delete r.pular; }
+    });
+  }
+  function reativarSerie(tipo, s, Q) {   // volta a contar a partir de Q, sem preencher o intervalo
+    const recs = daSerie(tipo, s), ult = recs[recs.length - 1];
+    if (!ult) return;
+    if (Q <= tFim(ult) + 1) { delete ult.endYear; delete ult.endMonth; return; }
+    const novo = JSON.parse(JSON.stringify(ult));
+    novo.id = novoId(); novo.serie = s; novo.startYear = yOf(Q); novo.startMonth = mOf(Q);
+    delete novo.endYear; delete novo.endMonth; delete novo.pular;
+    LISTA[tipo]().push(novo);
+  }
+  function marcarPulo(r, t, on) {
+    const k = keyT(t), lst = Array.isArray(r.pular) ? r.pular.filter(x => x !== k) : [];
+    if (on) lst.push(k);
+    if (lst.length) r.pular = lst; else delete r.pular;
+  }
+  function comDia(r, d) {
+    const base = isoDay(r.date) || `${r.startYear}-${dd(r.startMonth + 1)}-01`;
+    const [yy, mm] = base.split('-').map(Number), ult = new Date(yy, mm, 0).getDate();
+    return d <= ult ? `${yy}-${dd(mm)}-${dd(d)}` : `${yy}-01-${dd(d)}`;
+  }
+
+  // ── O que já está comprometido no mês (fonte única: aba e Início) ──────
+  function compromissosDoMes(y, m) {
+    const d = getMonthData(y, m), soma = a => a.reduce((x, i) => x + i.value, 0);
+    const fixosItens = d.items.filter(i => i.type === 'fixo'), parcItens = d.items.filter(i => i.type === 'parc');
+    const guardarItens = (d.aportes || []).filter(i => i.type === 'fixo' || i.type === 'parc');
+    const rendaItens = (d.income || []).filter(i => i.recurring);
+    const renda = soma(rendaItens), fixos = soma(fixosItens), parcelas = soma(parcItens), guardar = soma(guardarItens);
+    const comprometido = fixos + parcelas, temRecorrente = renda > 0.004, base = temRecorrente ? renda : d.entradas;
+    return { d, renda, fixos, parcelas, guardar, comprometido, temRecorrente, base,
+      pct: base > 0 ? comprometido / base * 100 : null, livre: renda - comprometido - guardar,
+      fixosItens, parcItens, guardarItens, rendaItens };
+  }
+  window.compromissosDoMes = compromissosDoMes;
+
+  // ── Tela ──────────────────────────────────────────────────────────────
+  function situacao(tipo, s, t) {
+    const recs = daSerie(tipo, s), r = recs.find(z => ativoEm(z, t));
+    if (r) return { st: mesPulado(r, keyT(t)) ? 'pulado' : 'ativo', r, recs };
+    const prox = recs.find(z => tIni(z) > t);
+    if (prox) return { st: prox === recs[0] ? 'futuro' : 'pausa', r: prox, recs };
+    return { st: 'terminou', r: recs[recs.length - 1], recs };
+  }
+  const seriesDe = (tipo, t) => [...new Set(LISTA[tipo]().map(raiz))].map(s => ({ s, sit: situacao(tipo, s, t) }));
+  const porDia = (a, b) => ((diaDe(a.sit.r) || 99) - (diaDe(b.sit.r) || 99)) || String(a.sit.r.desc).localeCompare(String(b.sit.r.desc), 'pt-BR');
+  const faixa = r => tFim(r) === Infinity ? `desde ${mesCurto(tIni(r))}` : tIni(r) === tFim(r) ? mesCurto(tIni(r)) : `${mesCurto(tIni(r))}–${mesCurto(tFim(r))}`;
+  function chipDia(dia, t) {
+    const hoje = t === tHoje() && dia === new Date().getDate();
+    return `<div class="fx-dia${hoje ? ' hoje' : ''}" aria-hidden="true"><small>dia</small><b>${dia ? dd(dia) : '—'}</b></div>`;
+  }
+  function statusGasto(r, t) {
+    const met = normalizeMethod(r.method), k = methodKind(met), y = yOf(t), m = mOf(t);
+    const dia = Math.min(diaDe(r) || 1, new Date(y, m + 1, 0).getDate());
+    if (k === 'credit') {
+      const tv = faturaDaCompra(met, y, m, dia).tv + (r.faturaMais === 1 ? 1 : 0);
+      return `<span class="fx-tag">fatura de ${nomeMes(tv)}${yOf(tv) !== y ? '/' + String(yOf(tv)).slice(2) : ''}</span>`;
+    }
+    if (k === 'invest') { const c = getInvestClass(itemInvestClass(r)); return `<span class="fx-tag">vai para ${escapeHtml(c ? c.label : 'investimentos')}</span>`; }
+    const pago = getPaidStatus(r.id, y, m), futuro = t > tHoje() || (t === tHoje() && dia > new Date().getDate());
+    if (!pago && t < tHoje()) return '';   // mês que já passou: "pendente" em tudo só confunde
+    return `<button type="button" class="fx-pago${pago ? ' on' : ''}" aria-pressed="${pago}" onclick="event.stopPropagation(); fxPago(${jsArg(r.id)})">${pago ? '✓ Pago' : futuro ? 'A pagar' : 'Pendente'}</button>`;
+  }
+  function linha(tipo, x, t) {
+    const { s, sit } = x, r = sit.r, chave = `${tipo}:${s}`, ab = aberto === chave, sid = jsArg(s), rid = jsArg(r.id), mes = nomeMes(t);
+    const cls = ['fx-item'];
+    if (sit.st === 'pulado') cls.push('pulado');
+    if (sit.st !== 'ativo' && sit.st !== 'pulado') cls.push('fora');
+    if (ab) cls.push('aberto');
+    let sub;
+    if (tipo === 'g') sub = methodKind(normalizeMethod(r.method)) === 'invest' ? escapeHtml(methodLabel(normalizeMethod(r.method))) : `${escapeHtml(r.cat || 'Sem categoria')} · ${escapeHtml(methodLabel(normalizeMethod(r.method)))}`;
+    else {
+      const cs = getContas();
+      sub = [cs.length > 1 ? escapeHtml((getConta(r.conta) || cs[0]).nome) : '', r.provento ? (r.provento === 'isento' ? 'provento isento' : 'provento tributável') : 'todo mês'].filter(Boolean).join(' · ');
+    }
+    let estado = '';
+    if (sit.st === 'ativo') estado = tipo === 'g' ? statusGasto(r, t) : '';
+    else if (sit.st === 'pulado') estado = `<span class="fx-tag">não teve em ${mes}</span>`;
+    else if (sit.st === 'terminou') estado = `<span class="fx-tag">${mesCurto(tIni(sit.recs[0]))}–${mesCurto(tFim(r))}</span>`;
+    else estado = `<span class="fx-tag">${sit.st === 'pausa' ? 'volta' : 'começa'} em ${mesCurto(tIni(r))}</span>`;
+    let det = '';
+    if (ab) {
+      const recs = sit.recs, ini = tIni(recs[0]), fim = tFim(recs[recs.length - 1]);
+      const partes = [fim === Infinity ? `Desde ${mesLongo(ini)}, sem data para acabar.` : `De ${mesLongo(ini)} a ${mesLongo(fim)}.`];
+      if (recs.length > 1) {
+        const mets = new Set(recs.map(z => normalizeMethod(z.method)));
+        partes.push('Histórico: ' + recs.map(z => `${fmt(z.value)}${tipo === 'g' && mets.size > 1 ? ' no ' + escapeHtml(methodLabel(normalizeMethod(z.method))) : ''} <span class="muted">(${faixa(z)})</span>`).join(' → '));
+      }
+      const pul = recs.flatMap(z => z.pular || []).map(tKey).sort((a, b) => a - b);
+      if (pul.length) partes.push(`Não teve em: ${pul.map(mesCurto).join(', ')}.`);
+      if (r.note) partes.push(`📝 ${escapeHtml(r.note)}`);
+      const b = (rot, fn, pri) => `<button type="button" class="btn${pri ? ' primary' : ''}" onclick="${fn}">${rot}</button>`;
+      const ed = b('Editar', `fxEditar('${tipo}', ${rid})`), en = b('Encerrar', `fxEncerrar('${tipo}', ${sid})`), ap = b('Apagar', `fxApagar('${tipo}', ${sid})`);
+      let acoes;
+      if (sit.st === 'ativo') acoes = b('Editar', `fxEditar('${tipo}', ${rid})`, true) + b(`Não teve em ${mes}`, `fxPular('${tipo}', ${rid})`) + en + ap;
+      else if (sit.st === 'pulado') acoes = b(`Teve em ${mes}`, `fxPular('${tipo}', ${rid})`, true) + ed + en + ap;
+      else if (sit.st === 'terminou') acoes = b('Voltar a contar', `fxVoltar('${tipo}', ${sid})`, true) + ap;
+      else acoes = b('Editar', `fxEditar('${tipo}', ${rid})`, true) + en + ap;
+      det = `<div class="fx-det">${partes.join('<br>')}<div class="fx-acoes">${acoes}</div></div>`;
+    }
+    return `<div class="${cls.join(' ')}" role="button" tabindex="0" aria-expanded="${ab}" onclick="fxAbrir('${tipo}', ${sid})" onkeydown="if(event.key==='Enter') fxAbrir('${tipo}', ${sid})">
+      ${chipDia(diaDe(r), t)}
+      <div class="fx-corpo"><div class="fx-top"><span class="fx-nome">${escapeHtml(r.desc)}</span><span class="fx-val${tipo === 'r' ? ' pos' : ''}">${fmt(r.value)}</span></div>
+      <div class="fx-sub"><span>${sub}</span>${estado}</div></div></div>${det}`;
+  }
+  const OUT = { g: ['terminado', 'terminados'], r: ['terminada', 'terminadas'] };
+  function blocoOutros(tipo, outros, t) {
+    if (!outros.length) return '';
+    const term = outros.filter(x => x.sit.st === 'terminou'), dep = outros.filter(x => x.sit.st !== 'terminou'), w = OUT[tipo];
+    const fut = dep.filter(x => x.sit.st === 'futuro').length, vol = dep.length - fut;
+    const rot = [term.length ? `${term.length} ${term.length === 1 ? w[0] : w[1]}` : '', fut ? `${fut} ${fut === 1 ? 'começa' : 'começam'} depois` : '', vol ? `${vol} ${vol === 1 ? 'volta' : 'voltam'} depois` : ''].filter(Boolean).join(' · ');
+    return `<button type="button" class="fx-mais" aria-expanded="${verOutros[tipo]}" onclick="fxVerOutros('${tipo}')">${verOutros[tipo] ? 'Esconder' : 'Ver'} ${rot} ${verOutros[tipo] ? '▴' : '▾'}</button>`
+      + (verOutros[tipo] ? [...dep.sort(porDia), ...term.sort(porDia)].map(x => linha(tipo, x, t)).join('') : '');
+  }
+  function linhaLegado(i, t) {   // fixo lançado direto no mês (planilha antiga): só aparece
+    return `<div class="fx-item fora">${chipDia(diaDe(i), t)}
+      <div class="fx-corpo"><div class="fx-top"><span class="fx-nome">${escapeHtml(i.desc)}</span><span class="fx-val">${fmt(i.value)}</span></div>
+      <div class="fx-sub"><span>${escapeHtml(i.cat || '')} · ${escapeHtml(methodLabel(i.method))}</span><span class="fx-tag">lançado só em ${nomeMes(t)}</span></div></div></div>`;
+  }
+  function htmlTopo(c, t) {
+    const sai = c.comprometido + c.guardar;
+    const acoes = `<div class="fx-acoes"><button type="button" class="btn primary" onclick="fxNovo('g')">+ Gasto fixo</button><button type="button" class="btn" onclick="fxNovo('r')">+ Entrada mensal</button></div>`;
+    const cab = `<div class="fx-topo-cab"><span class="fx-eyebrow">Todo mês</span><span class="fx-mes">${mesLongo(t)}</span></div>`;
+    if (!c.renda && !sai) return `<section class="panel fx-topo" aria-label="Todo mês">${cab}
+      <p class="fx-frase">Cadastre o que entra e o que sai todo mês — salário, aluguel, assinaturas. O app repete sozinho e mostra quanto fica para o dia a dia.</p>${acoes}</section>`;
+    const base = Math.max(c.renda, sai) || 1;
+    const seg = (v, cor, nome) => v > 0.004 ? `<span style="width:${(v / base * 100).toFixed(2)}%;background:${cor}" title="${nome}"></span>` : '';
+    const barra = seg(c.fixos, 'var(--neg)', 'Contas fixas') + seg(c.parcelas, 'var(--accent)', 'Parcelas') + seg(c.guardar, 'var(--invest)', 'Guardar todo mês')
+      + (c.temRecorrente && c.livre > 0.004 ? seg(c.livre, 'var(--pos)', 'Fica para o dia a dia') : '');
+    const leg = (cor, nome, v, cl) => `<div class="fx-leg-i"><i style="background:${cor}"></i><span>${nome}</span><b${cl ? ` class="${cl}"` : ''}>${fmt(v)}</b></div>`;
+    const legs = (c.fixos > 0.004 ? leg('var(--neg)', 'Contas fixas', c.fixos) : '') + (c.parcelas > 0.004 ? leg('var(--accent)', 'Parcelas', c.parcelas) : '')
+      + (c.guardar > 0.004 ? leg('var(--invest)', 'Guardar todo mês', c.guardar) : '')
+      + (c.temRecorrente ? (c.livre >= 0 ? leg('var(--pos)', 'Fica para o dia a dia', c.livre, 'pos') : leg('var(--neg)', 'Falta para fechar o mês', -c.livre, 'neg')) : '');
+    let frase;
+    if (c.temRecorrente) frase = c.comprometido > 0.004 ? `Contas fixas e parcelas levam <strong>${Math.round(c.pct)}%</strong> do que entra todo mês.` : 'Nenhuma conta fixa nem parcela neste mês.';
+    else if (c.d.entradas > 0.004) frase = `Contas fixas e parcelas levam <strong>${Math.round(c.pct)}%</strong> do que entrou em ${nomeMes(t)} (${fmt(c.d.entradas)}). Cadastre o salário como entrada mensal para ver quanto fica para o dia a dia.`;
+    else frase = 'Cadastre o que entra todo mês (salário, bolsa) para ver quanto fica para o dia a dia.';
+    const aria = `Contas fixas ${fmt(c.fixos)}, parcelas ${fmt(c.parcelas)}${c.guardar > 0.004 ? `, guardar ${fmt(c.guardar)}` : ''}${c.temRecorrente ? `, dia a dia ${fmt(c.livre)}` : ''}`;
+    return `<section class="panel fx-topo" aria-label="Todo mês">${cab}
+      <div class="fx-es"><div><span class="fx-l">Entra</span><span class="fx-v pos">${c.temRecorrente ? fmt(c.renda) : '—'}</span></div><div><span class="fx-l">Sai</span><span class="fx-v">${fmt(sai)}</span></div></div>
+      <div class="fx-barra" role="img" aria-label="${aria}">${barra}</div>
+      <div class="fx-leg">${legs}</div>
+      <p class="fx-frase">${frase}</p>${acoes}
+    </section>`;
+  }
+  function htmlGastos(c, t) {
+    const series = seriesDe('g', t), atuais = series.filter(x => x.sit.st === 'ativo' || x.sit.st === 'pulado');
+    const inv = x => methodKind(normalizeMethod(x.sit.r.method)) === 'invest';
+    const contas = atuais.filter(x => !inv(x)).sort(porDia), guardar = atuais.filter(inv).sort(porDia);
+    const legado = c.fixosItens.filter(i => !acharRec('g', i.id));
+    const outros = series.filter(x => !atuais.includes(x));
+    const vazio = !contas.length && !legado.length;
+    return `<section class="panel fx-sec" aria-label="Contas fixas">
+      <div class="fx-h"><h2>Contas fixas</h2><span class="fx-h-v">${fmt(c.fixos)}</span></div>
+      ${vazio ? `<div class="fx-vazio">Nenhuma conta fixa em ${nomeMes(t)}. Aluguel, assinaturas, internet: cadastre uma vez e o app repete todo mês.<div class="fx-acoes" style="margin-top:10px"><button type="button" class="btn primary" onclick="fxNovo('g')">+ Gasto fixo</button></div></div>`
+        : contas.map(x => linha('g', x, t)).join('') + legado.map(i => linhaLegado(i, t)).join('')}
+      ${guardar.length ? `<div class="fx-sub-h">Guardar todo mês · ${fmt(c.guardar)}</div>` + guardar.map(x => linha('g', x, t)).join('') : ''}
+      ${blocoOutros('g', outros, t)}
+    </section>`;
+  }
+  function htmlRendas(c, t) {
+    const series = seriesDe('r', t), atuais = series.filter(x => x.sit.st === 'ativo' || x.sit.st === 'pulado').sort(porDia);
+    const outros = series.filter(x => !atuais.includes(x));
+    return `<section class="panel fx-sec" aria-label="Entradas mensais">
+      <div class="fx-h"><h2>Entradas mensais</h2><span class="fx-h-v pos">${fmt(c.renda)}</span></div>
+      ${atuais.length ? atuais.map(x => linha('r', x, t)).join('') : `<div class="fx-vazio">Nenhuma entrada mensal em ${nomeMes(t)}. Salário, bolsa, aluguel recebido: cadastre uma vez e o app repete todo mês.<div class="fx-acoes" style="margin-top:10px"><button type="button" class="btn primary" onclick="fxNovo('r')">+ Entrada mensal</button></div></div>`}
+      ${blocoOutros('r', outros, t)}
+    </section>`;
+  }
+  function htmlParcelas(c, t) {
+    const itens = c.parcItens.slice().sort((a, b) => (diaDe(a) || 99) - (diaDe(b) || 99));
+    if (!itens.length) return '';
+    const linhaP = i => {
+      const inst = db.installments.find(x => x.id === i.id), ab = !!inst && aberto === `p:${i.id}`, pid = jsArg(i.id);
+      const tot = inst ? (inst.totalOriginal || inst.total) : null, n = inst ? t - tIni(inst) + 1 : null, falta = inst ? inst.total - n : 0;
+      const sub = [inst ? `${n} de ${tot}` : escapeHtml(i.detail || ''), escapeHtml(i.cat || ''), escapeHtml(methodLabel(i.method)),
+        inst ? (falta > 0 ? `até ${mesCurto(tIni(inst) + inst.total - 1)}` : inst.totalOriginal > inst.total ? 'quitada' : 'última') : ''].filter(Boolean).join(' · ');
+      let det = '';
+      if (ab) {
+        const partes = [`Total ${fmt(inst.value * tot)} em ${tot}× de ${fmt(inst.value)}.`];
+        partes.push(falta > 0 ? `Até ${nomeMes(t)}: ${n} parcela${n === 1 ? '' : 's'} (${fmt(n * inst.value)}) · faltam ${falta} (${fmt(falta * inst.value)}).` : 'Esta é a última parcela.');
+        if (inst.totalOriginal && inst.totalOriginal > inst.total) partes.push(`Quitada antes: as ${inst.totalOriginal - inst.total} últimas viraram um pagamento único em ${mesLongo(tIni(inst) + inst.total - 1)}.`);
+        det = `<div class="fx-det">${partes.join('<br>')}<div class="fx-acoes"><button type="button" class="btn primary" onclick="fxEditarParc(${pid})">Editar</button>${falta > 0 ? `<button type="button" class="btn" onclick="fxQuitar(${pid})">Quitei antes</button>` : ''}<button type="button" class="btn" onclick="fxApagarParc(${pid})">Apagar</button></div></div>`;
+      }
+      const clique = inst ? ` role="button" tabindex="0" aria-expanded="${ab}" onclick="fxAbrir('p', ${pid})" onkeydown="if(event.key==='Enter') fxAbrir('p', ${pid})"` : '';
+      return `<div class="fx-item${ab ? ' aberto' : ''}${inst ? '' : ' fora'}"${clique}>${chipDia(diaDe(i), t)}
+        <div class="fx-corpo"><div class="fx-top"><span class="fx-nome">${escapeHtml(i.desc)}</span><span class="fx-val">${fmt(i.value)}</span></div>
+        <div class="fx-sub"><span>${sub}</span></div></div></div>${det}`;
+    };
+    return `<section class="panel fx-sec" aria-label="Parcelas do mês">
+      <div class="fx-h"><h2>Parcelas de ${nomeMes(t)}</h2><span class="fx-h-v">${fmt(c.parcelas)}</span></div>
+      ${itens.map(linhaP).join('')}
+    </section>`;
+  }
+  function renderFixos() {
+    const el = $('fxNovo');
+    if (!el || typeof currentUser === 'undefined' || !currentUser || typeof db === 'undefined' || !db || !db.events) return;
+    const reg = $('registro');
+    if (el.dataset.feito && reg && !reg.classList.contains('active')) return;
+    el.dataset.feito = '1';
+    const t = tVisto(), c = compromissosDoMes(currentYear, currentMonth);
+    el.innerHTML = htmlTopo(c, t) + `<div class="fx-grid"><div class="fx-col">${htmlGastos(c, t)}</div><div class="fx-col">${htmlRendas(c, t)}${htmlParcelas(c, t)}</div></div>`;
+  }
+  function agendar() {
+    if (pend) return;
+    pend = true;
+    Promise.resolve().then(() => { pend = false; try { renderFixos(); } catch (e) { console.warn('[v91 fixos]', e); } });
+  }
+  window.renderFixos = renderFixos;
+
+  // ── Ações ─────────────────────────────────────────────────────────────
+  window.fxAbrir = (tipo, s) => { const k = `${tipo}:${s}`; aberto = aberto === k ? null : k; renderFixos(); };
+  window.fxVerOutros = tipo => { verOutros[tipo] = !verOutros[tipo]; renderFixos(); };
+  window.fxPago = id => { togglePaid(Number(id), currentYear, currentMonth); renderFixos(); };
+  window.fxPular = function (tipo, id) {
+    const r = acharRec(tipo, id), t = tVisto();
+    if (!r || !ativoEm(r, t)) return;
+    const on = !mesPulado(r, keyT(t));
+    marcarPulo(r, t, on);
+    salvar();
+    toast(on ? `${r.desc} fica fora de ${nomeMes(t)} — os outros meses continuam` : `${r.desc} volta a contar em ${nomeMes(t)}`, 'success', 3500);
+  };
+  window.fxNovo = function (tipo) {
+    if (typeof openQuickAdd !== 'function') return;
+    if (tipo === 'r') { openQuickAdd('entrada'); const c = $('qaRecorrente'); if (c) c.checked = true; return; }
+    openQuickAdd('gasto');
+    const ch = document.querySelectorAll('#qa80Rep .qa78-chip');
+    if (ch[1]) ch[1].click();   // "Todo mês"
+  };
+  window.fxDesdeInicio = function () {
+    const el = $('fxDesde');
+    if (!el || !edicao) return;
+    el.value = valMes(edicao.ini);
+    el.dispatchEvent(new Event('input'));
+  };
+  window.fxEditar = function (tipo, id, tRef) {
+    const r0 = acharRec(tipo, id);
+    if (!r0) return;
+    const s = raiz(r0), recs = daSerie(tipo, s), ini = tIni(recs[0]);
+    tRef = Number.isFinite(tRef) ? tRef : tVisto();
+    const ref = recs.find(z => ativoEm(z, tRef)) || r0;
+    const X0 = Math.max(ini, tIni(ref) > tRef ? tIni(ref) : tRef);
+    edicao = { ini };
+    const cs = getContas();
+    let campos = `<div class="input-group"><label>Descrição</label><input id="fxDesc" type="text" maxlength="80" value="${escapeHtml(ref.desc)}"></div>
+      <div class="fx-2"><div class="input-group"><label>Valor por mês</label><input id="fxValor" type="text" inputmode="decimal" value="${escapeHtml(fmtInput(ref.value))}"></div>
+      <div class="input-group"><label>Dia do mês</label><input id="fxDia" type="number" inputmode="numeric" min="1" max="31" value="${diaDe(ref) || 1}"></div></div>`;
+    if (tipo === 'g') {
+      const catAtual = ref.cat || '', metAtual = normalizeMethod(ref.method);
+      let cats = (db.categories || []).map(c => `<option value="${escapeHtml(c.name)}"${c.name === catAtual ? ' selected' : ''}>${escapeHtml(c.name)}</option>`).join('');
+      if (!catAtual) cats = '<option value="" selected>Sem categoria</option>' + cats;
+      else if (!(db.categories || []).some(c => c.name === catAtual)) cats = `<option value="${escapeHtml(catAtual)}" selected>${escapeHtml(catAtual)}</option>` + cats;
+      let mets = getMethods().map(m => `<option value="${escapeHtml(m.id)}"${m.id === metAtual ? ' selected' : ''}>${escapeHtml(m.label)}</option>`).join('');
+      if (metAtual && !getMethods().some(m => m.id === metAtual)) mets = `<option value="${escapeHtml(metAtual)}" selected>${escapeHtml(methodLabel(metAtual))}</option>` + mets;
+      const clsAtual = methodKind(metAtual) === 'invest' ? itemInvestClass(ref) : null;
+      campos += `<div class="fx-2"><div class="input-group"><label>Categoria</label><select id="fxCat">${cats}</select></div>
+        <div class="input-group"><label>Forma de pagamento</label><select id="fxMet">${mets}</select></div></div>
+        <div class="input-group" id="fxClsWrap"><label>Onde guarda</label><select id="fxCls">${getInvestClasses().map(c => `<option value="${escapeHtml(c.id)}"${c.id === clsAtual ? ' selected' : ''}>${escapeHtml(c.label)}</option>`).join('')}</select></div>
+        <div class="input-group" id="fxFatWrap"><label class="v86-check"><input type="checkbox" id="fxFat"${ref.faturaMais === 1 ? ' checked' : ''}><span>Vai para a próxima fatura<small>O banco lança na fatura seguinte. O gasto continua no mês.</small></span></label></div>`;
+    } else {
+      const prov = ref.provento || '', clsA = ref.investClass || '';
+      campos += `${cs.length > 1 ? `<div class="input-group"><label>Entra em qual conta</label><select id="fxConta">${cs.map(c => `<option value="${escapeHtml(c.id)}"${c.id === contaValida(ref.conta) ? ' selected' : ''}>${escapeHtml(c.nome)}</option>`).join('')}</select></div>` : ''}
+        <div class="fx-2"><div class="input-group"><label>Tipo</label><select id="fxProv"><option value=""${!prov ? ' selected' : ''}>Salário e outras</option><option value="isento"${prov === 'isento' ? ' selected' : ''}>Provento isento</option><option value="tributavel"${prov === 'tributavel' ? ' selected' : ''}>Provento tributável</option></select></div>
+        <div class="input-group" id="fxProvClsWrap"><label>De qual investimento</label><select id="fxProvCls">${getInvestClasses().map(c => `<option value="${escapeHtml(c.id)}"${c.id === clsA ? ' selected' : ''}>${escapeHtml(c.label)}</option>`).join('')}</select></div></div>
+        <div class="input-group"><label>Observação</label><input id="fxNota" type="text" maxlength="120" value="${escapeHtml(ref.note || '')}" placeholder="Ex.: contrato até dezembro"></div>`;
+    }
+    const desde = `<div class="input-group fx-desde"><label>Vale a partir de</label><input id="fxDesde" type="month" value="${valMes(X0)}" min="${valMes(ini)}"><small id="fxDesdeDica" class="muted"></small>
+      ${X0 > ini ? '<button type="button" class="link-btn" onclick="fxDesdeInicio()">Estava errado desde o início? Corrigir todos os meses</button>' : ''}</div>`;
+    modal.show(`Editar ${NOME[tipo]}`, campos + desde, { confirmLabel: 'Salvar', onConfirm: () => salvarEdicao() });
+    const dica = () => {
+      const X = lerMes($('fxDesde').value), el = $('fxDesdeDica');
+      if (X == null) { el.textContent = 'Escolha o mês.'; return; }
+      if (X <= ini) { el.textContent = `Corrige todos os meses desde ${mesLongo(ini)} — use se o cadastro estava errado.`; return; }
+      const antes = recs.find(z => ativoEm(z, X - 1));
+      el.textContent = `De ${mesLongo(X)} em diante. Até ${mesLongo(X - 1)} continua como estava${antes ? ` (${fmt(antes.value)})` : ''}.`;
+    };
+    $('fxDesde').addEventListener('input', dica); dica();
+    if (tipo === 'g') {
+      const mostra = () => { const k = methodKind($('fxMet').value); $('fxClsWrap').style.display = k === 'invest' ? '' : 'none'; $('fxFatWrap').style.display = k === 'credit' ? '' : 'none'; };
+      $('fxMet').addEventListener('change', mostra); mostra();
+    } else {
+      const mostra = () => { $('fxProvClsWrap').style.display = $('fxProv').value ? '' : 'none'; };
+      $('fxProv').addEventListener('change', mostra); mostra();
+    }
+    function salvarEdicao() {
+      const Xl = lerMes($('fxDesde').value), X = Math.max(ini, Xl == null ? X0 : Xl);
+      const desc = $('fxDesc').value.trim(), valor = readMoney('fxValor'), dia = parseInt($('fxDia').value, 10);
+      if (!desc) { toast('Escreva a descrição', 'error'); return false; }
+      if (!(valor > 0)) { toast('Valor inválido — ex.: 45,90', 'error'); return false; }
+      if (!(dia >= 1 && dia <= 31)) { toast('O dia do mês vai de 1 a 31', 'error'); return false; }
+      const mud = {};
+      if (desc !== ref.desc) mud.desc = desc.slice(0, 80);
+      if (Math.abs(valor - ref.value) >= 0.005) mud.value = Math.round(valor * 100) / 100;
+      if (dia !== diaDe(ref)) mud.date = comDia(ref, dia);
+      if (tipo === 'g') {
+        const cat = $('fxCat').value, met = $('fxMet').value, k = methodKind(met);
+        if (cat !== (ref.cat || '')) mud.cat = cat;
+        if (met !== normalizeMethod(ref.method)) mud.method = met;
+        const clsN = k === 'invest' ? $('fxCls').value : undefined;
+        const clsV = methodKind(normalizeMethod(ref.method)) === 'invest' ? itemInvestClass(ref) : undefined;
+        if (clsN !== clsV) mud.investClass = clsN;
+        const fat = k === 'credit' && $('fxFat').checked ? 1 : undefined;
+        if (fat !== (ref.faturaMais === 1 ? 1 : undefined)) mud.faturaMais = fat;
+      } else {
+        if ($('fxConta')) { const ct = $('fxConta').value; if (ct !== contaValida(ref.conta)) mud.conta = ct; }
+        const pv = $('fxProv').value || undefined;
+        if (pv !== (ref.provento || undefined)) mud.provento = pv;
+        const clN = pv ? $('fxProvCls').value : undefined, clV = ref.provento ? (ref.investClass || undefined) : undefined;
+        if (clN !== clV) mud.investClass = clN;
+        const nt = $('fxNota').value.trim().slice(0, 120) || undefined;
+        if (nt !== (ref.note || undefined)) mud.note = nt;
+      }
+      if (!Object.keys(mud).length) { toast('Nada mudou', 'info'); return; }
+      aplicarDesde(tipo, s, X, mud);
+      salvar();
+      toast(X <= ini ? `${desc}: corrigido em todos os meses` : `${desc}: vale de ${mesLongo(X)} em diante — até ${mesLongo(X - 1)} fica como estava`, 'success', 4500);
+    }
+  };
+  window.fxEncerrar = function (tipo, s) {
+    const recs = daSerie(tipo, s);
+    if (!recs.length) return;
+    const ini = tIni(recs[0]), t = tVisto(), r = recs.find(z => ativoEm(z, t)) || recs[recs.length - 1];
+    const jaFoi = t === tHoje() && (diaDe(r) || 1) <= new Date().getDate();
+    const P0 = Math.max(ini + 1, jaFoi ? t + 1 : t);
+    modal.show(`Encerrar ${r.desc}`, `
+      <p class="muted" style="margin:0 0 12px;font-size:.88rem;line-height:1.5">Os meses anteriores continuam como estão — só para de contar daqui em diante.</p>
+      <div class="input-group"><label>Para de contar a partir de</label><input id="fxAte" type="month" value="${valMes(P0)}" min="${valMes(ini + 1)}"><small id="fxAteDica" class="muted"></small></div>`, {
+      confirmLabel: 'Encerrar',
+      onConfirm: () => {
+        const P = lerMes($('fxAte').value);
+        if (P == null || P <= ini) { toast(`Escolha um mês depois de ${mesLongo(ini)}`, 'error'); return false; }
+        encerrarSerie(tipo, s, P);
+        salvar();
+        toast(`${r.desc}: último mês ${mesLongo(P - 1)}`, 'success', 3500);
+      }
+    });
+    const dica = () => {
+      const P = lerMes($('fxAte').value), el = $('fxAteDica');
+      if (P == null) { el.textContent = ''; return; }
+      if (P <= ini) { el.textContent = `Escolha um mês depois de ${mesLongo(ini)}. Para tirar de todos os meses, use Apagar.`; return; }
+      el.textContent = `Último mês com ${r.desc}: ${mesLongo(P - 1)}.${recs.some(z => tIni(z) >= P) ? ' As mudanças marcadas para depois disso também saem.' : ''}`;
+    };
+    $('fxAte').addEventListener('input', dica); dica();
+  };
+  window.fxVoltar = function (tipo, s) {
+    const recs = daSerie(tipo, s), ult = recs[recs.length - 1];
+    if (!ult || tFim(ult) === Infinity) return;
+    const fim = tFim(ult), Q0 = Math.max(fim + 1, tVisto());
+    modal.show(`Voltar a contar ${ult.desc}`, `
+      <div class="input-group"><label>Volta a partir de</label><input id="fxVolta" type="month" value="${valMes(Q0)}" min="${valMes(fim + 1)}"><small id="fxVoltaDica" class="muted"></small></div>`, {
+      confirmLabel: 'Voltar a contar',
+      onConfirm: () => {
+        const Q = lerMes($('fxVolta').value);
+        if (Q == null || Q <= fim) { toast(`Escolha um mês depois de ${mesLongo(fim)}`, 'error'); return false; }
+        reativarSerie(tipo, s, Q);
+        salvar();
+        toast(`${ult.desc} volta a contar em ${mesLongo(Q)}`, 'success', 3500);
+      }
+    });
+    const dica = () => {
+      const Q = lerMes($('fxVolta').value), el = $('fxVoltaDica');
+      el.textContent = Q == null || Q <= fim ? '' : Q === fim + 1 ? 'Sem intervalo: como se não tivesse parado.' : `De ${mesLongo(fim + 1)} a ${mesLongo(Q - 1)} continua sem ${ult.desc}.`;
+    };
+    $('fxVolta').addEventListener('input', dica); dica();
+  };
+  window.fxApagar = function (tipo, s) {
+    const recs = daSerie(tipo, s);
+    if (!recs.length) return;
+    const nome = recs[recs.length - 1].desc, agora = tHoje(), ini = tIni(recs[0]);
+    let meses = 0, total = 0, ultT = null;
+    recs.forEach(r => { for (let t = tIni(r), f = Math.min(tFim(r), agora); t <= f; t++) if (!mesPulado(r, keyT(t))) { meses++; total += r.value; ultT = t; } });
+    const impacto = meses
+      ? `Some também dos ${meses} ${meses === 1 ? 'mês' : 'meses'} em que já contou (${mesCurto(ini)} a ${mesCurto(ultT)} · ${fmt(total)} ${tipo === 'g' ? 'em gastos' : 'em entradas'}).`
+      : 'Ainda não contou em nenhum mês.';
+    modal.show(`Apagar ${nome}?`, `
+      <p style="margin:0 0 10px;line-height:1.5">${escapeHtml(impacto)}</p>
+      <p class="muted" style="margin:0;font-size:.86rem;line-height:1.5">Use só se foi cadastrado por engano. ${tipo === 'g' ? 'Parou de pagar' : 'Parou de receber'}? Use <strong>Encerrar</strong> — o histórico fica.</p>`, {
+      confirmLabel: 'Apagar de todos os meses',
+      onConfirm: () => {
+        const copia = JSON.parse(JSON.stringify(recs));
+        setLista(tipo, LISTA[tipo]().filter(r => raiz(r) !== s));
+        recs.forEach(r => tomb(r.id));
+        if (aberto === `${tipo}:${s}`) aberto = null;
+        salvar();
+        fxDesfazer(`${nome} apagado de todos os meses`, () => { copia.forEach(r => desTomb(r.id)); LISTA[tipo]().push(...copia); salvar(); });
+      }
+    });
+  };
+  // Excluir um fixo pela lista de Gastos do mês
+  window.fxExcluirDoMes = function (id) {
+    const r = acharRec('g', id);
+    if (!r) return;
+    const s = raiz(r), recs = daSerie('g', s), ini = tIni(recs[0]), t = tVisto(), mes = nomeMes(t);
+    modal.show(`${r.desc} é um gasto fixo`, `
+      <p class="muted" style="margin:0 0 10px;font-size:.88rem">O que aconteceu?</p>
+      <div class="fx-opcoes">
+        <label><input type="radio" name="fxOp" value="pular" checked><span><strong>Só em ${mes} não teve</strong><small>Os outros meses continuam com ${escapeHtml(r.desc)}.</small></span></label>
+        ${t > ini ? `<label><input type="radio" name="fxOp" value="parar"><span><strong>Parou: não conta mais a partir de ${mes}</strong><small>${mesLongo(t - 1)} e antes ficam como estão.</small></span></label>` : ''}
+        <label><input type="radio" name="fxOp" value="apagar"><span><strong>Foi cadastrado por engano</strong><small>Apaga de todos os meses, inclusive dos que já passaram.</small></span></label>
+      </div>`, {
+      confirmLabel: 'Confirmar',
+      onConfirm: () => {
+        const op = (document.querySelector('input[name="fxOp"]:checked') || {}).value;
+        if (op === 'pular') { marcarPulo(r, t, true); salvar(); toast(`${r.desc} fica fora de ${mes} — os outros meses continuam`, 'success', 3500); }
+        else if (op === 'parar') { encerrarSerie('g', s, t); salvar(); toast(`${r.desc}: último mês ${mesLongo(t - 1)}`, 'success', 3500); }
+        else if (op === 'apagar') setTimeout(() => fxApagar('g', s), 220);
+      }
+    });
+  };
+  // Parcelas
+  window.fxEditarParc = id => { const inst = db.installments.find(x => x.id === Number(id)); if (inst) editTransactionModal(inst); };
+  window.fxQuitar = function (id) {
+    const inst = db.installments.find(x => x.id === Number(id));
+    if (!inst) return;
+    const S = tIni(inst), L = S + inst.total - 1;
+    if (L - 1 < S) return;
+    const X0 = Math.min(Math.max(tVisto(), S), L - 1);
+    modal.show(`Quitei antes: ${inst.desc}`, `
+      <div class="input-group"><label>Mês em que quitou</label><input id="fxQMes" type="month" value="${valMes(X0)}" min="${valMes(S)}" max="${valMes(L - 1)}"></div>
+      <div class="input-group"><label>Quanto pagou pelas parcelas que faltavam</label><input id="fxQValor" type="text" inputmode="decimal"></div>
+      <small id="fxQDica" class="muted"></small>`, {
+      confirmLabel: 'Quitar',
+      onConfirm: () => {
+        const X = lerMes($('fxQMes').value), v = readMoney('fxQValor');
+        if (X == null || X < S || X > L - 1) { toast(`Escolha um mês entre ${mesLongo(S)} e ${mesLongo(L - 1)}`, 'error'); return false; }
+        if (!(v >= 0)) { toast('Valor inválido', 'error'); return false; }
+        const n = X - S + 1, falta = inst.total - n;
+        if (!inst.totalOriginal) inst.totalOriginal = inst.total;
+        inst.total = n;
+        if (v > 0) {
+          const y = yOf(X), m = mOf(X), key = getKey(y, m);
+          ensureYear(y);
+          const data = X === tHoje() ? todayISO() : (dataNoMes(inst.date, y, m) || `${y}-${dd(m + 1)}-15`);
+          (db.events[key] = db.events[key] || []).push({ id: novoId(), desc: `${inst.desc} (quitação)`.slice(0, 80), value: Math.round(v * 100) / 100,
+            cat: inst.cat, method: inst.method, type: 'eventual', date: data, ...(inst.investClass ? { investClass: inst.investClass } : {}) });
+        }
+        if (aberto === `p:${inst.id}`) aberto = null;
+        salvar();
+        toast(`${inst.desc}: ${falta} parcela${falta === 1 ? '' : 's'} quitada${falta === 1 ? '' : 's'} em ${mesLongo(X)}${v > 0 ? ` por ${fmt(v)}` : ''}`, 'success', 4000);
+      }
+    });
+    const upd = mudouMes => {
+      const X = lerMes($('fxQMes').value), el = $('fxQDica');
+      if (X == null || X < S || X > L - 1) { el.textContent = ''; return; }
+      const n = X - S + 1, falta = inst.total - n, tot = inst.totalOriginal || inst.total;
+      if (mudouMes) $('fxQValor').value = fmtInput(falta * inst.value);
+      el.textContent = `A parcela ${n}/${tot} (${mesLongo(X)}) continua. ${falta === 1 ? `A última (${fmt(inst.value)}) vira` : `As ${falta} seguintes (${fmt(falta * inst.value)}) viram`} um pagamento único em ${mesLongo(X)} — mude o valor se teve desconto.`;
+    };
+    $('fxQMes').addEventListener('input', () => upd(true)); upd(true);
+  };
+  window.fxApagarParc = function (id) {
+    const inst = db.installments.find(x => x.id === Number(id));
+    if (!inst) return;
+    const S = tIni(inst), pagas = Math.max(0, Math.min(inst.total, tHoje() - S + 1));
+    modal.show(`Apagar ${inst.desc}?`, `
+      <p style="margin:0 0 10px;line-height:1.5">Apaga as ${inst.total} parcelas de ${fmt(inst.value)}${pagas ? `, inclusive ${pagas === 1 ? 'a que já contou' : `as ${pagas} que já contaram`} (${mesCurto(S)}${pagas > 1 ? ` a ${mesCurto(S + pagas - 1)}` : ''})` : ''}.</p>
+      <p class="muted" style="margin:0;font-size:.86rem;line-height:1.5">Use só se foi cadastrado por engano. Quitou antes? Use <strong>Quitei antes</strong> — as parcelas pagas ficam.</p>`, {
+      confirmLabel: 'Apagar as parcelas',
+      onConfirm: () => {
+        const copia = JSON.parse(JSON.stringify(inst));
+        db.installments = db.installments.filter(x => x !== inst);
+        tomb(inst.id);
+        if (aberto === `p:${inst.id}`) aberto = null;
+        salvar();
+        fxDesfazer(`${inst.desc} apagado`, () => { desTomb(copia.id); db.installments.push(copia); salvar(); });
+      }
+    });
+  };
+
+  // ── Entradas do mês (Gastos do mês → toque em "Entradas") ──────────────
+  window.fxEntradas = function () {
+    const y = currentYear, m = currentMonth, key = getKey(y, m), d = getMonthData(y, m), cs = getContas();
+    const avulsas = (db.income[key] || []).slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    const recs = (d.income || []).filter(i => i.recurring);
+    const conta = i => cs.length > 1 ? ' · ' + escapeHtml((getConta(i.conta) || cs[0]).nome) : '';
+    const linhaR = i => `<div class="fx-ent"><div><div class="fx-ent-n">${escapeHtml(i.desc)}</div><div class="fx-ent-s">todo mês · dia ${diaDe(i) || '—'}${conta(i)}</div></div><b class="pos">${fmt(i.value)}</b>
+      <div class="fx-ent-a"><button type="button" class="btn" onclick="modal.close(); setTimeout(() => fxEditar('r', ${jsArg(i.id)}, ${tVisto()}), 220)">Editar</button></div></div>`;
+    const linhaA = i => `<div class="fx-ent"><div><div class="fx-ent-n">${escapeHtml(i.desc)}</div><div class="fx-ent-s">${fmtDate(i.date)}${i.provento ? ' · provento' : ''}${conta(i)}</div></div><b class="pos">${fmt(i.value)}</b>
+      <div class="fx-ent-a"><button type="button" class="btn" onclick="fxEditarEntrada(${jsArg(key)}, ${jsArg(i.id)})">Editar</button><button type="button" class="btn" onclick="fxExcluirEntrada(${jsArg(key)}, ${jsArg(i.id)})">Excluir</button></div></div>`;
+    modal.show(`Entradas de ${mesLongo(T(y, m))}`, `
+      <div class="fx-ent-tot"><span class="muted">Total</span><b class="pos">${fmt(d.entradas)}</b></div>
+      ${recs.length || avulsas.length ? recs.map(linhaR).join('') + avulsas.map(linhaA).join('') : '<p class="muted" style="margin:10px 0">Nenhuma entrada neste mês.</p>'}
+      <div class="fx-acoes" style="margin-top:14px"><button type="button" class="btn primary" onclick="modal.close(); setTimeout(() => openQuickAdd('entrada'), 220)">+ Nova entrada</button></div>`, { showFooter: false });
+  };
+  window.fxEditarEntrada = function (key, id) {
+    const lst = db.income[key] || [], it = lst.find(x => x.id === Number(id));
+    if (!it) return;
+    const cs = getContas(), prov = it.provento || '';
+    modal.show('Editar entrada', `
+      <div class="input-group"><label>Descrição</label><input id="feDesc" type="text" maxlength="80" value="${escapeHtml(it.desc)}"></div>
+      <div class="fx-2"><div class="input-group"><label>Valor</label><input id="feValor" type="text" inputmode="decimal" value="${escapeHtml(fmtInput(it.value))}"></div>
+      <div class="input-group"><label>Data</label><input id="feData" type="date" value="${escapeHtml(isoDay(it.date) || '')}"></div></div>
+      ${cs.length > 1 ? `<div class="input-group"><label>Entrou em qual conta</label><select id="feConta">${cs.map(c => `<option value="${escapeHtml(c.id)}"${c.id === contaValida(it.conta) ? ' selected' : ''}>${escapeHtml(c.nome)}</option>`).join('')}</select></div>` : ''}
+      <div class="fx-2"><div class="input-group"><label>Tipo</label><select id="feTipo"><option value=""${!prov ? ' selected' : ''}>Salário e outras</option><option value="isento"${prov === 'isento' ? ' selected' : ''}>Provento isento</option><option value="tributavel"${prov === 'tributavel' ? ' selected' : ''}>Provento tributável</option></select></div>
+      <div class="input-group" id="feClsWrap"><label>De qual investimento</label><select id="feCls">${getInvestClasses().map(c => `<option value="${escapeHtml(c.id)}"${c.id === it.investClass ? ' selected' : ''}>${escapeHtml(c.label)}</option>`).join('')}</select></div></div>`, {
+      confirmLabel: 'Salvar',
+      onConfirm: () => {
+        const v = readMoney('feValor'), desc = $('feDesc').value.trim(), data = isoDay($('feData').value);
+        if (!desc) { toast('Escreva a descrição', 'error'); return false; }
+        if (!(v > 0)) { toast('Valor inválido — ex.: 45,90', 'error'); return false; }
+        if (!data) { toast('Escolha a data', 'error'); return false; }
+        it.desc = desc.slice(0, 80); it.value = Math.round(v * 100) / 100; it.date = data;
+        if ($('feConta')) it.conta = $('feConta').value;
+        const tp = $('feTipo').value;
+        if (tp) { it.provento = tp; it.investClass = $('feCls').value; } else { delete it.provento; delete it.investClass; }
+        const r = refFromDate(data), nk = getKey(r.y, r.m);
+        if (nk !== key) {
+          db.income[key] = lst.filter(x => x !== it);
+          if (!db.income[key].length) delete db.income[key];
+          ensureYear(r.y);
+          (db.income[nk] = db.income[nk] || []).push(it);
+        }
+        salvar();
+        toast(nk !== key ? `Entrada movida para ${mesLongo(T(r.y, r.m))}` : 'Entrada atualizada', 'success');
+      }
+    });
+    const mostra = () => { $('feClsWrap').style.display = $('feTipo').value ? '' : 'none'; };
+    $('feTipo').addEventListener('change', mostra); mostra();
+  };
+  window.fxExcluirEntrada = function (key, id) {
+    const lst = db.income[key] || [], it = lst.find(x => x.id === Number(id));
+    if (!it) return;
+    modal.show('Excluir entrada?', `<p style="margin:0;line-height:1.5"><strong>${escapeHtml(it.desc)}</strong> · ${fmt(it.value)} · ${fmtDate(it.date)}</p>`, {
+      confirmLabel: 'Excluir',
+      onConfirm: () => {
+        db.income[key] = lst.filter(x => x !== it);
+        if (!db.income[key].length) delete db.income[key];
+        tomb(it.id);
+        salvar();
+        fxDesfazer(`"${it.desc}" excluída`, () => { desTomb(it.id); (db.income[key] = db.income[key] || []).push(it); salvar(); });
+      }
+    });
+  };
+
+  // ── Gastos do mês: editar/excluir fixo, exclusão em lote, "Entradas" ───
+  const ed = window.editTransactionModal;
+  if (typeof ed === 'function') editTransactionModal = window.editTransactionModal = function (item) {
+    if (item && (db.recurringExpenses || []).includes(item)) return fxEditar('g', item.id, tVisto());
+    return ed.apply(this, arguments);
+  };
+  function ligarGastos() {
+    const tb = $('mainTable');
+    if (!tb || tb.dataset.v91) return;
+    tb.dataset.v91 = '1';
+    tb.addEventListener('click', e => {   // captura: antes do excluir de sempre
+      const b = e.target.closest('button[data-action="del"]');
+      if (!b) return;
+      const r = acharRec('g', b.dataset.id);
+      if (!r) return;
+      e.preventDefault(); e.stopPropagation();
+      fxExcluirDoMes(r.id);
+    }, true);
+  }
+  function entradasClicaveis() {
+    const st = $('mainStats'), card = st && st.children[0];
+    if (!card || card.dataset.v91) return;
+    card.dataset.v91 = '1';
+    card.classList.add('fx-clicavel');
+    card.setAttribute('role', 'button'); card.tabIndex = 0;
+    card.title = 'Ver e editar as entradas do mês';
+    card.onclick = () => fxEntradas();
+    card.onkeydown = e => { if (e.key === 'Enter') fxEntradas(); };
+    const lb = card.querySelector('.label');
+    if (lb && !lb.querySelector('.fx-ver')) lb.insertAdjacentHTML('beforeend', ' <span class="fx-ver">ver ›</span>');
+  }
+  const rg = window.renderGastos;
+  if (typeof rg === 'function') renderGastos = window.renderGastos = function () {
+    const x = rg.apply(this, arguments);
+    try { ligarGastos(); entradasClicaveis(); } catch (e) { console.warn('[v91 gastos]', e); }
+    return x;
+  };
+  const bd = window.bulkDelete;
+  if (typeof bd === 'function') bulkDelete = window.bulkDelete = async function () {
+    if (typeof selectedTx === 'undefined' || !selectedTx.size) return bd.apply(this, arguments);
+    const ids = [...selectedTx].map(Number), t = tVisto(), mes = nomeMes(t);
+    const fixos = ids.map(id => acharRec('g', id)).filter(r => r && ativoEm(r, t));
+    if (!fixos.length) return bd.apply(this, arguments);
+    const outros = ids.filter(id => !fixos.some(r => r.id === id));
+    const ok = await confirmDialog(`Excluir ${ids.length} lançamento${ids.length === 1 ? '' : 's'}? ${fixos.length === 1 ? `O gasto fixo "${fixos[0].desc}" sai só de ${mes}` : `Os ${fixos.length} gastos fixos saem só de ${mes}`} — os outros meses continuam.`);
+    if (!ok) return;
+    fixos.forEach(r => marcarPulo(r, t, true));
+    if (outros.length) {
+      db.installments = db.installments.filter(x => !outros.includes(x.id));
+      Object.keys(db.events).forEach(k => { db.events[k] = db.events[k].filter(x => !outros.includes(x.id)); });
+      outros.forEach(tomb);
+    }
+    selectedTx.clear();
+    salvar();
+    toast(`${outros.length ? `${outros.length} excluído${outros.length === 1 ? '' : 's'} · ` : ''}${fixos.length} fixo${fixos.length === 1 ? '' : 's'} fora de ${mes}`, 'success', 3500);
+  };
+
+  // ── Telas antigas apontam para as novas ──────────────────────────────
+  renderRecurringExpenses = window.renderRecurringExpenses = agendar;
+  renderRecurringIncome = window.renderRecurringIncome = agendar;
+  endRecurringExpense = window.endRecurringExpense = id => { const r = acharRec('g', id); if (r) fxEncerrar('g', raiz(r)); };
+  reactivateRecurring = window.reactivateRecurring = id => { const r = acharRec('g', id); if (r) fxVoltar('g', raiz(r)); };
+  removeRecurringExpense = window.removeRecurringExpense = id => { const r = acharRec('g', id); if (r) fxApagar('g', raiz(r)); };
+  removeRecurringIncome = window.removeRecurringIncome = id => { const r = acharRec('r', id); if (r) fxApagar('r', raiz(r)); };
+  window.addEventListener('load', () => setTimeout(() => { try { ligarGastos(); agendar(); } catch (e) { console.warn('[v91]', e); } }, 350));
 })();
 </script>
 </body>
