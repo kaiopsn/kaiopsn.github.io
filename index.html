@@ -5600,8 +5600,11 @@ async function submitQuickAdd() {
     if (!classe) return toast('Crie uma classe de investimento em Investimentos', 'error');
     const origem = document.querySelector('input[name="qaOrigem"]:checked')?.value || 'conta';
     if (origem === 'guardado') {
-      if (!(safeNum(classe.opening, 0) > 0)) classe.openingDate = todayISO();   // v77
-      classe.opening = safeNum(classe.opening, 0) + value;
+      if (ancoraClasse(classe)) classe.ancora.value = Math.round((classe.ancora.value + value) * 100) / 100;   // v87
+      else {
+        if (!(safeNum(classe.opening, 0) > 0)) classe.openingDate = todayISO();   // v77
+        classe.opening = safeNum(classe.opening, 0) + value;
+      }
       msg = `${fmt(value)} somados ao que já estava em ${classe.label} — a conta não muda`;
     } else {
       ensureYear(ref.y);
@@ -6215,7 +6218,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v86';
+const APP_VERSION = 'v87';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -6925,6 +6928,13 @@ function sanitizeData(data) {
         if (!ok) delete c.market;
       }
       if (c.target != null) { const t = safeNum(c.target, NaN); if (t > 0 && t <= 100) c.target = t; else delete c.target; }
+      if (c.ancora != null) {   // v87
+        const a = c.ancora;
+        const ok = obj(a) && Number.isFinite(a.value) && a.value >= 0 && typeof a.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(a.date);
+        if (!ok) delete c.ancora;
+        else c.ancora = { value: a.value, date: a.date, ts: safeNum(a.ts, 0),
+          tab: { ap: safeNum(a.tab && a.tab.ap, 0), rs: safeNum(a.tab && a.tab.rs, 0) } };
+      }
       return c;
     };
     let lista = saneiaLista(Array.isArray(data.investClasses) ? data.investClasses : [], remapClasse, reserva);
@@ -7051,7 +7061,8 @@ function sanitizeData(data) {
         let id = isSafeId(c.id) && !vistos.has(String(c.id)) ? c.id : slug(c.nome || 'conta', usados);
         vistos.add(String(id));
         return { id, nome: typeof c.nome === 'string' && c.nome.trim() ? c.nome.trim().slice(0, 40) : 'Conta',
-                 cor: safeColor(c.cor, METHOD_PALETTE[i % METHOD_PALETTE.length]), ancora: saneiaAncora(c.ancora) };
+                 cor: safeColor(c.cor, METHOD_PALETTE[i % METHOD_PALETTE.length]), ancora: saneiaAncora(c.ancora),
+                 ancorasAnteriores: (Array.isArray(c.ancorasAnteriores) ? c.ancorasAnteriores : []).map(saneiaAncora).filter(Boolean).slice(-60) };   // v87
       });
       if (!data.contas.length) data.contas = [{ ...CONTA_PADRAO, ancora: null }];
     }
@@ -7908,12 +7919,32 @@ function sumSaldoRange(ay, am, y, m) {
 // "Dinheiro em conta" ao FIM de (y, m) — ou até o dia `ateDia` desse mês.
 // Sem `contaId`, soma todas as contas (cada uma a partir do próprio ponto de
 // partida). Antes do ponto de partida, a conta vale o próprio ponto de partida.
+// v87: cada conta guarda o HISTÓRICO de pontos de partida (ancorasAnteriores).
+// Uma data usa o ponto de partida mais recente até ela — ajustar o saldo hoje
+// não reescreve os meses passados. Antes do primeiro, vale o primeiro.
+function definirAncoraConta(c, nova) {
+  if (c.ancora && typeof c.ancora.anchorDate === 'string') {
+    c.ancorasAnteriores = (Array.isArray(c.ancorasAnteriores) ? c.ancorasAnteriores : []).concat([c.ancora]).slice(-60);
+  }
+  c.ancora = nova;
+}
+function ancoraContaPara(c, y, m, ateDia) {
+  const todas = (Array.isArray(c.ancorasAnteriores) ? c.ancorasAnteriores : []).concat(c.ancora ? [c.ancora] : [])
+    .map(x => ancoraNormalizada(x, c.id)).filter(a => !a._default);
+  if (todas.length <= 1) return ancoraNormalizada(c.ancora, c.id);
+  const chave = a => (a.ay * 12 + a.am) * 40 + a.dia;
+  todas.sort((p, q) => chave(p) - chave(q) || (p.ts || 0) - (q.ts || 0));
+  const alvo = (y * 12 + m) * 40 + (ateDia != null ? ateDia : new Date(y, m + 1, 0).getDate());
+  let esc = todas[0];
+  todas.forEach(a => { if (chave(a) <= alvo) esc = a; });
+  return esc;
+}
 function getSaldoAcumulado(y, m, ateDia, contaId) {
   const contas = contaId != null ? [getConta(contaId) || getContas()[0]] : getContas();
   const anc = {};
   let total = 0, ini = Infinity;
   contas.forEach(c => {
-    const a = ancoraNormalizada(c.ancora, c.id);
+    const a = ancoraContaPara(c, y, m, ateDia);
     anc[c.id] = a;
     total += a.valor;
     ini = Math.min(ini, a.ay * 12 + a.am);
@@ -7973,17 +8004,73 @@ function firstDataMonth() {
 // mês, os aportes da aba Investimentos + os aportes lançados pelo Adicionar −
 // os resgates, por classe. Antes havia 4 cálculos diferentes e todos ignoravam
 // os aportes lançados pelo Adicionar (o dinheiro "sumia" do patrimônio).
+// v87 · PONTO DE PARTIDA DA CLASSE (c.ancora = {value, date, ts, tab}).
+// "Conferir saldos" grava o valor real de hoje. Dali em diante a classe vale
+// esse valor + aportes − resgates POSTERIORES; os meses anteriores à conferência
+// continuam calculados como sempre (histórico intacto). Igual à âncora das contas.
+function ancoraClasse(c) {
+  const a = c && c.ancora;
+  if (!a || !Number.isFinite(a.value) || !/^\d{4}-\d{2}-\d{2}$/.test(String(a.date || ''))) return null;
+  const [y, m, d] = a.date.split('-').map(Number);
+  return { value: a.value, date: a.date, ts: Number(a.ts) || 0, tab: a.tab || { ap: 0, rs: 0 }, t: y * 12 + m - 1, dia: d };
+}
+// Valores da ABA Investimentos (sem data) de uma classe num mês
+function tabClasse(y, m, id) {
+  const inv = (db.investments || {})[getKey(y, m)] || {};
+  const ap = investEntryClassIds(inv).includes(id) ? safeNum(inv[id], 0) : 0;
+  const w = inv.withdrawals;
+  const rs = typeof w === 'number' ? (['reserva', 'rendaFixa', 'polyMarket', 'acoes'].includes(id) ? w / 4 : 0)
+    : (w && typeof w === 'object' ? safeNum(w[id], 0) : 0);
+  return { ap, rs };
+}
+// Fluxos da classe DEPOIS do ponto de partida, até o fim do mês absoluto `fim`.
+// No mês da conferência: aportes lançados com data posterior (ou no mesmo dia,
+// criados depois) e o que mudou na aba Investimentos desde a conferência.
+function fluxosDepoisDaAncora(id, a, fim, cadaUm) {
+  let soma = 0;
+  for (let t = a.t; t <= fim && t - a.t < 1200; t++) {
+    const y = Math.floor(t / 12), m = t % 12, md = getMonthData(y, m);
+    if (t === a.t) {
+      (md.aportes || []).forEach(it => {
+        if (it.investClass !== id) return;
+        const d = isoDay(it.date);
+        if (d > a.date || (d === a.date && Number(it.id) > a.ts)) { soma += it.value; cadaUm && cadaUm(t, Number(d.slice(8, 10)) || a.dia, it.value, true); }
+      });
+      const tb = tabClasse(y, m, id), dif = (tb.ap - safeNum(a.tab.ap, 0)) - (tb.rs - safeNum(a.tab.rs, 0));
+      if (Math.abs(dif) >= 0.005) { soma += dif; cadaUm && cadaUm(t, a.dia, dif, true); }
+    } else {
+      const v = (md.porClasse || {})[id] || 0;
+      soma += v;
+      if (cadaUm && Math.abs(v) >= 0.005) {
+        let resto = v;
+        (md.aportes || []).forEach(it => { if (it.investClass === id) { const d = isoDay(it.date); cadaUm(t, d ? Number(d.slice(8, 10)) || 15 : 15, it.value, true); resto -= it.value; } });
+        if (Math.abs(resto) >= 0.005) cadaUm(t, 15, resto, false);
+      }
+    }
+  }
+  return soma;
+}
+function novaAncoraClasse(id, valor) {
+  const now = new Date();
+  return { value: Math.round(valor * 100) / 100, date: todayISO(), ts: Date.now(), tab: tabClasse(now.getFullYear(), now.getMonth(), id) };
+}
 function getCarteira(y, m) {
   const porClasse = {};
+  const fim = y * 12 + m;
   // v66: saldo inicial = o que já estava aplicado antes de usar o app. Não é
   // aporte: não sai da conta nem entra na sobra/poupança de nenhum mês.
-  getInvestClasses().forEach(c => { porClasse[c.id] = safeNum(c.opening, 0); });
+  // v87: do mês da conferência em diante, a classe parte do valor conferido.
+  const ancorada = {};
+  getInvestClasses().forEach(c => {
+    const a = ancoraClasse(c);
+    if (a && fim >= a.t) { ancorada[c.id] = 1; porClasse[c.id] = a.value + fluxosDepoisDaAncora(c.id, a, fim); }
+    else porClasse[c.id] = safeNum(c.opening, 0);
+  });
   const ini = firstDataMonth();
-  const fim = y * 12 + m;
   if (ini !== null) {
     for (let t = ini; t <= fim && t - ini < 1200; t++) {
       const d = getMonthData(Math.floor(t / 12), t % 12);
-      Object.entries(d.porClasse || {}).forEach(([id, v]) => { porClasse[id] = (porClasse[id] || 0) + v; });
+      Object.entries(d.porClasse || {}).forEach(([id, v]) => { if (!ancorada[id]) porClasse[id] = (porClasse[id] || 0) + v; });
     }
   }
   // um resgate maior que o aplicado nunca deixa a classe negativa
@@ -8026,7 +8113,8 @@ function getCarteiraMercado() {
   let temMercado = false;
   classes.forEach(c => {
     const aplicado = custo.porClasse[c.id] || 0;
-    const mk = c.market && typeof c.market.value === 'number' ? c.market : null;
+    const mk = c.market && typeof c.market.value === 'number'
+      && !(c.ancora && isoDay(c.market.date) < isoDay(c.ancora.date)) ? c.market : null;   // v87
     if (mk) temMercado = true;
     const mercado = mk ? Math.max(0, mk.value + fluxoClasseDepois(c.id, mk.date)) : aplicado;
     porClasse[c.id] = { aplicado, mercado, informado: !!mk, data: mk ? mk.date : null };
@@ -8083,7 +8171,7 @@ function getInvestidoAcumulado() {
 // Patrimônio total = dinheiro em conta + carteira (reserva + investimentos).
 // Investir não muda o patrimônio: o dinheiro só troca de bolso.
 function getPatrimonio(y, m) {
-  return getSaldoAcumulado(y, m) + getCarteira(y, m).total;
+  return getSaldoAcumulado(y, m) + getCarteira(y, m).total - aDevolverEm(y, m);   // v87
 }
 
 // CUSTO DE VIDA MENSAL — base ÚNICA de "quantos meses a reserva cobre".
@@ -8191,7 +8279,7 @@ function ajustarSaldoConta(id) {
     onConfirm: () => {
       const v = readMoney('ctSaldo');
       if (!Number.isFinite(v)) { toast('Digite um valor, ex.: 1.500,00', 'error'); return false; }
-      c.ancora = { anchorKey: getKey(now.getFullYear(), now.getMonth()), anchorDate: todayISO(), value: v, ts: Date.now() };
+      definirAncoraConta(c, { anchorKey: getKey(now.getFullYear(), now.getMonth()), anchorDate: todayISO(), value: v, ts: Date.now() });   // v87
       depoisDeMudarContas();
       toast(`Saldo de ${c.nome} salvo`, 'success');
     }
@@ -8328,6 +8416,7 @@ function updateContaHojeHint() {
   const trs = (db.transferencias || []).slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')).slice(0, 5);
   el.innerHTML = linhas
     + (cs.length > 1 ? `<div class="contas-total">Total em conta hoje <strong>${fmt(total)}</strong></div>` : '')
+    + `<div class="conferir-chamada"><span>${/^\d{4}-\d{2}-\d{2}$/.test(String(db.conferidoEm || '')) ? `Última conferência em ${db.conferidoEm.split('-').reverse().join('/')}` : 'Contas e investimentos batem com o banco?'}</span><button class="btn primary" onclick="abrirConferirSaldos()">Conferir todos os saldos</button></div>`
     + (trs.length ? `<div class="contas-transf"><div class="radar-ritmo">Últimas transferências</div>${trs.map(t => `
         <div class="transf-row"><span>${ddmm(t.date)} · ${escapeHtml((getConta(t.de) || {}).nome || '—')} → ${escapeHtml((getConta(t.para) || {}).nome || '—')}${t.desc ? ` · ${escapeHtml(t.desc)}` : ''}</span>
           <span>${fmt(t.valor)} <button class="btn-icon" title="Excluir" onclick="excluirTransferencia(${jsArg(t.id)})">✕</button></span></div>`).join('')}</div>` : '');
@@ -9081,7 +9170,7 @@ function renderInvestClasses(cart) {
       <span class="method-row-dot" style="background:${escapeHtml(c.color)}"></span>
       <div class="method-row-main">
         <div class="method-row-name">${escapeHtml(c.label)}${c.reserve ? '<span class="aporte-tag">reserva de emergência</span>' : ''}</div>
-        <div class="method-row-meta">${fmt(cart.porClasse[c.id] || 0)} aplicados${safeNum(c.opening, 0) > 0 ? ` · inclui ${fmt(c.opening)} de saldo inicial` : ''}</div>
+        <div class="method-row-meta">${fmt(cart.porClasse[c.id] || 0)} aplicados${c.ancora && c.ancora.date ? ` · conferido em ${c.ancora.date.split('-').reverse().join('/')}` : safeNum(c.opening, 0) > 0 ? ` · inclui ${fmt(c.opening)} de saldo inicial` : ''}</div>
       </div>
       <div class="method-row-actions">
         <button class="btn-icon" title="Editar" onclick="openInvestClassModal(${jsArg(c.id)})">✎</button>
@@ -9144,6 +9233,10 @@ async function deleteInvestClass(id) {
   const usos = investClassUsage(id);
   const remover = destino => {
     if (destino) {
+      // v87: com ponto de partida, o destino recomeça hoje com a soma das duas
+      const agora = new Date(), cartAntes = getCarteira(agora.getFullYear(), agora.getMonth());
+      const reancorar = !!(c.ancora || (getInvestClass(destino) || {}).ancora);
+      const somaHoje = (cartAntes.porClasse[id] || 0) + (cartAntes.porClasse[destino] || 0);
       // Resolve a classe de cada aporte ANTES de remover (lançamentos antigos
       // dependem de fallback) e grava o destino explicitamente.
       const move = it => {
@@ -9161,6 +9254,7 @@ async function deleteInvestClass(id) {
       });
       const origemOp = safeNum(c.opening, 0), dest = getInvestClass(destino);
       if (origemOp > 0 && dest) dest.opening = safeNum(dest.opening, 0) + origemOp;
+      if (reancorar && dest) { dest.ancora = novaAncoraClasse(destino, somaHoje); delete dest.market; }
     }
     db.investClasses = getInvestClasses().filter(x => x.id !== id);
     saveDB();
@@ -11838,7 +11932,7 @@ function renderFutureCommitment() {
   // v68: patrimônio = conta hoje + carteira a mercado (antes só a carteira:
   // quem tinha pouco investido via um "patrimônio" negativo assustador)
   const agora = new Date();
-  const patrimonio = getContaExibida(agora.getFullYear(), agora.getMonth()) + getCarteiraMercado().mercado;
+  const patrimonio = getContaExibida(agora.getFullYear(), agora.getMonth()) + getCarteiraMercado().mercado - aDevolverEm(agora.getFullYear(), agora.getMonth());
   const liquido = patrimonio - fc.total;
   const lCls = liquido >= 0 ? 'pos' : 'neg';
   const rows = fc.list.map(i => `
@@ -11943,6 +12037,7 @@ function renderProfitability() {
     <div class="cart-head">
       <h2>Sua carteira <span class="muted" style="font-weight:400; font-size:0.82rem">— quanto vale e quanto rendeu</span></h2>
       <div class="cart-actions">
+        <button class="btn primary" onclick="abrirConferirSaldos()">Conferir saldos</button>
         <button class="btn" onclick="openMercadoModal()">Atualizar valores de mercado</button>
         <button class="btn" onclick="openAlvoModal()">Alocação-alvo</button>
       </div>
@@ -12430,7 +12525,8 @@ function renderMoneyPanel(cur) {
   const cart = aMercado
     ? { porClasse: Object.fromEntries(Object.entries(cm.porClasse).map(([id, p]) => [id, p.mercado])), reserva: cm.reserva, investimentos: cm.investimentos, total: cm.mercado }
     : custo;
-  const patr = conta + cart.total;
+  const devolver = aDevolverEm(currentYear, currentMonth);   // v87
+  const patr = conta + cart.total - devolver;
   const rendCarteira = aMercado ? cm.mercado - cm.aplicado : 0;
   const atual = ehMesAtual(currentYear, currentMonth);
   const hojeDia = new Date().getDate();
@@ -12504,6 +12600,8 @@ function renderMoneyPanel(cur) {
           cart.reserva > 0 && gastoMedio > 0
             ? `<div class="money-prog"><span style="width:${reservaProg * 100}%;background:${corReserva}"></span></div>` : '') : ''}
       ${linha('var(--accent)', 'Investimentos', cart.investimentos, investSub)}
+      ${devolver > 0 ? linha('var(--text-muted)', 'Talvez tenha que devolver', -devolver,
+          `Está na conta, mas não entra no patrimônio · <button type="button" class="link-btn" onclick="abrirConferirSaldos()">resolver</button>`) : ''}
       ${rodape ? `<p class="money-foot">${rodape}</p>` : ''}
       <button type="button" class="link-btn money-link" onclick="navTo('investimentos')">Ver investimentos ›</button>
     </section>`;
@@ -13109,6 +13207,24 @@ function renderRecentActivity() {
   .input-group label.v86-check, .v86-check { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; font-size: .9rem; text-transform: none; letter-spacing: normal; font-weight: 600; color: var(--text); }
   .v86-check small { text-transform: none; letter-spacing: normal; font-weight: 400; }
   .v86-check small { display: block; color: var(--text-muted); font-size: .76rem; margin-top: 2px; }
+
+  /* v87 · Conferir saldos */
+  #modalBox:has(.conferir) { max-width: 640px; }
+  .conferir h4 { margin: 14px 0 6px; font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+  .conferir h4:first-child { margin-top: 0; }
+  .conferir-linha { display: grid; grid-template-columns: 1fr 132px; gap: 4px 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border-soft); }
+  .conferir-linha .nome { font-weight: 600; font-size: .92rem; display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .conferir-linha .nome span:last-child { overflow-wrap: anywhere; line-height: 1.25; }
+  .conferir-linha .noapp { grid-column: 1; font-size: .76rem; color: var(--text-muted); }
+  .conferir-linha input { grid-column: 2; grid-row: 1 / 3; text-align: right; font-weight: 600; }
+  .conferir-linha.mudou input { border-color: var(--primary) !important; box-shadow: 0 0 0 2px var(--primary-tint, rgba(124,58,237,.15)); }
+  .conferir-dif { font-size: .76rem; color: var(--primary); }
+  .conferir-dev { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 8px 0; border-bottom: 1px solid var(--border-soft); font-size: .9rem; }
+  .conferir-dev .acoes { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .conferir-novo { display: grid; grid-template-columns: 1fr 120px; gap: 8px; margin-top: 8px; }
+  .conferir-novo select { grid-column: 1 / 3; }
+  .conferir-nota { font-size: .8rem; color: var(--text-muted); margin: 12px 0 0; line-height: 1.5; }
+  .conferir-chamada { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 12px; padding: 12px; border-radius: 12px; background: var(--primary-tint, rgba(124,58,237,.08)); font-size: .88rem; }
   /* v74 · Importar extrato */
   #modalBox:has(.extrato-revisao) { max-width: 720px; }
   .extrato-opcoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 12px; }
@@ -14880,12 +14996,13 @@ function ansPatrimonio() {
   const { Y, M, D } = assistHoje();
   const conta = getSaldoAcumulado(Y, M, D);
   const cm = getCarteiraMercado();
-  const total = conta + cm.mercado;
+  const dev = aDevolverEm(Y, M);   // v87
+  const total = conta + cm.mercado - dev;
   return `Seu patrimônio é <span class="num">${fmt(total)}</span>:<br>${assistLista([
     `Em conta: ${fmt(conta)}`,
     `Reserva de emergência: ${fmt(cm.reserva)}`,
     `Investimentos: ${fmt(cm.investimentos)}`
-  ])}${cm.temMercado && !cm.legado ? `<br>A carteira está a preço de mercado: ${cm.mercado - cm.aplicado >= 0 ? '+' : '−'}${fmt(Math.abs(cm.mercado - cm.aplicado))} sobre o aplicado.` : ''}`;
+  ].concat(dev > 0 ? [`Talvez tenha que devolver: −${fmt(dev)} (está na conta)`] : []))}${cm.temMercado && !cm.legado ? `<br>A carteira está a preço de mercado: ${cm.mercado - cm.aplicado >= 0 ? '+' : '−'}${fmt(Math.abs(cm.mercado - cm.aplicado))} sobre o aplicado.` : ''}`;
 }
 function ansFatura(t, n) {
   const { Y, M, D, mes } = assistHoje();
@@ -15202,7 +15319,14 @@ function fatorIndice(serie, t0, dia0, fim) {
 function fluxosCarteira() {
   const out = {};
   const add = (id, t, dia, v, datado) => { if (id && Math.abs(v) >= 0.005) (out[id] = out[id] || []).push({ t, dia, v, datado }); };
+  const anc = {};
   getInvestClasses().forEach(c => {
+    const a = ancoraClasse(c);
+    if (a) {   // v87: a conferência é o ponto de partida (como um saldo inicial naquela data)
+      anc[c.id] = a;
+      add(c.id, a.t, a.dia, a.value, true);
+      return;
+    }
     const op = safeNum(c.opening, 0);
     if (op <= 0) return;
     const d = isoDay(c.openingDate) || (c.market && isoDay(c.market.date)) || todayISO();
@@ -15210,15 +15334,16 @@ function fluxosCarteira() {
     add(c.id, y * 12 + m - 1, dd, op, true);
   });
   const ini = firstDataMonth(), f = investFimAtual(), fim = f.y * 12 + f.m;
+  Object.entries(anc).forEach(([id, a]) => fluxosDepoisDaAncora(id, a, fim, (t, dia, v, datado) => add(id, t, dia, v, datado)));
   if (ini != null) for (let t = ini; t <= fim && t - ini < 1200; t++) {
     const md = getMonthData(Math.floor(t / 12), t % 12), resto = { ...(md.porClasse || {}) };
     (md.aportes || []).forEach(it => {
       const d = isoDay(it.date);
-      if (!d || !it.investClass) return;
+      if (!d || !it.investClass || anc[it.investClass]) return;
       add(it.investClass, t, Number(d.slice(8, 10)) || 15, it.value, true);
       resto[it.investClass] = (resto[it.investClass] || 0) - it.value;
     });
-    Object.entries(resto).forEach(([id, v]) => add(id, t, 15, v, false));
+    Object.entries(resto).forEach(([id, v]) => { if (!anc[id]) add(id, t, 15, v, false); });
   }
   return out;
 }
@@ -15833,6 +15958,193 @@ window.openIndicesManual = openIndicesManual;
     };
   }
 })();
+</script>
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// v87 · CONFERIR SALDOS — uma tela com cada conta e cada investimento: o que
+// o app tem × o que você tem hoje. Conta corrigida → novo saldo de hoje (âncora
+// da conta). Investimento corrigido → ponto de partida da classe (c.ancora).
+// Nenhum gasto/aporte/entrada é criado; meses anteriores não mudam.
+// "Talvez tenha que devolver" (db.aDevolver): dinheiro que está na conta mas
+// pode não ser seu — fica na conta (bate com o banco) e sai do patrimônio a
+// partir da data em que chegou; resolvido, vale da data da resolução em diante.
+// ══════════════════════════════════════════════════════════════════════
+function aDevolverLista() {
+  if (!Array.isArray(db.aDevolver)) return [];
+  const iso = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
+  db.aDevolver = db.aDevolver.filter(x => x && typeof x.desc === 'string' && Number.isFinite(x.valor) && x.valor > 0 && iso(x.data)
+    && (!x.resolvido || (iso(x.resolvido.data) && ['meu', 'devolvido'].includes(x.resolvido.como))));
+  return db.aDevolver;
+}
+function aDevolverEm(y, m) {
+  const fim = isoDay(new Date(y, m + 1, 0));
+  return aDevolverLista().filter(x => x.data <= fim && !(x.resolvido && x.resolvido.data <= fim)).reduce((a, x) => a + x.valor, 0);
+}
+function abrirConferirSaldos() {
+  const now = new Date(), Y = now.getFullYear(), M = now.getMonth(), D = now.getDate();
+  const contas = getContas(), classes = getInvestClasses(), cm = getCarteiraMercado();
+  const linha = (id, cor, nome, valor, sub) => `
+    <div class="conferir-linha" data-atual="${valor}">
+      <div class="nome"><span class="method-row-dot" style="background:${safeColor(cor)}"></span><span>${escapeHtml(nome)}</span></div>
+      <div class="noapp">no app: ${fmt(valor)}${sub ? ` · ${sub}` : ''} <span class="conferir-dif"></span></div>
+      <input id="${id}" type="text" inputmode="decimal" value="${escapeHtml(fmtInput(valor))}" aria-label="Quanto tem hoje em ${escapeHtml(nome)}">
+    </div>`;
+  const abertos = aDevolverLista().filter(x => !x.resolvido);
+  const optsConta = contas.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.nome)}</option>`).join('');
+  modal.show('Conferir saldos', `
+    <div class="conferir">
+      <p class="muted" style="margin:0 0 10px;font-size:.86rem">Abra o app do banco e da corretora e corrija só o que estiver diferente. Nada vira gasto nem aporte: o app passa a contar a partir de hoje, e os meses anteriores ficam como estão.</p>
+      <h4>Contas</h4>
+      ${contas.map(c => linha('cfC_' + c.id, c.cor, c.nome, Math.round(getSaldoAcumulado(Y, M, D, c.id) * 100) / 100)).join('')}
+      <h4>Investimentos e dinheiro guardado</h4>
+      ${classes.map(c => { const pc = cm.porClasse[c.id] || { mercado: 0, informado: false };
+        return linha('cfI_' + c.id, c.color, c.label, Math.round(pc.mercado * 100) / 100, pc.informado ? 'a mercado' : (c.reserve ? 'reserva' : '')); }).join('')}
+      <button type="button" class="link-btn" style="margin-top:8px" onclick="conferirNovoLugar()">+ Tenho dinheiro em outro lugar</button>
+      <h4>Talvez tenha que devolver</h4>
+      ${abertos.length ? abertos.map(x => `
+        <div class="conferir-dev"><div><strong>${escapeHtml(x.desc)}</strong> · ${fmt(x.valor)}<div class="muted" style="font-size:.76rem">na conta ${escapeHtml((getConta(x.conta) || {}).nome || '—')} desde ${x.data.split('-').reverse().join('/')}</div></div>
+          <div class="acoes"><button type="button" class="btn" onclick="resolverDevolver(${jsArg(x.id)}, 'meu')">É meu</button><button type="button" class="btn" onclick="resolverDevolver(${jsArg(x.id)}, 'devolvido')">Devolvi</button></div></div>`).join('')
+        : '<p class="muted" style="font-size:.84rem;margin:0">Dinheiro que está na conta mas pode não ser seu. Ele continua no saldo (bate com o banco) e fica fora do seu patrimônio até você resolver.</p>'}
+      <div class="conferir-novo">
+        <input id="cfDevDesc" type="text" maxlength="80" placeholder="Ex.: dinheiro do projeto">
+        <input id="cfDevValor" type="text" inputmode="decimal" placeholder="0,00" aria-label="Valor que talvez devolva">
+        ${contas.length > 1 ? `<select id="cfDevConta" aria-label="Em qual conta">${optsConta}</select>` : ''}
+      </div>
+      <p class="conferir-nota">Se esse dinheiro foi lançado como <strong>entrada</strong>, ele também aparece na sobra do mês — edite ou exclua a entrada em Gastos no mês.</p>
+    </div>`, {
+    confirmLabel: 'Salvar conferência',
+    onConfirm: () => salvarConferencia()
+  });
+  // mostra a diferença enquanto digita
+  document.querySelectorAll('.conferir-linha').forEach(l => {
+    const inp = l.querySelector('input'), dif = l.querySelector('.conferir-dif'), atual = Number(l.dataset.atual);
+    const upd = () => {
+      const v = parseMoneyBR(inp.value), d = Number.isFinite(v) ? v - atual : 0, mudou = Math.abs(d) >= 0.005;
+      l.classList.toggle('mudou', mudou);
+      dif.textContent = mudou ? `→ ${d > 0 ? '+' : '−'}${fmt(Math.abs(d))}` : '';
+    };
+    inp.addEventListener('input', upd);
+  });
+}
+function salvarConferencia() {
+  const now = new Date(), Y = now.getFullYear(), M = now.getMonth(), D = now.getDate();
+  let mudou = 0;
+  for (const c of getContas()) {
+    const v = readMoney('cfC_' + c.id);
+    if (!Number.isFinite(v)) { toast(`Valor inválido em ${c.nome}`, 'error'); return false; }
+    if (Math.abs(v - getSaldoAcumulado(Y, M, D, c.id)) >= 0.005) {
+      const conta = contasDB().find(x => x.id === c.id);
+      if (conta) { definirAncoraConta(conta, { anchorKey: getKey(Y, M), anchorDate: todayISO(), value: v, ts: Date.now() }); mudou++; }
+    }
+  }
+  const cm = getCarteiraMercado();
+  for (const c of getInvestClasses()) {
+    const v = readMoney('cfI_' + c.id);
+    if (!Number.isFinite(v) || v < 0) { toast(`Valor inválido em ${c.label}`, 'error'); return false; }
+    const atual = (cm.porClasse[c.id] || { mercado: 0 }).mercado;
+    if (Math.abs(v - atual) >= 0.005) { c.ancora = novaAncoraClasse(c.id, v); delete c.market; mudou++; }
+  }
+  const dv = readMoney('cfDevValor');
+  if (Number.isFinite(dv) && dv > 0) {
+    db.aDevolver = aDevolverLista();
+    db.aDevolver.push({ id: Date.now(), desc: (document.getElementById('cfDevDesc').value.trim() || 'Dinheiro a confirmar').slice(0, 80),
+      valor: Math.round(dv * 100) / 100, conta: (document.getElementById('cfDevConta') || {}).value || getContas()[0].id, data: todayISO() });
+    mudou++;
+  }
+  db.conferidoEm = todayISO();
+  depoisDeConferir();
+  toast(mudou ? `Conferência salva — ${mudou} ajuste${mudou === 1 ? '' : 's'}` : 'Tudo batia — conferência registrada', 'success', 3500);
+}
+function depoisDeConferir() {
+  saveDB();
+  if (typeof updateContaHojeHint === 'function') updateContaHojeHint();
+  if (typeof renderAll === 'function') renderAll();
+  else if (typeof renderDashboard === 'function') renderDashboard();
+}
+function resolverDevolver(id, como) {
+  const x = aDevolverLista().find(i => i.id === Number(id));
+  if (!x) return;
+  x.resolvido = { data: todayISO(), como };
+  modal.close();
+  depoisDeConferir();
+  if (como === 'devolvido') {
+    toast('Agora informe o saldo da conta depois da devolução', 'info', 3500);
+    setTimeout(() => ajustarSaldoConta(x.conta), 250);
+  } else toast(`${x.desc} agora conta no seu patrimônio`, 'success');
+}
+function conferirNovoLugar() {
+  modal.show('Onde está esse dinheiro?', `
+    <p class="muted" style="margin:0 0 12px;font-size:.88rem">Crie e depois volte para conferir os saldos.</p>
+    <div style="display:grid;gap:8px">
+      <button type="button" class="btn" onclick="modal.close(); setTimeout(() => openContaModal(), 200)">Conta no banco (corrente, digital, carteira)</button>
+      <button type="button" class="btn" onclick="modal.close(); setTimeout(() => openInvestClassModal(), 200)">Investimento ou caixinha (CDB, Tesouro, ações, cofrinho)</button>
+    </div>`, { showFooter: false });
+}
+// Classe conferida: o "saldo inicial" deixa de ser editável (vale o ponto de partida)
+(function () {
+  const orig = window.openInvestClassModal;
+  if (typeof orig !== 'function') return;
+  const novo = function (id) {
+    const r = orig.apply(this, arguments);
+    try {
+      const c = id != null ? getInvestClass(id) : null, a = c && ancoraClasse(c), inp = document.getElementById('icOpening');
+      if (a && inp) {
+        const grp = inp.closest('.input-group') || inp.parentElement;
+        grp.style.display = 'none';
+        grp.insertAdjacentHTML('afterend', `<p class="muted" style="font-size:.84rem;margin:0 0 12px">Saldo conferido em ${a.date.split('-').reverse().join('/')}: <strong>${fmt(a.value)}</strong>. Para corrigir, use <button type="button" class="link-btn" onclick="modal.close(); setTimeout(abrirConferirSaldos, 200)">Conferir saldos</button>.</p>`);
+      }
+    } catch (e) { console.warn('[v87 classe]', e); }
+    return r;
+  };
+  window.openInvestClassModal = novo;
+  openInvestClassModal = novo;
+})();
+// Radar: lembrete mensal de conferir
+(function () {
+  const orig = window.computeRadar;
+  if (typeof orig !== 'function') return;
+  const novo = function () {
+    const base = orig.apply(this, arguments);
+    try {
+      const h = new Date(), ign = (db.radar && db.radar.ignorados) || {};
+      const id = `conferir:${h.getFullYear()}-${h.getMonth()}`;
+      const ultimo = /^\d{4}-\d{2}-\d{2}$/.test(String(db.conferidoEm || '')) ? parseLocalDate(db.conferidoEm) : null;
+      const dias = ultimo ? Math.floor((h - ultimo) / 864e5) : null;
+      const ini = firstDataMonth(), usaHaUmMes = ini != null && ini < h.getFullYear() * 12 + h.getMonth();
+      const temValor = getContas().some(c => c.ancora) || getInvestClasses().some(c => (getCarteira(h.getFullYear(), h.getMonth()).porClasse[c.id] || 0) > 0);
+      if (!ign[id] && temValor && (dias == null ? usaHaUmMes : dias >= 30)) base.push({
+        id, ritmo: 'mes', nivel: 'info', icone: '🧮',
+        titulo: dias == null ? 'Seus saldos batem com o banco?' : `Faz ${dias} dias que você não confere seus saldos`,
+        texto: 'Leva um minuto: compare contas e investimentos com o app do banco e corrija o que mudou.',
+        acoes: [{ rotulo: 'Conferir agora', fn: 'abrirConferirSaldos()' }]
+      });
+      (aDevolverLista().filter(x => !x.resolvido)).forEach(x => {
+        const did = `devolver:${x.id}:${h.getFullYear()}-${h.getMonth()}`;
+        if (!ign[did]) base.push({ id: did, ritmo: 'mes', nivel: 'info', icone: '↩️',
+          titulo: `${escapeHtml(x.desc)}: talvez devolva ${fmt(x.valor)}`,
+          texto: 'Está na conta e fora do seu patrimônio até você decidir.',
+          acoes: [{ rotulo: 'Resolver', fn: 'abrirConferirSaldos()' }] });
+      });
+    } catch (e) { console.warn('[v87 radar]', e); }
+    return base;
+  };
+  window.computeRadar = novo;
+  computeRadar = novo;
+})();
+// Assistente: "quanto tenho" avisa do que talvez devolva
+(function () {
+  const orig = window.ansConta;
+  if (typeof orig !== 'function') return;
+  const novo = function () {
+    const r = orig.apply(this, arguments);
+    const h = new Date(), dev = aDevolverEm(h.getFullYear(), h.getMonth());
+    return dev > 0 && typeof r === 'string' ? r + `<br>Disso, ${fmt(dev)} talvez você tenha que devolver.` : r;
+  };
+  window.ansConta = novo;
+})();
+window.abrirConferirSaldos = abrirConferirSaldos;
+window.resolverDevolver = resolverDevolver;
+window.conferirNovoLugar = conferirNovoLugar;
 </script>
 </body>
 </html>
