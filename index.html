@@ -6204,7 +6204,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v97';
+const APP_VERSION = 'v98';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -18331,7 +18331,7 @@ button.ios-mini { cursor: pointer; }
       const R = 42, C = 2 * Math.PI * R; let acc = 0;
       const arcos = fatias.map(f => { const len = f.v / tot * C, gap = fatias.length > 1 ? Math.min(2.2, len * 0.3) : 0;
         const a = `<circle r="${R}" cx="60" cy="60" fill="none" stroke="${f.cor}" stroke-width="15" stroke-dasharray="${Math.max(0, len - gap).toFixed(2)} ${C.toFixed(2)}" stroke-dashoffset="${(-acc).toFixed(2)}" transform="rotate(-90 60 60)"/>`; acc += len; return a; }).join('');
-      const leg = fatias.map(f => `<div class="ios-leg-i"><i style="background:${f.cor}"></i><span>${esc(f.nome)}</span><b>${(f.v / tot * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</b></div>`).join('');
+      const leg = fatias.map(f => `<div class="ios-leg-i"${f.nome !== 'Outros' ? ` role="button" tabindex="0" style="cursor:pointer" onclick="iosVerCategoria(${jsArg(f.nome)})"` : ''}><i style="background:${f.cor}"></i><span>${esc(f.nome)}</span><b>${(f.v / tot * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</b></div>`).join('');
       resto += `<div class="ios-sec">Gastos de ${mes}<button type="button" class="ios-mais" onclick="navTo('gastos')">ver tudo ›</button></div>
         <div class="ios-card"><div class="ios-rosca"><svg viewBox="0 0 120 120" role="img" aria-label="Gastos por categoria">${arcos}
           <text x="60" y="56" text-anchor="middle" font-size="9" fill="var(--text-muted)" font-weight="600">Total</text>
@@ -19313,6 +19313,224 @@ button.ios-mini { cursor: pointer; }
   window.iosGraficosFechar = () => fechar(false);
   window.addEventListener('popstate', () => fechar(true));
   document.addEventListener('keydown', e => { if (e.key === 'Escape') fechar(false); });
+})();
+</script>
+<style id="v98-gastos">
+/* v98 · Gastos do mês: extrato completo, cartões, filtros em folha */
+.gs-cartoes { display: flex; gap: 10px; overflow-x: auto; scrollbar-width: none; margin: 0 0 12px; }
+.gs-cartoes::-webkit-scrollbar { display: none; }
+.gs-cartao { flex: 0 0 auto; min-width: 230px; max-width: 280px; background: var(--surface); border-radius: 18px; padding: 12px 14px; border: 0; text-align: left; font: inherit; color: var(--text); cursor: pointer; display: flex; gap: 10px; align-items: flex-start; }
+.gs-cartao.on { box-shadow: inset 0 0 0 2px var(--primary); }
+.gs-cartao > .ios-av { width: 34px; height: 34px; font-size: .8rem; flex: none; display: flex; }
+.gs-cartao b { display: block; font-size: 1.05rem; margin-top: 1px; white-space: nowrap; }
+.gs-cartao > div > span { display: block; font-size: .74rem; color: var(--text-muted); line-height: 1.35; }
+.gs-cartao > div > span.l { font-weight: 600; color: var(--text); font-size: .8rem; }
+.ios-mini small { display: block; font-size: .7rem; color: var(--text-muted); margin-top: 2px; white-space: nowrap; }
+.gs-ativos { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 8px; }
+.gs-tag { border: 0; border-radius: 999px; padding: 6px 10px 6px 12px; font: 600 .8rem/1 var(--font-body); background: var(--primary); color: var(--on-primary); cursor: pointer; }
+.gs-tag::after { content: ' ×'; opacity: .7; }
+.gs-orc { background: var(--surface); border-radius: 18px; padding: 12px 14px; margin: 0 0 10px; font-size: .84rem; }
+.gs-orc .ios-barra { margin: 8px 0 0; background: var(--primary-soft); border-radius: 999px; }
+.gs-folha label { display: block; font-size: .78rem; font-weight: 600; color: var(--text-muted); margin: 12px 2px 6px; }
+.gs-folha select { width: 100%; }
+@media (max-width: 768px) { #gastos.ios-pronto > .gs-esconde { display: none !important; } }
+</style>
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// v98 · GASTOS DO MÊS NO CELULAR — extrato completo (entradas em verde no
+// meio dos gastos), cartões com a fatura aberta e a que vence no mês, uma
+// linha de filtros + folha "Filtrar" (forma, conta, categoria, ordem), busca
+// também por valor, "até hoje × ainda vão sair" e o orçamento da categoria
+// filtrada. Tocar numa categoria da rosca da Início abre a lista filtrada.
+// Mesmas funções de cálculo (getMonthData, comprasCreditoDoMes,
+// faturasPagasEm, datasFatura); redesenha o #gastosIOS da v92.
+// ══════════════════════════════════════════════════════════════════════
+(function () {
+  const $ = id => document.getElementById(id);
+  const esc = escapeHtml;
+  const celular = () => window.matchMedia('(max-width: 768px)').matches;
+  const escura = c => { const m = /^#?([0-9a-f]{6})$/i.exec(String(c || '')); if (!m) return false; const n = parseInt(m[1], 16); return (0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255 < 0.22; };
+  const av = (t, c, alt) => (window.marcaAv && (marcaAv(t) || (alt ? marcaAv(alt) : ''))) || `<span class="ios-av" style="--c:${escura(c) ? 'var(--text)' : safeColor(c || '#8E8E93')}">${esc((String(t || '').trim()[0] || '•').toUpperCase())}</span>`;
+  const linha = (avH, nome, sub, val, clique, cls) => `<div class="ios-row" role="button" tabindex="0" onclick="${clique}" onkeydown="if(event.key==='Enter'){${clique}}">${avH}
+    <div class="ios-row-t"><div class="ios-row-n">${nome}</div>${sub ? `<div class="ios-row-s">${sub}</div>` : ''}</div><div class="ios-row-v${cls ? ' ' + cls : ''}">${val}</div></div>`;
+  let soEntradas = false, contaSel = null, catSel = null, ordem = 'data';
+  const TIPOS = [['tudo', 'Tudo'], ['entrada', 'Entradas'], ['fixo', 'Fixos'], ['parc', 'Parcelas'], ['eventual', 'Avulsos']];
+  const tipoAtual = () => soEntradas ? 'entrada' : activeFilter;
+  const contaDoItem = i => i._entrada ? contaValida(i.conta) : (i._aporte && i.conta ? contaValida(i.conta) : contaDoMetodo(i.method));
+
+  function itens(d) {
+    const gastos = [...d.items, ...(d.aportes || [])];
+    const entradas = (d.income || []).map(i => ({ ...i, _entrada: true }));
+    let l;
+    if (soEntradas) l = entradas;
+    else if (activeFilter !== 'tudo') l = gastos.filter(i => i.type === activeFilter);
+    else l = gastos.concat(entradas);
+    if (activeMethodFilter !== 'all') l = l.filter(i => !i._entrada && i.method === activeMethodFilter);
+    if (catSel) l = l.filter(i => !i._entrada && i.cat === catSel);
+    if (contaSel && getContas().some(c => c.id === contaSel)) l = l.filter(i => contaDoItem(i) === contaSel);
+    if (activeSearch) {
+      const q = activeSearch.toLowerCase().trim(), qn = q.replace(/\s/g, '').replace(/^r\$/, '');
+      const numero = /^[\d.,]+$/.test(qn) ? qn.replace(/\./g, '') : null;
+      l = l.filter(i => (i.desc || '').toLowerCase().includes(q) || (i.cat || '').toLowerCase().includes(q)
+        || (numero != null && (fmtInput(Math.abs(i.value)).startsWith(numero) || fmtInput(Math.abs(i.value)).replace(',00', '') === numero)));
+    }
+    return l;
+  }
+  function linhaItem(i, comData) {
+    const dia = isoDay(i.date) ? Number(isoDay(i.date).slice(8, 10)) : null;
+    if (i._entrada) {
+      const cs = getContas(), tags = [comData && dia ? `dia ${dia}` : '', i.recurring ? 'todo mês' : 'entrada', cs.length > 1 ? esc((getConta(i.conta) || cs[0]).nome) : '', i.provento ? 'provento' : ''].filter(Boolean);
+      return linha(av(i.desc, 'var(--pos)'), esc(i.desc), tags.join(' · '), '+' + fmt(i.value), `gsEntrada(${jsArg(i.id)}, ${i.recurring ? 'true' : 'false'})`, 'pos');
+    }
+    const tags = [comData && dia ? `dia ${dia}` : '', esc(methodLabel(i.method))];
+    if (i._aporte) tags.push(esc((getInvestClass(i.investClass) || { label: 'Investimento' }).label));
+    else if (i.cat) tags.push(esc(i.cat));
+    if (i.type === 'fixo') tags.push(methodKind(i.method) !== 'credit' && getPaidStatus(i.id, currentYear, currentMonth) ? 'fixo ✓ pago' : 'fixo');
+    if (i.type === 'parc') tags.push(esc(i.detail || 'parcela'));
+    if (i.faturaMais === 1) tags.push('próx. fatura');
+    const cor = i._aporte ? (getInvestClass(i.investClass) || {}).color : getCategoryColor(i.cat);
+    return linha(av(i.desc, cor, methodLabel(i.method)), esc(i.desc), tags.filter(Boolean).join(' · '), (i._aporte ? (i.value < 0 ? '← ' : '→ ') : '−') + fmt(Math.abs(i.value)), `iosAcoes(${jsArg(i.id)})`, i._aporte ? 'inv' : 'neg');
+  }
+  function listaHTML(d) {
+    const l = itens(d);
+    if (!l.length) return `<div class="ios-lista"><div class="ios-vazio">${activeSearch || tipoAtual() !== 'tudo' || catSel || contaSel || activeMethodFilter !== 'all' ? 'Nada encontrado com esse filtro.' : `Nenhum lançamento em ${monthsFull[currentMonth].toLowerCase()}.`}</div></div>`;
+    if (ordem === 'valor') {
+      const s = l.slice().sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+      return `<div class="ios-dia">Do maior para o menor</div><div class="ios-lista">${s.map(i => linhaItem(i, true)).join('')}</div>`;
+    }
+    const hoje = todayISO(), dia = i => isoDay(i.date) || '';
+    const feitos = l.filter(i => dia(i) <= hoje).sort((a, b) => dia(b).localeCompare(dia(a)) || Math.abs(b.value) - Math.abs(a.value));
+    const previstos = l.filter(i => dia(i) > hoje).sort((a, b) => dia(a).localeCompare(dia(b)));
+    const grupos = [];
+    feitos.forEach(i => { const k = dia(i); const g = grupos[grupos.length - 1]; if (g && g.k === k) g.it.push(i); else grupos.push({ k, it: [i] }); });
+    let out = grupos.map(g => {
+      let rot = 'Sem data';
+      if (g.k) { const r = relativeDay(g.k); rot = /^(Hoje|Ontem)$/.test(r) ? r : parseLocalDate(g.k).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' }); }
+      const sai = g.it.filter(i => !i._entrada && !i._aporte).reduce((a, i) => a + i.value, 0), ent = g.it.filter(i => i._entrada).reduce((a, i) => a + i.value, 0);
+      return `<div class="ios-dia">${esc(rot)}${sai ? ` · −${fmt(sai)}` : ''}${ent ? ` · +${fmt(ent)}` : ''}</div><div class="ios-lista">${g.it.map(i => linhaItem(i, false)).join('')}</div>`;
+    }).join('');
+    if (previstos.length) {
+      const sai = previstos.filter(i => !i._entrada && !i._aporte).reduce((a, i) => a + i.value, 0);
+      out += `<div class="ios-dia">Ainda este mês${sai ? ` · −${fmt(sai)}` : ''}</div><div class="ios-lista">${previstos.map(i => linhaItem(i, true)).join('')}</div>`;
+    }
+    return out;
+  }
+  function cartoesHTML() {
+    const Y = currentYear, M = currentMonth, aberta = comprasCreditoDoMes(Y, M), pagar = faturasPagasEm(Y, M);
+    const metodos = getMethods().filter(m => m.kind === 'credit').map(m => m.id);
+    const cards = metodos.map(id => {
+      const itensA = aberta[id] || [], totA = itensA.reduce((a, i) => a + i.value, 0), pg = pagar.find(f => f.metodo === id);
+      if (!totA && !pg) return '';
+      const dt = datasFatura(id, Y * 12 + M), nome = methodLabel(id);
+      return `<button type="button" class="gs-cartao${activeMethodFilter === id ? ' on' : ''}" onclick="gsCartao(${jsArg(id)})">${av(nome, (getMethod(id) || {}).color)}
+        <div><span class="l">${esc(nome)} · fatura de ${esc(dt.mesVence.toLowerCase())}</span><b>${fmt(totA)}</b>
+        <span>${dt.fecha ? `fecha ${dt.fecha} · ` : ''}vence ${dt.vence}</span>${pg ? `<span>a pagar dia ${pg.dia}: ${fmt(pg.valor)}</span>` : ''}</div></button>`;
+    }).join('');
+    return cards ? `<div class="gs-cartoes">${cards}</div>` : '';
+  }
+  function render() {
+    const el = $('gastosIOS'), pg = $('gastos');
+    if (!el || !pg || !celular() || typeof currentUser === 'undefined' || !currentUser || !db || !db.events) return;
+    const Y = currentYear, M = currentMonth, d = getMonthData(Y, M), hoje = todayISO();
+    const atual = new Date().getFullYear() === Y && new Date().getMonth() === M;
+    const ateHoje = d.items.filter(i => (isoDay(i.date) || '') <= hoje).reduce((a, i) => a + i.value, 0);
+    const foco = document.activeElement && document.activeElement.id === 'iosBusca';
+    const nAtivos = (activeMethodFilter !== 'all') + !!contaSel + !!catSel + (ordem !== 'data');
+    const tags = [];
+    if (activeMethodFilter !== 'all') tags.push([methodLabel(activeMethodFilter), 'gsLimpar("metodo")']);
+    if (contaSel) tags.push([(getConta(contaSel) || {}).nome || 'Conta', 'gsLimpar("conta")']);
+    if (catSel) tags.push([catSel, 'gsLimpar("cat")']);
+    if (ordem !== 'data') tags.push(['Maior valor', 'gsLimpar("ordem")']);
+    let orc = '';
+    const cat = catSel && (db.categories || []).find(c => c.name === catSel);
+    if (cat && cat.budget > 0) {
+      const usado = groupByCat(d.items)[cat.name] || 0, p = usado / cat.budget * 100;
+      orc = `<div class="gs-orc"><strong>${esc(cat.name)}</strong>: ${fmt(usado)} de ${fmt(cat.budget)} · ${usado > cat.budget ? `<span class="neg">${fmt(usado - cat.budget)} acima</span>` : `sobram ${fmt(cat.budget - usado)}`}
+        <div class="ios-barra"><span style="flex:none;width:${Math.min(100, p).toFixed(1)}%;background:${p > 100 ? 'var(--neg)' : 'var(--primary)'}"></span></div></div>`;
+    }
+    el.innerHTML = `<div class="ios-mini3">
+        <div class="ios-mini"><span>Gastos</span><b class="neg">${fmt(d.gastos)}</b>${atual && Math.abs(d.gastos - ateHoje) >= 0.005 ? `<small>${fmt(ateHoje)} até hoje</small>` : ''}</div>
+        <button type="button" class="ios-mini" onclick="gsTipo('entrada')"><span>Entradas</span><b class="pos">${fmt(d.entradas)}</b></button>
+        <div class="ios-mini"><span>Sobra</span><b class="${d.sobra >= 0 ? '' : 'neg'}">${fmt(d.sobra)}</b></div>
+        ${Math.abs(d.investido) >= 0.005 ? `<div class="ios-mini"><span>Guardado</span><b style="color:var(--invest)">${fmt(d.investido)}</b></div>` : ''}
+      </div>
+      ${atual && Math.abs(d.gastos - ateHoje) >= 0.005 ? `<p class="ios-nota" style="margin:-4px 6px 10px">${fmt(d.gastos - ateHoje)} ainda vão sair este mês (fixos, parcelas e lançamentos com data futura).</p>` : ''}
+      ${cartoesHTML()}
+      <label class="ios-busca"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>
+        <input id="iosBusca" type="search" placeholder="Buscar por nome ou valor" value="${esc(activeSearch)}" autocomplete="off" aria-label="Buscar lançamentos"></label>
+      <div class="ios-filtros">${TIPOS.map(([k, t]) => `<button type="button" class="ios-pill${tipoAtual() === k ? ' on' : ''}" onclick="gsTipo('${k}')">${t}</button>`).join('')}
+        <button type="button" class="ios-pill${nAtivos ? ' on' : ''}" onclick="gsFiltrar()">Filtrar${nAtivos ? ` (${nAtivos})` : ' ▾'}</button></div>
+      ${tags.length ? `<div class="gs-ativos">${tags.map(([t, f]) => `<button type="button" class="gs-tag" onclick='${f}' aria-label="Tirar filtro ${esc(t)}">${esc(t)}</button>`).join('')}</div>` : ''}
+      ${orc}
+      <div id="iosLista">${listaHTML(d)}</div>`;
+    const inp = $('iosBusca');
+    inp.oninput = () => { activeSearch = inp.value.trim(); const sb = $('searchBox'); if (sb) sb.value = inp.value; $('iosLista').innerHTML = listaHTML(getMonthData(currentYear, currentMonth)); };
+    if (foco) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+  }
+  window.gsTipo = k => {
+    soEntradas = k === 'entrada';
+    const f = soEntradas ? 'tudo' : k, b = document.querySelector(`.filterBtn[data-filter="${f}"]`);
+    if (b && typeof setFilter === 'function') setFilter(f, b); else { activeFilter = f; renderGastos(); }
+  };
+  window.gsCartao = id => { activeMethodFilter = activeMethodFilter === id ? 'all' : id; const s = $('methodFilter'); if (s) s.value = activeMethodFilter; renderGastos(); };
+  window.gsLimpar = q => {
+    if (q === 'metodo') { activeMethodFilter = 'all'; const s = $('methodFilter'); if (s) s.value = 'all'; }
+    if (q === 'conta') contaSel = null;
+    if (q === 'cat') catSel = null;
+    if (q === 'ordem') ordem = 'data';
+    renderGastos();
+  };
+  window.gsFiltrar = function () {
+    const d = getMonthData(currentYear, currentMonth), porCat = groupByCat(d.items);
+    const cats = (db.categories || []).map(c => c.name).sort((a, b) => (porCat[b] || 0) - (porCat[a] || 0) || a.localeCompare(b, 'pt-BR'));
+    const op = (v, t, sel) => `<option value="${esc(v)}"${sel ? ' selected' : ''}>${esc(t)}</option>`;
+    modal.show('Filtrar', `<div class="gs-folha">
+      <label for="gsMet">Forma de pagamento</label><select id="gsMet">${op('all', 'Todas', activeMethodFilter === 'all')}${getMethods().map(m => op(m.id, m.label, activeMethodFilter === m.id)).join('')}</select>
+      ${getContas().length > 1 ? `<label for="gsConta">Conta</label><select id="gsConta">${op('', 'Todas', !contaSel)}${getContas().map(c => op(c.id, c.nome, contaSel === c.id)).join('')}</select>` : ''}
+      <label for="gsCat">Categoria</label><select id="gsCat">${op('', 'Todas', !catSel)}${cats.map(c => op(c, porCat[c] ? `${c} · ${fmt(porCat[c])}` : c, catSel === c)).join('')}</select>
+      <label for="gsOrdem">Ordem</label><select id="gsOrdem">${op('data', 'Por data (mais recentes primeiro)', ordem === 'data')}${op('valor', 'Maior valor primeiro', ordem === 'valor')}</select>
+      <button type="button" class="link-btn" style="margin-top:14px" onclick="gsLimparTudo()">Limpar filtros</button></div>`, {
+      confirmLabel: 'Aplicar',
+      onConfirm: () => {
+        activeMethodFilter = $('gsMet').value; const s = $('methodFilter'); if (s) s.value = activeMethodFilter;
+        contaSel = $('gsConta') ? ($('gsConta').value || null) : null;
+        catSel = $('gsCat').value || null;
+        ordem = $('gsOrdem').value;
+        setTimeout(renderGastos, 0);
+      }
+    });
+  };
+  window.gsLimparTudo = () => { activeMethodFilter = 'all'; contaSel = null; catSel = null; ordem = 'data'; const s = $('methodFilter'); if (s) s.value = 'all'; modal.close(); renderGastos(); };
+  window.gsEntrada = function (id, recorrente) {
+    if (recorrente) { if (typeof fxEditar === 'function') fxEditar('r', id, currentYear * 12 + currentMonth); return; }
+    const key = getKey(currentYear, currentMonth), it = (db.income[key] || []).find(x => x.id === Number(id));
+    if (!it) return;
+    const pid = jsArg(it.id), k = jsArg(key);
+    modal.show(it.desc, `<div class="ios-sheet"><div class="ios-sheet-top"><b class="pos">+${fmt(it.value)}</b><span>${esc(fmtDate(it.date))}${it.provento ? ' · provento' : ''}</span></div>
+      <button type="button" onclick="modal.close(); setTimeout(() => fxEditarEntrada(${k}, ${pid}), 220)">Editar</button>
+      <button type="button" class="perigo" onclick="modal.close(); setTimeout(() => fxExcluirEntrada(${k}, ${pid}), 220)">Excluir</button></div>`, { showFooter: false });
+  };
+  window.iosVerCategoria = nome => {
+    catSel = nome; soEntradas = false;
+    const b = document.querySelector('.filterBtn[data-filter="tudo"]');
+    activeFilter = 'tudo'; if (b) document.querySelectorAll('.filterBtn').forEach(x => x.classList.toggle('active', x === b));
+    navTo('gastos');
+    setTimeout(() => { renderGastos(); window.scrollTo(0, 0); }, 60);
+  };
+  // Mês novo: filtros de categoria/conta/ordem valem só para a visita atual
+  let mesVisto = null;
+  const rg = window.renderGastos;
+  if (typeof rg === 'function') renderGastos = window.renderGastos = function () {
+    const x = rg.apply(this, arguments);
+    try {
+      const k = currentYear * 12 + currentMonth;
+      if (mesVisto != null && mesVisto !== k) { /* mantém filtros ao trocar de mês: são escolhas de visualização */ }
+      mesVisto = k;
+      render();
+    } catch (e) { console.warn('[v98 gastos]', e); }
+    return x;
+  };
+  window.addEventListener('load', () => setTimeout(() => { try { render(); } catch (e) { console.warn('[v98]', e); } }, 650));
 })();
 </script>
 </body>
