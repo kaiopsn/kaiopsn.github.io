@@ -6204,7 +6204,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v94';
+const APP_VERSION = 'v95';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -18901,6 +18901,148 @@ button.ios-mini { cursor: pointer; }
   }, true);
   let larg = celular();
   window.addEventListener('resize', () => { if (celular() !== larg) { larg = celular(); try { montarConfig(); seccionarFixos(); } catch (e) {} } });
+})();
+</script>
+<style id="v95-ios-telas">
+/* v95 · Categorias e Comparar meses no celular */
+#catIOS, #refIOS { display: none; }
+.ios-mini2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ios-mini2 .ios-mini { min-width: 0; }
+.ios-mini2 .ios-mini b { white-space: normal; font-size: .92rem; }
+.cat-sheet label { display: block; font-size: .78rem; font-weight: 600; color: var(--text-muted); margin: 12px 2px 6px; }
+.cat-sheet select, .cat-sheet input[type="text"] { width: 100%; }
+.cat-sheet input[type="color"] { width: 100%; height: 44px; padding: 4px; border-radius: 12px; }
+.cat-sheet .ios-acoes2 { margin-top: 18px; }
+@media (max-width: 768px) {
+  #categorias.ios-pronto > #catIOS, #referencia.ios-pronto > #refIOS { display: block; }
+  #categorias.ios-pronto > .cat-month-header, #categorias.ios-pronto > .panel.cat-velho { display: none !important; }
+  #categorias.ios-pronto > .page-sub, #referencia.ios-pronto > .page-sub { display: none; }
+  #referencia.ios-pronto > :not(h1):not(#refIOS) { display: none !important; }
+  #categorias .method-row .ios-av { width: 34px; height: 34px; font-size: .85rem; }
+}
+</style>
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// v95 · CATEGORIAS E COMPARAR MESES NO CELULAR — mesmo desenho das outras
+// abas. Categorias: cartão do mês (gasto e orçamento), categorias por grupo
+// em linhas (toque abre a folha para mudar grupo, cor, orçamento, renomear
+// ou excluir — com as mesmas funções de antes); formas de pagamento em
+// seção. Comparar: mês em pílulas, cartão com a diferença, maior aumento e
+// maior redução, e a lista por categoria. Mesmos números da tela antiga.
+// ══════════════════════════════════════════════════════════════════════
+(function () {
+  const $ = id => document.getElementById(id);
+  const celular = () => window.matchMedia('(max-width: 768px)').matches;
+  const esc = escapeHtml;
+  const escura = c => { const m = /^#?([0-9a-f]{6})$/i.exec(String(c || '')); if (!m) return false; const n = parseInt(m[1], 16); return (0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255 < 0.22; };
+  const corAv = c => escura(c) ? 'var(--text)' : safeColor(c || '#8E8E93');
+  const av = (t, c) => `<span class="ios-av" style="--c:${corAv(c)}">${esc((String(t || '').trim()[0] || '•').toUpperCase())}</span>`;
+  const linha = (avH, nome, sub, val, sub2, clique, cls) => `<div class="ios-row"${clique ? ` role="button" tabindex="0" onclick="${clique}" onkeydown="if(event.key==='Enter'){${clique}}"` : ''}>${avH}
+    <div class="ios-row-t"><div class="ios-row-n">${nome}</div>${sub ? `<div class="ios-row-s">${sub}</div>` : ''}</div>
+    <div class="ios-row-v${cls ? ' ' + cls : ''}">${val}${sub2 ? `<small>${sub2}</small>` : ''}</div></div>`;
+  const pct0 = v => Math.round(v) + '%';
+
+  // ── CATEGORIAS ───────────────────────────────────────────────────────
+  function montarCat() {
+    const pg = $('categorias');
+    if (!pg || !celular() || typeof currentUser === 'undefined' || !currentUser || !db || !db.categories) return;
+    const lista = $('categoriesList'), velho = lista && lista.closest('.panel');
+    if (velho) velho.classList.add('cat-velho');
+    let el = $('catIOS');
+    if (!el) { el = document.createElement('div'); el.id = 'catIOS'; (pg.querySelector(':scope > .cat-month-header') || pg.querySelector('h1')).insertAdjacentElement('afterend', el); }
+    const Y = currentYear, M = currentMonth, mes = monthsFull[M].toLowerCase(), d = getMonthData(Y, M), gasto = groupByCat(d.items);
+    const comOrc = db.categories.filter(c => c.budget > 0), orcT = comOrc.reduce((a, c) => a + c.budget, 0), usado = comOrc.reduce((a, c) => a + (gasto[c.name] || 0), 0);
+    const p = orcT > 0 ? usado / orcT * 100 : 0;
+    const hero = `<div class="ios-card ios-hero"><div class="ios-l">Gastos de ${mes}</div><div class="ios-v">${fmt(d.gastos)}</div>
+      ${orcT > 0 ? `<div class="ios-barra" style="background:var(--primary-soft);border-radius:999px"><span style="flex:none;width:${Math.min(100, p).toFixed(1)}%;background:${p > 100 ? 'var(--neg)' : 'var(--primary)'}"></span></div>
+        <div class="ios-s">${fmt(usado)} de ${fmt(orcT)} do orçamento (${pct0(p)})${usado > orcT ? ` · <span class="neg">${fmt(usado - orcT)} acima</span>` : ` · sobram ${fmt(orcT - usado)}`}</div>`
+        : '<div class="ios-s">Defina um orçamento numa categoria para acompanhar quanto ainda pode gastar.</div>'}
+      <div class="ios-acoes2"><button type="button" class="ios-pill on" onclick="openNewCategoryModal()">+ Nova categoria</button></div></div>`;
+    const grupos = {};
+    db.categories.forEach((c, i) => { const g = c.group || 'Outros'; (grupos[g] = grupos[g] || []).push({ c, i }); });
+    const ordem = (typeof CATEGORY_GROUPS !== 'undefined' ? CATEGORY_GROUPS : []).concat(Object.keys(grupos)).filter((g, k, a) => a.indexOf(g) === k && grupos[g]);
+    const secs = ordem.map(g => `<div class="cfg-grupo">${esc(g)}</div><div class="ios-lista">${grupos[g].sort((a, b) => (gasto[b.c.name] || 0) - (gasto[a.c.name] || 0)).map(({ c, i }) => {
+      const v = gasto[c.name] || 0, b = c.budget > 0 ? c.budget : 0;
+      const sub = b ? `orçamento ${fmt(b)}` : 'sem orçamento';
+      const s2 = b ? (v > b ? `${fmt(v - b)} acima` : `sobram ${fmt(b - v)}`) : null;
+      return linha(av(c.name, c.color), esc(c.name), sub, fmt(v), s2, `catIosAbrir(${i})`, b && v > b ? 'neg' : '');
+    }).join('')}</div>`).join('');
+    el.innerHTML = hero + `<div class="ios-sec">Categorias</div><p class="ios-nota" style="margin:-4px 6px 0">Valores de ${mes}. Toque para mudar grupo, cor ou orçamento.</p>` + secs;
+    // formas de pagamento: seção iOS
+    const mp = $('methodsList') && $('methodsList').closest('.panel');
+    if (mp) mp.querySelectorAll('.method-row > .method-row-dot').forEach(dot => {
+      const nome = ((dot.parentElement.querySelector('.method-row-name') || {}).textContent || '').trim();
+      const a = document.createElement('span'); a.className = 'ios-av'; a.style.setProperty('--c', corAv(rgbHex(dot.style.background)));
+      a.textContent = (nome[0] || '•').toUpperCase(); dot.replaceWith(a);
+    });
+    pg.classList.add('ios-pronto');
+  }
+  function rgbHex(c) { c = String(c || ''); if (/^#/.test(c)) return c; const m = /rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(c); return m ? '#' + [m[1], m[2], m[3]].map(n => Number(n).toString(16).padStart(2, '0')).join('') : '#8E8E93'; }
+  window.catIosAbrir = function (i) {
+    const c = db.categories[i];
+    if (!c) return;
+    const grupos = (typeof CATEGORY_GROUPS !== 'undefined' ? CATEGORY_GROUPS : ['Outros']);
+    const v = groupByCat(getMonthData(currentYear, currentMonth).items)[c.name] || 0;
+    modal.show(c.name, `<div class="cat-sheet">
+      <div class="ios-sheet-top"><b>${fmt(v)}</b><span>gasto em ${monthsFull[currentMonth].toLowerCase()}</span></div>
+      <label for="ciGrupo">Grupo</label><select id="ciGrupo">${grupos.map(g => `<option${(c.group || 'Outros') === g ? ' selected' : ''}>${esc(g)}</option>`).join('')}</select>
+      <label for="ciOrc">Orçamento por mês</label><input id="ciOrc" type="text" inputmode="decimal" placeholder="0,00 (sem orçamento)" value="${c.budget > 0 ? esc(fmtInput(c.budget)) : ''}">
+      <label for="ciCor">Cor</label><input id="ciCor" type="color" value="${esc(safeColor(c.color))}">
+      <div class="ios-acoes2"><button type="button" class="ios-pill" onclick="modal.close(); setTimeout(() => renameCategory(${i}), 220)">Renomear</button><button type="button" class="ios-pill" style="color:var(--neg)" onclick="modal.close(); setTimeout(() => deleteCategory(${i}), 220)">Excluir</button></div></div>`, {
+      confirmLabel: 'Salvar',
+      onConfirm: () => {
+        const g = $('ciGrupo').value, o = $('ciOrc').value.trim(), cor = $('ciCor').value;
+        if (o && !(parseMoneyBR(o) >= 0)) { toast('Orçamento inválido — ex.: 600,00', 'error'); return false; }
+        if (g !== (c.group || 'Outros')) updateCategoryGroup(i, g);
+        if (cor.toLowerCase() !== String(c.color || '').toLowerCase()) updateCategoryColor(i, cor);
+        if ((parseMoneyBR(o) || 0) !== (c.budget || 0)) updateCategoryBudget(i, o || '0');
+        montarCat();
+        toast(`${c.name} atualizada`, 'success');
+      }
+    });
+  };
+
+  // ── COMPARAR MESES ───────────────────────────────────────────────────
+  function montarRef() {
+    const pg = $('referencia'), sel = $('refCompareSelect');
+    if (!pg || !sel || !celular() || typeof currentUser === 'undefined' || !currentUser || !db) return;
+    let el = $('refIOS');
+    if (!el) { el = document.createElement('div'); el.id = 'refIOS'; pg.querySelector('h1').insertAdjacentElement('afterend', el); }
+    const refIdx = parseInt(sel.value, 10), M = currentMonth, Y = currentYear;
+    if (!Number.isFinite(refIdx)) return;
+    const cur = getMonthData(Y, M), ref = getMonthData(Y, refIdx);
+    const curCat = groupByCat(cur.items), refCat = groupByCat(ref.items);
+    const dif = cur.gastos - ref.gastos, pc = ref.gastos > 0 ? dif / ref.gastos * 100 : null;
+    const cls = dif > 0 ? 'neg' : dif < 0 ? 'pos' : '';
+    const nCur = monthsFull[M], nRef = monthsFull[refIdx];
+    const pills = `<div class="ios-chips">${monthsFull.map((m, i) => i === M ? '' : `<button type="button" class="ios-pill${i === refIdx ? ' on' : ''}" onclick="refIosMes(${i})">${m.slice(0, 3)}</button>`).join('')}</div>`;
+    const cats = [...new Set([...Object.keys(curCat), ...Object.keys(refCat)])].map(c => ({ c, a: curCat[c] || 0, b: refCat[c] || 0, d: (curCat[c] || 0) - (refCat[c] || 0) }))
+      .filter(x => Math.abs(x.d) >= 0.005 || x.a > 0).sort((x, y) => Math.abs(y.d) - Math.abs(x.d));
+    const up = cats.filter(x => x.d > 0).sort((x, y) => y.d - x.d)[0], down = cats.filter(x => x.d < 0).sort((x, y) => x.d - y.d)[0];
+    const sinal = v => (v > 0 ? '+' : v < 0 ? '−' : '') + fmt(Math.abs(v));
+    el.innerHTML = `<p class="ios-nota" style="margin:-4px 6px 10px">Comparar ${nCur.toLowerCase()} com:</p>${pills}
+      <div class="ios-card ios-hero"><div class="ios-l">Gastos de ${nCur.toLowerCase()} vs ${nRef.toLowerCase()}</div>
+        <div class="ios-v ${cls}">${dif > 0 ? '↑ ' : dif < 0 ? '↓ ' : ''}${fmt(Math.abs(dif))}</div>
+        <div class="ios-s">${dif > 0 ? 'gastou mais' : dif < 0 ? 'gastou menos' : 'igual'}${pc != null ? ` · ${dif >= 0 ? '+' : '−'}${Math.abs(Math.round(pc))}%` : ''}</div>
+        <div class="ios-leg2"><div><i style="background:var(--text-soft)"></i><span>${esc(nRef)}</span><b>${fmt(ref.gastos)}</b></div><div><i style="background:var(--text)"></i><span>${esc(nCur)}</span><b>${fmt(cur.gastos)}</b></div></div></div>
+      ${up || down ? `<div class="ios-sec">Destaques</div><div class="ios-mini2">
+        ${up ? `<div class="ios-mini"><span>Maior aumento</span><b>${esc(up.c)}</b><b class="neg">${sinal(up.d)}</b></div>` : '<div></div>'}
+        ${down ? `<div class="ios-mini"><span>Maior redução</span><b>${esc(down.c)}</b><b class="pos">${sinal(down.d)}</b></div>` : '<div></div>'}</div>` : ''}
+      <div class="ios-sec">Por categoria</div>
+      ${cats.length ? `<div class="ios-lista">${cats.map(x => linha(av(x.c, getCategoryColor(x.c)), esc(x.c), `${nRef.slice(0, 3).toLowerCase()} ${fmt(x.b)} → ${nCur.slice(0, 3).toLowerCase()} ${fmt(x.a)}`, sinal(x.d), null, null, x.d > 0 ? 'neg' : x.d < 0 ? 'pos' : '')).join('')}</div>`
+        : '<div class="ios-lista"><div class="ios-vazio">Sem gastos nos dois meses.</div></div>'}`;
+    pg.classList.add('ios-pronto');
+  }
+  window.refIosMes = i => { const s = $('refCompareSelect'); if (!s) return; s.value = String(i); renderComparison(); };
+
+  // Ganchos
+  const rc = window.renderCategories;
+  if (typeof rc === 'function') { renderCategories = window.renderCategories = function () { const x = rc.apply(this, arguments); try { montarCat(); } catch (e) { console.warn('[v95 cat]', e); } return x; }; }
+  const rpm = window.renderPaymentMethods;
+  if (typeof rpm === 'function') { renderPaymentMethods = window.renderPaymentMethods = function () { const x = rpm.apply(this, arguments); try { montarCat(); } catch (e) { console.warn('[v95 formas]', e); } return x; }; }
+  const rcomp = window.renderComparison;
+  if (typeof rcomp === 'function') { renderComparison = window.renderComparison = function () { const x = rcomp.apply(this, arguments); try { montarRef(); } catch (e) { console.warn('[v95 comparar]', e); } return x; }; }
+  window.addEventListener('load', () => setTimeout(() => { try { montarCat(); montarRef(); } catch (e) { console.warn('[v95]', e); } }, 500));
 })();
 </script>
 </body>
