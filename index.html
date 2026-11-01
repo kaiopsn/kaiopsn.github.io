@@ -9,7 +9,7 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj48ZGVmcz48bGluZWFyR3JhZGllbnQgaWQ9ImciIHgxPSIwIiB5MT0iMCIgeDI9IjUxMiIgeTI9IjUxMiIgZ3JhZGllbnRVbml0cz0idXNlclNwYWNlT25Vc2UiPjxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iI2IwNmNmOSIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzRhMWI4YSIvPjwvbGluZWFyR3JhZGllbnQ+PC9kZWZzPjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiByeD0iMTEyIiBmaWxsPSJ1cmwoI2cpIi8+PHJlY3QgeD0iMzAiIHk9IjMwIiB3aWR0aD0iNDUyIiBoZWlnaHQ9IjQ1MiIgcng9Ijc4IiBmaWxsPSJub25lIiBzdHJva2U9IiNmYmJmMjQiIHN0cm9rZS13aWR0aD0iNi41IiBvcGFjaXR5PSIwLjk0Ii8+PHRleHQgeD0iMjU2IiB5PSIzMjIiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtZmFtaWx5PSJHZW9yZ2lhLHNlcmlmIiBmb250LXNpemU9IjI0NiIgZm9udC13ZWlnaHQ9IjcwMCIgZm9udC1zdHlsZT0iaXRhbGljIiBmaWxsPSIjZmJiZjI0Ij5GQTwvdGV4dD48L3N2Zz4=" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <meta name="theme-color" content="#a855f7">
+  <meta name="theme-color" content="#000000">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -2342,13 +2342,13 @@
 
     <div class="login-brand">
       <svg width="48" height="48" viewBox="0 0 36 36" fill="none">
-        <rect x="1" y="1" width="34" height="34" rx="9" fill="url(#lgGrad)" stroke="#fbbf24" stroke-width="0.6"/>
+        <rect x="1" y="1" width="34" height="34" rx="9" fill="url(#lgGrad)" stroke="#D4AF37" stroke-width="0.6"/>
         <text x="18" y="25" text-anchor="middle" font-family="Fraunces, Georgia, serif"
-          font-size="16" font-weight="600" font-style="italic" fill="#fbbf24" letter-spacing="-1">FA</text>
+          font-size="16" font-weight="600" font-style="italic" fill="#D4AF37" letter-spacing="-1">FA</text>
         <defs>
           <linearGradient id="lgGrad" x1="0" y1="0" x2="36" y2="36">
-            <stop offset="0%" stop-color="#a855f7"/>
-            <stop offset="100%" stop-color="#5b21b6"/>
+            <stop offset="0%" stop-color="#1c1b19"/>
+            <stop offset="100%" stop-color="#000000"/>
           </linearGradient>
         </defs>
       </svg>
@@ -2417,12 +2417,12 @@
     <div class="brand">
       <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
         <rect x="1" y="1" width="34" height="34" rx="9" fill="url(#brandGrad)"/>
-        <rect x="3.2" y="3.2" width="29.6" height="29.6" rx="6.6" fill="none" stroke="#fbbf24" stroke-width="0.9" opacity="0.9"/>
-        <text x="18" y="24.5" text-anchor="middle" font-family="Fraunces, Georgia, serif" font-size="15" font-weight="600" font-style="italic" fill="#fbbf24" letter-spacing="-0.5">FA</text>
+        <rect x="3.2" y="3.2" width="29.6" height="29.6" rx="6.6" fill="none" stroke="#D4AF37" stroke-width="0.9" opacity="0.9"/>
+        <text x="18" y="24.5" text-anchor="middle" font-family="Fraunces, Georgia, serif" font-size="15" font-weight="600" font-style="italic" fill="#D4AF37" letter-spacing="-0.5">FA</text>
         <defs>
           <linearGradient id="brandGrad" x1="0" y1="0" x2="36" y2="36">
-            <stop offset="0%" stop-color="#b06cf9"/>
-            <stop offset="100%" stop-color="#4a1b8a"/>
+            <stop offset="0%" stop-color="#1c1b19"/>
+            <stop offset="100%" stop-color="#000000"/>
           </linearGradient>
         </defs>
       </svg>
@@ -5155,7 +5155,7 @@ function setTheme(theme) {
   document.documentElement.dataset.theme = theme;
   localStorage.setItem('financeapp_theme', theme);
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.content = theme === 'light' ? '#F4F4F9' : '#0E0E14';
+  if (meta) meta.content = theme === 'light' ? '#F7F4EE' : '#000000';   // v99: preto e dourado
   // Update toggle button text
   const btn = document.getElementById('themeToggle');
   if (btn) {
@@ -6204,7 +6204,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v98';
+const APP_VERSION = 'v99';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -10870,7 +10870,7 @@ window.bulkDuplicate = bulkDuplicate;
 
 function duplicateTx(id) {
   const all = [...db.recurringExpenses, ...db.installments, ...Object.values(db.events).flat()];
-  const it = all.find(x => x.id === Number(id));
+  const it = all.find(x => String(x.id) === String(id));
   if (!it) return;
   const key = getKey(currentYear, currentMonth);
   if (!db.events[key]) db.events[key] = [];
@@ -16129,9 +16129,9 @@ window.openIndicesManual = openIndicesManual;
 // ══════════════════════════════════════════════════════════════════════
 (function () {
   function acharLancamento(id) {
-    const n = Number(id);
-    return db.recurringExpenses.find(x => x.id === n) || db.installments.find(x => x.id === n)
-      || Object.values(db.events || {}).flat().find(x => x && x.id === n) || null;
+    const n = String(id);   // v99: ids em texto (importações antigas) também
+    return db.recurringExpenses.find(x => String(x.id) === n) || db.installments.find(x => String(x.id) === n)
+      || Object.values(db.events || {}).flat().find(x => x && String(x.id) === n) || null;
   }
   function tipoDe(it) { return db.installments.includes(it) ? 'parc' : db.recurringExpenses.includes(it) ? 'fixo' : 'eventual'; }
   function marcarFatura() {
@@ -16169,12 +16169,16 @@ window.openIndicesManual = openIndicesManual;
   }
   function alternar(id) {
     const it = acharLancamento(id);
-    if (!it || methodKind(it.method) !== 'credit') return;
-    const on = it.faturaMais !== 1;
-    aplicar(it, on);
+    if (!it) { toast('Não encontrei esse lançamento — recarregue o app e tente de novo', 'error', 4000); return; }
+    if (methodKind(it.method) !== 'credit') { toast('Só compras no cartão de crédito têm fatura', 'info', 3500); return; }
+    const on = it.faturaMais !== 1, k = tipoDe(it), mes = monthsFull[currentMonth].toLowerCase();
+    // v99: num fixo, vale de agora em diante (os meses já pagos não mudam)
+    if (k === 'fixo' && typeof fxAplicarDesde === 'function') fxAplicarDesde('g', it.id, { faturaMais: on ? 1 : undefined });
+    else aplicar(it, on);
     redesenhar();
-    const k = tipoDe(it), todos = k === 'parc' ? ' (todas as parcelas)' : k === 'fixo' ? ' (todos os meses)' : '';
-    toast(on ? `${it.desc} agora conta na fatura seguinte${todos}` : `${it.desc} voltou para a fatura original${todos}`, 'success', 3500);
+    const rot = typeof faturaRotulo === 'function' ? faturaRotulo(acharLancamento(id) || it, currentYear, currentMonth, on) : '';
+    const quando = k === 'parc' ? ' (todas as parcelas)' : k === 'fixo' ? ` (de ${mes} em diante)` : '';
+    toast(on ? `${it.desc} foi para a ${rot || 'fatura seguinte'}${quando}` : `${it.desc} voltou para a ${rot || 'fatura original'}${quando}`, 'success', 4500);
   }
   window.alternarProximaFatura = alternar;
   function ligar() {
@@ -17420,6 +17424,7 @@ window.fxDesfazer = fxDesfazer;
       fixosItens, parcItens, guardarItens, rendaItens };
   }
   window.compromissosDoMes = compromissosDoMes;
+  window.fxAplicarDesde = (tipo, id, mud) => { const r = acharRec(tipo, id); if (!r) return false; aplicarDesde(tipo, raiz(r), Math.max(tIni(daSerie(tipo, raiz(r))[0]), tVisto()), mud); return true; };   // v99
 
   // ── Tela ──────────────────────────────────────────────────────────────
   function situacao(tipo, s, t) {
@@ -17795,9 +17800,9 @@ window.fxDesfazer = fxDesfazer;
     });
   };
   // Parcelas
-  window.fxEditarParc = id => { const inst = db.installments.find(x => x.id === Number(id)); if (inst) editTransactionModal(inst); };
+  window.fxEditarParc = id => { const inst = db.installments.find(x => String(x.id) === String(id)); if (inst) editTransactionModal(inst); };
   window.fxQuitar = function (id) {
-    const inst = db.installments.find(x => x.id === Number(id));
+    const inst = db.installments.find(x => String(x.id) === String(id));
     if (!inst) return;
     const S = tIni(inst), L = S + inst.total - 1;
     if (L - 1 < S) return;
@@ -17836,7 +17841,7 @@ window.fxDesfazer = fxDesfazer;
     $('fxQMes').addEventListener('input', () => upd(true)); upd(true);
   };
   window.fxApagarParc = function (id) {
-    const inst = db.installments.find(x => x.id === Number(id));
+    const inst = db.installments.find(x => String(x.id) === String(id));
     if (!inst) return;
     const S = tIni(inst), pagas = Math.max(0, Math.min(inst.total, tHoje() - S + 1));
     modal.show(`Apagar ${inst.desc}?`, `
@@ -17870,7 +17875,7 @@ window.fxDesfazer = fxDesfazer;
       <div class="fx-acoes" style="margin-top:14px"><button type="button" class="btn primary" onclick="modal.close(); setTimeout(() => openQuickAdd('entrada'), 220)">+ Nova entrada</button></div>`, { showFooter: false });
   };
   window.fxEditarEntrada = function (key, id) {
-    const lst = db.income[key] || [], it = lst.find(x => x.id === Number(id));
+    const lst = db.income[key] || [], it = lst.find(x => String(x.id) === String(id));
     if (!it) return;
     const cs = getContas(), prov = it.provento || '';
     modal.show('Editar entrada', `
@@ -17905,7 +17910,7 @@ window.fxDesfazer = fxDesfazer;
     $('feTipo').addEventListener('change', mostra); mostra();
   };
   window.fxExcluirEntrada = function (key, id) {
-    const lst = db.income[key] || [], it = lst.find(x => x.id === Number(id));
+    const lst = db.income[key] || [], it = lst.find(x => String(x.id) === String(id));
     if (!it) return;
     modal.show('Excluir entrada?', `<p style="margin:0;line-height:1.5"><strong>${escapeHtml(it.desc)}</strong> · ${fmt(it.value)} · ${fmtDate(it.date)}</p>`, {
       confirmLabel: 'Excluir',
@@ -18435,7 +18440,7 @@ button.ios-mini { cursor: pointer; }
         else if (i.cat) tags.push(esc(i.cat));
         if (i.type === 'fixo') tags.push(methodKind(i.method) !== 'credit' && getPaidStatus(i.id, currentYear, currentMonth) ? 'fixo ✓ pago' : 'fixo');
         if (i.type === 'parc') tags.push(esc(i.detail || 'parcela'));
-        if (i.faturaMais === 1) tags.push('próx. fatura');
+        if (i.faturaMais === 1) tags.push(typeof faturaRotulo === 'function' ? '→ ' + faturaRotulo(i, currentYear, currentMonth, true, true) : 'próx. fatura');
         const cor = i._aporte ? (getInvestClass(i.investClass) || {}).color : getCategoryColor(i.cat);
         return linha(av(i.desc, cor, methodLabel(i.method)), esc(i.desc), tags.join(' · '), (i._aporte ? (i.value < 0 ? '← ' : '→ ') : '−') + fmt(Math.abs(i.value)), null, `iosAcoes(${jsArg(i.id)})`, i._aporte ? 'inv' : 'neg');
   }
@@ -18468,15 +18473,15 @@ button.ios-mini { cursor: pointer; }
 
   // Ações de um lançamento (folha de baixo)
   function acharRegistro(id) {
-    const n = Number(id);
-    return (db.recurringExpenses || []).find(x => x.id === n) || (db.installments || []).find(x => x.id === n)
-      || Object.values(db.events || {}).flat().find(x => x && x.id === n) || null;
+    const n = String(id);   // v99: ids em texto também
+    return (db.recurringExpenses || []).find(x => String(x.id) === n) || (db.installments || []).find(x => String(x.id) === n)
+      || Object.values(db.events || {}).flat().find(x => x && String(x.id) === n) || null;
   }
   window.iosEditar = id => { const r = acharRegistro(id); modal.close(); if (r) setTimeout(() => editTransactionModal(r), 220); };
   window.iosExcluir = id => {
     modal.close();
     setTimeout(() => {
-      if ((db.recurringExpenses || []).some(x => x.id === Number(id)) && typeof fxExcluirDoMes === 'function') return fxExcluirDoMes(id);
+      if ((db.recurringExpenses || []).some(x => String(x.id) === String(id)) && typeof fxExcluirDoMes === 'function') return fxExcluirDoMes(id);
       const b = document.createElement('button'); b.dataset.action = 'del'; b.dataset.id = String(id);
       handleTableAction({ target: b });
     }, 220);
@@ -18484,7 +18489,7 @@ button.ios-mini { cursor: pointer; }
   window.iosAcoes = function (id) {
     const r = acharRegistro(id);
     if (!r) return;
-    const d = getMonthData(currentYear, currentMonth), it = [...d.items, ...(d.aportes || [])].find(x => x.id === Number(id)) || r;
+    const d = getMonthData(currentYear, currentMonth), it = [...d.items, ...(d.aportes || [])].find(x => String(x.id) === String(id)) || r;
     const fixo = (db.recurringExpenses || []).includes(r), credito = methodKind(normalizeMethod(r.method)) === 'credit', pid = jsArg(r.id);
     const pago = fixo && getPaidStatus(r.id, currentYear, currentMonth);
     const sub = [it.date ? fmtDate(it.date) : '', methodLabel(it.method || r.method), it.cat || '', fixo ? 'gasto fixo' : r.total ? `parcela ${it.detail || ''}` : ''].filter(Boolean).map(esc).join(' · ');
@@ -18742,7 +18747,7 @@ button.ios-mini { cursor: pointer; }
     const sig = c ? c.textContent : '';
     if (sig !== anualAssinatura || !$('anIOS') || !$('anIOS').isConnected) { anualAssinatura = sig; montarAnual(); }
   }
-  function agendar() { if (pend) return; pend = true; requestAnimationFrame(tudo); }
+  function agendar() { if (pend) return; pend = true; setTimeout(tudo, 30); }   // v99: timer (rAF para em aba oculta)
   const obs = new MutationObserver(muts => { if (muts.some(m => !(m.target.closest && m.target.closest('#invIOS, #metasIOS, #anIOS')))) agendar(); });
   function ligar() { ['investimentos', 'metas', 'anual'].forEach(id => { const el = $(id); if (el && !el.dataset.v93) { el.dataset.v93 = '1'; obs.observe(el, { childList: true, subtree: true }); } }); }
   // Topos recalculam quando os dados mudam (renderizações das abas)
@@ -18905,7 +18910,7 @@ button.ios-mini { cursor: pointer; }
       p.appendChild(inner); p.classList.add('ios-secao');
     });
   }
-  const obs = new MutationObserver(() => requestAnimationFrame(seccionarFixos));
+  const obs = new MutationObserver(() => setTimeout(seccionarFixos, 30));
   const rf = window.renderFixos;
   if (typeof rf === 'function') window.renderFixos = function () { const x = rf.apply(this, arguments); try { seccionarFixos(); } catch (e) {} return x; };
 
@@ -19387,7 +19392,7 @@ button.ios-mini { cursor: pointer; }
     else if (i.cat) tags.push(esc(i.cat));
     if (i.type === 'fixo') tags.push(methodKind(i.method) !== 'credit' && getPaidStatus(i.id, currentYear, currentMonth) ? 'fixo ✓ pago' : 'fixo');
     if (i.type === 'parc') tags.push(esc(i.detail || 'parcela'));
-    if (i.faturaMais === 1) tags.push('próx. fatura');
+    if (i.faturaMais === 1) tags.push(typeof faturaRotulo === 'function' ? '→ ' + faturaRotulo(i, currentYear, currentMonth, true, true) : 'próx. fatura');
     const cor = i._aporte ? (getInvestClass(i.investClass) || {}).color : getCategoryColor(i.cat);
     return linha(av(i.desc, cor, methodLabel(i.method)), esc(i.desc), tags.filter(Boolean).join(' · '), (i._aporte ? (i.value < 0 ? '← ' : '→ ') : '−') + fmt(Math.abs(i.value)), `iosAcoes(${jsArg(i.id)})`, i._aporte ? 'inv' : 'neg');
   }
@@ -19503,7 +19508,7 @@ button.ios-mini { cursor: pointer; }
   window.gsLimparTudo = () => { activeMethodFilter = 'all'; contaSel = null; catSel = null; ordem = 'data'; const s = $('methodFilter'); if (s) s.value = 'all'; modal.close(); renderGastos(); };
   window.gsEntrada = function (id, recorrente) {
     if (recorrente) { if (typeof fxEditar === 'function') fxEditar('r', id, currentYear * 12 + currentMonth); return; }
-    const key = getKey(currentYear, currentMonth), it = (db.income[key] || []).find(x => x.id === Number(id));
+    const key = getKey(currentYear, currentMonth), it = (db.income[key] || []).find(x => String(x.id) === String(id));
     if (!it) return;
     const pid = jsArg(it.id), k = jsArg(key);
     modal.show(it.desc, `<div class="ios-sheet"><div class="ios-sheet-top"><b class="pos">+${fmt(it.value)}</b><span>${esc(fmtDate(it.date))}${it.provento ? ' · provento' : ''}</span></div>
@@ -19532,6 +19537,94 @@ button.ios-mini { cursor: pointer; }
   };
   window.addEventListener('load', () => setTimeout(() => { try { render(); } catch (e) { console.warn('[v98]', e); } }, 650));
 })();
+</script>
+<style id="v99-preto-ouro">
+/* ══════════════════════════════════════════════════════════════════════
+   v99 · REBRANDING PRETO E DOURADO — escuro como padrão: preto profundo,
+   superfícies grafite, texto marfim, tinta dourada (botões, pílula
+   selecionada, aba ativa, "+"), verde-sálvia para entradas e terracota para
+   saídas. O claro vira marfim com preto e detalhes dourados.
+   ══════════════════════════════════════════════════════════════════════ */
+:root[data-theme="dark"] {
+  --bg: #000000 !important; --bg-soft: #0D0D0C !important;
+  --surface: #131312 !important; --surface-warm: #1D1C19 !important; --surface-elev: #1D1C19 !important;
+  --border: #2B2925 !important; --border-soft: #1F1E1B !important;
+  --text: #F4EFE6 !important; --text-muted: #A8A095 !important; --text-soft: #6E685F !important;
+  --primary: #D4AF37 !important; --primary-dark: #B8941F !important;
+  --primary-soft: #3A3220 !important; --primary-tint: #221D12 !important;
+  --accent: #E6C77A !important; --accent-dark: #C9A44E !important; --accent-soft: #3A3220 !important;
+  --pos: #86C99F !important; --pos-soft: #15261B !important;
+  --neg: #E8775F !important; --neg-soft: #2E1A15 !important;
+  --invest: #E6C77A !important; --invest-soft: #2C2617 !important; --warn: #E0A84C !important;
+  --on-primary: #0B0B0A; --glass: rgba(14,14,13,.74); --sep: rgba(244,239,230,.10);
+  --ouro: #D4AF37; --ouro-claro: #F1D689;
+}
+:root, :root[data-theme="light"] {
+  --bg: #F7F4EE !important; --bg-soft: #EFEAE0 !important;
+  --surface: #FFFFFF !important; --surface-warm: #F2EDE3 !important; --surface-elev: #FFFFFF !important;
+  --border: #E6DFD2 !important; --border-soft: #EEE8DD !important;
+  --text: #15130F !important; --text-muted: #6F675C !important; --text-soft: #A39B8E !important;
+  --primary: #15130F !important; --primary-dark: #000000 !important;
+  --primary-soft: #E8E1D3 !important; --primary-tint: #F2EDE3 !important;
+  --accent: #B8912F !important; --accent-dark: #9A7724 !important; --accent-soft: #F3E8CC !important;
+  --pos: #2E7D4F !important; --pos-soft: #E6F2EA !important;
+  --neg: #C2412D !important; --neg-soft: #F8E5E1 !important;
+  --invest: #A8862F !important; --invest-soft: #F3E8CC !important; --warn: #B8912F !important;
+  --on-primary: #F4EFE6; --glass: rgba(247,244,238,.78); --sep: rgba(60,50,30,.14);
+  --ouro: #B8912F; --ouro-claro: #D4AF37;
+}
+/* Toques dourados (nos dois temas) */
+.brand-name em, .brand-name em.gold-e, .login-brand-name em { color: var(--ouro) !important; }
+.v92-olho svg, .header-search-btn svg { color: var(--text); }
+:root[data-theme="dark"] .bnav-add, :root[data-theme="dark"] #fab { background: linear-gradient(160deg, var(--ouro-claro), var(--ouro) 55%, #A9851F) !important; color: #0B0B0A !important; box-shadow: 0 6px 22px rgba(212,175,55,.28) !important; }
+:root[data-theme="dark"] .bnav-add svg { stroke: #0B0B0A !important; }
+:root[data-theme="light"] .bnav-add, :root[data-theme="light"] #fab { box-shadow: 0 6px 18px rgba(0,0,0,.22), inset 0 0 0 1.5px var(--ouro) !important; }
+@media (max-width: 768px) { .bnav-btn.active, .bnav-btn.active .bnav-label { color: var(--ouro) !important; } .bnav-btn.active .bnav-icon svg { stroke: var(--ouro) !important; } }
+.tabBtn.active, .tabBtn.active .icon { color: var(--ouro) !important; }
+.ios-titulo, .content > h1 { letter-spacing: -0.03em; }
+.ios-hero .ios-l, .ios-graf-l, .fx-eyebrow, .cfg-grupo, .ios-dia { color: var(--ouro) !important; }
+:root[data-theme="dark"] .ios-hero { background: linear-gradient(165deg, #1A1813 0%, #121211 60%) !important; box-shadow: inset 0 0 0 1px rgba(212,175,55,.16) !important; }
+:root[data-theme="light"] .ios-hero { box-shadow: inset 0 0 0 1px rgba(184,145,47,.22) !important; }
+.ios-barra span:first-child:last-child { background: var(--ouro) !important; }
+.gr-col.atual i { background: linear-gradient(180deg, var(--ouro-claro), var(--ouro)) !important; }
+.money-panel .money-total, .ios-hero .ios-v { color: var(--text) !important; }
+.v96-tit b { color: var(--text); }
+.assistant-panel .assistant-avatar { background: var(--ouro) !important; color: #0B0B0A !important; }
+.iv-tag.meta, .fx-tag { color: var(--text-muted); }
+:root[data-theme="dark"] .ios-av.marca.borda { box-shadow: inset 0 0 0 1px rgba(244,239,230,.18); }
+.ios-busca { background: var(--surface-warm) !important; }
+.toast, .undo-toast { background: #1D1C19 !important; color: #F4EFE6 !important; border: 0 !important; border-left: 3px solid var(--ouro, #D4AF37) !important; box-shadow: 0 10px 30px rgba(0,0,0,.35) !important; }
+.toast.success { border-left-color: #86C99F !important; }
+.toast.error { border-left-color: #E8775F !important; }
+.undo-toast .undo-btn { color: #F1D689 !important; background: transparent !important; }
+:root[data-theme="dark"] .login-screen, :root[data-theme="dark"] #loginScreen { background: radial-gradient(120% 80% at 50% 0%, #1A1610 0%, #000 60%) !important; }
+</style>
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// v99 · rebranding preto e dourado (o app passa uma vez para o tema escuro;
+// depois vale a escolha em Configurações → Aparência) e o rótulo da fatura
+// ("fatura de janeiro, vence 07/01") usado na "próxima fatura".
+// ══════════════════════════════════════════════════════════════════════
+(function () {
+  try {
+    if (localStorage.getItem('financeapp_marca_v99') !== '1') {
+      localStorage.setItem('financeapp_marca_v99', '1');
+      if (typeof setTheme === 'function') setTheme('dark');
+    }
+  } catch (e) { /* armazenamento indisponível: fica o tema atual */ }
+})();
+window.faturaRotulo = function (it, y, m, on, curto) {
+  try {
+    const met = normalizeMethod(it.method);
+    if (methodKind(met) !== 'credit') return '';
+    // compra avulsa usa o mês da própria data; fixo/parcela, o mês exibido
+    const avulsa = !(db.recurringExpenses || []).some(x => String(x.id) === String(it.id)) && !(db.installments || []).some(x => String(x.id) === String(it.id));
+    if (avulsa && isoDay(it.date)) { const r = refFromDate(it.date); y = r.y; m = r.m; }
+    const ult = new Date(y, m + 1, 0).getDate(), dia = Math.min(ult, Number((isoDay(it.date) || '').slice(8, 10)) || 1);
+    const tf = faturaDaCompra(met, y, m, dia).tf + (on ? 1 : 0), dt = datasFatura(met, tf);
+    return curto ? `fatura de ${dt.mesVence.toLowerCase()}` : `fatura de ${dt.mesVence.toLowerCase()} (vence ${dt.vence})`;
+  } catch (e) { return ''; }
+};
 </script>
 </body>
 </html>
