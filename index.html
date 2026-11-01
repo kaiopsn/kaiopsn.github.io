@@ -6204,7 +6204,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v92';
+const APP_VERSION = 'v93';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -18489,6 +18489,250 @@ button.ios-mini { cursor: pointer; }
   window.addEventListener('load', () => setTimeout(() => { try { montarInicio(); montarGastos(); } catch (e) { console.warn('[v92]', e); } }, 450));
   let larg = celular();
   window.addEventListener('resize', () => { if (celular() !== larg) { larg = celular(); try { montarInicio(); montarGastos(); } catch (e) {} } });
+})();
+</script>
+<style id="v93-ios-telas">
+/* v93 · Investimentos, Metas e Anual no celular: cartão de topo, seções com
+   título fora do cartão, linhas com ícone redondo, gráfico de evolução. */
+#invIOS, #metasIOS, #anIOS { display: none; }
+.ios-chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin: 0 0 10px; }
+.ios-chips::-webkit-scrollbar { display: none; }
+.ios-seg { display: flex; gap: 6px; justify-content: center; margin-top: 10px; }
+.ios-seg .ios-pill { padding: 7px 14px; font-size: .8rem; background: var(--surface-warm); }
+.ios-seg .ios-pill.on { background: var(--primary); color: var(--on-primary); }
+.ios-graf-v { font: 700 1.55rem/1.15 var(--font-display); letter-spacing: -0.02em; }
+.ios-graf-l { font-size: .8rem; color: var(--text-muted); font-weight: 600; }
+.ios-graf-d { font-size: .8rem; font-weight: 600; margin-top: 2px; }
+.ios-graf svg { width: 100%; height: 130px; display: block; margin-top: 10px; overflow: visible; }
+.ios-graf-x { display: flex; justify-content: space-between; font-size: .7rem; color: var(--text-soft); margin-top: 4px; }
+.ios-acoes2 { display: flex; gap: 8px; margin-top: 14px; }
+.ios-acoes2 .ios-pill { flex: 1; background: var(--surface-warm); padding: 11px 10px; }
+.ios-acoes2 .ios-pill.on { background: var(--primary); color: var(--on-primary); }
+.ios-leg2 { display: grid; gap: 6px; margin-top: 12px; }
+.ios-leg2 > div { display: flex; align-items: center; gap: 8px; font-size: .86rem; }
+.ios-leg2 i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.ios-leg2 span { flex: 1; color: var(--text-muted); }
+.ios-leg2 b { font-weight: 600; white-space: nowrap; }
+@media (max-width: 768px) {
+  #investimentos.ios-pronto #invIOS, #metas.ios-pronto #metasIOS, #anual.ios-pronto #anIOS { display: block; }
+  #investimentos.ios-pronto #invNovo > .iv-topo, #investimentos.ios-pronto #invNovo .iv-barra { display: none !important; }
+  #metas.ios-pronto .mt-topo { display: none !important; }
+  #metas.ios-pronto > .page-sub { display: none; }
+  #metas.ios-pronto > .panel { background: transparent !important; padding: 0 !important; }
+  #metas .mt-card { background: var(--surface) !important; border-radius: 22px !important; padding: 18px !important; margin-bottom: 12px !important; }
+  #metas .mt-barra { height: 8px !important; border-radius: 999px !important; background: var(--primary-soft) !important; }
+  #metas .mt-barra span { background: var(--primary) !important; border-radius: 999px !important; }
+  #metas .mt-barra span.ok { background: var(--pos) !important; }
+  #metas .mt-selo { background: var(--surface-warm) !important; color: var(--text-muted) !important; border: 0 !important; }
+  #metas .mt-selo.atrasada, #metas .mt-selo.abaixo { color: var(--accent-dark, #C9862A) !important; }
+  #metas .mt-selo.concluida, #metas .mt-selo.ritmo { color: var(--pos) !important; }
+  #metas .mt-valores .v { font-size: 1.35rem !important; font-weight: 700 !important; letter-spacing: -0.02em; }
+  #anual.ios-pronto .an-cards, #anual.ios-pronto .an-resumo { display: none !important; }
+  #anual .an-ano { margin: 0 0 12px !important; }
+  /* seções: título fora, conteúdo num cartão branco */
+  .panel.ios-secao { background: transparent !important; padding: 0 !important; border: 0 !important; box-shadow: none !important; margin: 0 0 6px !important; }
+  .panel.ios-secao > h2, .panel.ios-secao > .panel-head-row { font: 700 1.22rem/1.2 var(--font-display) !important; letter-spacing: -0.02em !important; margin: 22px 4px 6px !important; }
+  .panel.ios-secao > p { margin: 0 6px 9px !important; font-size: .8rem !important; color: var(--text-muted) !important; }
+  .panel.ios-secao > .ios-in { background: var(--surface); border-radius: 22px; padding: 6px 16px; }
+  .panel.ios-secao > .ios-in > *:first-child { margin-top: 8px; }
+  .panel.ios-secao > .ios-in > *:last-child { margin-bottom: 8px; }
+  .iv-cl-top .ios-av, .an-cat-top .ios-av { width: 34px; height: 34px; font-size: .85rem; }
+  .iv-cl-sub { margin-left: 44px !important; }
+  .iv-det { margin-left: 44px !important; }
+  .an-mes.an-ios { display: flex; align-items: center; gap: 12px; }
+  .an-mes.an-ios > .ios-av { font-size: .66rem; letter-spacing: .02em; }
+  .an-mes.an-ios > .an-ios-t { flex: 1; min-width: 0; }
+  .an-mes, .an-cat, .iv-cl, .iv-mes { border-bottom-color: var(--sep) !important; }
+  .an-mes-barra { height: 4px !important; }
+}
+.iv-det .btn:not(.primary), .fx-det .btn:not(.primary), .an-mes-det .btn:not(.primary) { background: var(--surface) !important; }
+</style>
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// v93 · INVESTIMENTOS, METAS E ANUAL NO CELULAR — mesmo desenho da Início:
+// Investimentos ganha "Valor atual", evolução (por classe, 6 meses ou 1 ano)
+// e distribuição em rosca; Metas e Anual ganham um cartão de topo. Todas as
+// seções antigas viram título fora + cartão branco, com ícones redondos.
+// Os números vêm das mesmas funções (getCarteira/getCarteiraMercado/metaInfo
+// e os cartões do Anual) — nada é recalculado de outro jeito.
+// ══════════════════════════════════════════════════════════════════════
+(function () {
+  const $ = id => document.getElementById(id);
+  const celular = () => window.matchMedia('(max-width: 768px)').matches;
+  const esc = escapeHtml;
+  const escura = c => { const m = /^#?([0-9a-f]{6})$/i.exec(String(c || '')); if (!m) return false; const n = parseInt(m[1], 16); return (0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255 < 0.22; };
+  const corAv = c => escura(c) ? 'var(--text)' : safeColor(c || '#8E8E93');
+  const pct1 = v => v.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%';
+  const sinal = v => (v >= 0 ? '+' : '−') + fmt(Math.abs(v));
+  const curto = t => monthsFull[t % 12].slice(0, 3).toLowerCase();
+  let sel = null, meses = 12;
+
+  function rosca(fatias, total, centro) {
+    const R = 42, C = 2 * Math.PI * R; let acc = 0;
+    const arcos = fatias.map(f => { const len = total > 0 ? f.v / total * C : 0, gap = fatias.length > 1 ? Math.min(2.2, len * 0.3) : 0;
+      const a = `<circle r="${R}" cx="60" cy="60" fill="none" stroke="${f.cor}" stroke-width="15" stroke-dasharray="${Math.max(0, len - gap).toFixed(2)} ${C.toFixed(2)}" stroke-dashoffset="${(-acc).toFixed(2)}" transform="rotate(-90 60 60)"/>`; acc += len; return a; }).join('');
+    return `<svg viewBox="0 0 120 120" role="img" aria-label="Distribuição">${arcos}<text x="60" y="56" text-anchor="middle" font-size="9" fill="var(--text-muted)" font-weight="600">Total</text>
+      <text x="60" y="71" text-anchor="middle" font-size="12.5" fill="var(--text)" font-weight="700">${esc(centro)}</text></svg>`;
+  }
+  const mil = v => window.__ocultarValores ? '••••' : (Math.abs(v) >= 1000 ? 'R$ ' + (v / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' mil' : fmt(v));
+
+  // ── INVESTIMENTOS ────────────────────────────────────────────────────
+  function serie(id) {   // valor no fim de cada mês (hoje: a mercado, igual ao topo)
+    const h = new Date(), tH = h.getFullYear() * 12 + h.getMonth(), cm = getCarteiraMercado(), out = [];
+    for (let t = tH - meses + 1; t <= tH; t++) {
+      let v;
+      if (t === tH) v = id ? ((cm.porClasse[id] || {}).mercado || 0) : cm.mercado;
+      else { const c = getCarteira(Math.floor(t / 12), t % 12); v = id ? (c.porClasse[id] || 0) : c.total; }
+      out.push({ t, v });
+    }
+    return out;
+  }
+  function grafico(pts) {
+    const W = 300, H = 120, vs = pts.map(p => p.v), mn = Math.min(...vs), mx = Math.max(...vs), amp = mx - mn || Math.max(1, mx * 0.1);
+    const x = i => (i / Math.max(1, pts.length - 1)) * W, y = v => H - 8 - ((v - mn) / amp) * (H - 22);
+    const linha = pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ');
+    const sobe = vs[vs.length - 1] >= vs[0], cor = sobe ? 'var(--pos)' : 'var(--neg)';
+    return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="ivGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="${cor}" stop-opacity=".22"/><stop offset="1" stop-color="${cor}" stop-opacity="0"/></linearGradient></defs>
+      <path d="${linha} L${W},${H} L0,${H} Z" fill="url(#ivGrad)"/><path d="${linha}" fill="none" stroke="${cor}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>`;
+  }
+  function invHTML() {
+    const cm = getCarteiraMercado(), classes = getInvestClasses(), rend = cm.mercado - cm.aplicado, temM = cm.temMercado && !cm.legado;
+    const vivas = classes.map(c => ({ c, v: (cm.porClasse[c.id] || {}).mercado || 0 })).filter(x => x.v > 0.004).sort((a, b) => b.v - a.v);
+    if (sel && !vivas.some(x => x.c.id === sel)) sel = null;
+    const pts = serie(sel), ini = pts[0].v, fim = pts[pts.length - 1].v, dif = fim - ini;
+    const nomeSel = sel ? (getInvestClass(sel) || {}).label : 'Todos os investimentos';
+    const topo = `<div class="ios-card ios-hero"><div class="ios-l">Valor atual</div><div class="ios-v">${fmt(cm.mercado)}</div>
+      <div class="ios-s">${temM ? `aplicado ${fmt(cm.aplicado)} · <span class="${rend >= 0 ? 'pos' : 'neg'}">${sinal(rend)}${cm.aplicado > 0 ? ` (${(rend >= 0 ? '+' : '−') + pct1(Math.abs(rend / cm.aplicado * 100))})` : ''}</span> de rendimento` : 'valor aplicado — informe o valor de mercado para ver quanto rendeu'}</div>
+      ${typeof aDevolverInvestido === 'function' && aDevolverInvestido() > 0.004 ? `<div class="ios-s" style="margin-top:4px">Inclui ${fmt(aDevolverInvestido())} que talvez você tenha que devolver.</div>` : ''}
+      <div class="ios-acoes2"><button type="button" class="ios-pill on" onclick="abrirConferirSaldos()">Conferir saldos</button><button type="button" class="ios-pill" onclick="openMercadoModal()">Valor de mercado</button></div></div>`;
+    const chips = `<div class="ios-chips"><button type="button" class="ios-pill${sel ? '' : ' on'}" onclick="ivIosSel(null)">Todos</button>${vivas.map(x => `<button type="button" class="ios-pill${sel === x.c.id ? ' on' : ''}" onclick="ivIosSel(${jsArg(x.c.id)})">${esc(x.c.label)}</button>`).join('')}</div>`;
+    const evol = `<div class="ios-sec">Evolução</div>${chips}<div class="ios-card ios-graf">
+      <div class="ios-graf-l">${esc(nomeSel)}</div><div class="ios-graf-v">${fmt(fim)}</div>
+      <div class="ios-graf-d ${dif >= 0 ? 'pos' : 'neg'}">${sinal(dif)}${ini > 0 ? ` (${(dif >= 0 ? '+' : '−') + pct1(Math.abs(dif / ini * 100))})` : ''} em ${meses === 12 ? '12 meses' : '6 meses'}, contando o que você guardou</div>
+      ${grafico(pts)}<div class="ios-graf-x"><span>${curto(pts[0].t)}</span><span>${curto(pts[Math.floor(pts.length / 2)].t)}</span><span>hoje</span></div>
+      <div class="ios-seg">${[[6, '6m'], [12, '1a']].map(([n, t]) => `<button type="button" class="ios-pill${meses === n ? ' on' : ''}" onclick="ivIosMeses(${n})">${t}</button>`).join('')}</div>
+      <p class="ios-nota" style="margin:10px 0 0">Meses anteriores pelo valor aplicado; hoje ${temM ? 'a mercado' : 'pelo aplicado'}.</p></div>`;
+    let dist = '';
+    if (vivas.length) {
+      const fat = vivas.map(x => ({ v: x.v, cor: corAv(x.c.color), nome: x.c.label, alvo: safeNum(x.c.target, 0) }));
+      dist = `<div class="ios-sec">Distribuição</div><div class="ios-card"><div class="ios-rosca">${rosca(fat, cm.mercado, mil(cm.mercado))}
+        <div class="ios-leg">${fat.map(f => `<div class="ios-leg-i"><i style="background:${f.cor}"></i><span>${esc(f.nome)}</span><b>${pct1(f.v / cm.mercado * 100)}${f.alvo ? ` <small style="font-weight:500">/ ${pct1(f.alvo)}</small>` : ''}</b></div>`).join('')}</div></div>
+        ${fat.some(f => f.alvo) ? '<p class="ios-nota" style="margin:10px 0 0">Depois da barra: o seu alvo para cada classe.</p>' : ''}</div>`;
+    }
+    return topo + evol + dist;
+  }
+  window.ivIosSel = id => { sel = id; montarInv(); };
+  window.ivIosMeses = n => { meses = n; montarInv(); };
+  function montarInv() {
+    const pg = $('investimentos'), novo = $('invNovo');
+    if (!pg || !novo || !celular() || typeof currentUser === 'undefined' || !currentUser || !db || !db.events) return;
+    let el = $('invIOS');
+    if (!el) { el = document.createElement('div'); el.id = 'invIOS'; novo.insertAdjacentElement('beforebegin', el); }
+    el.innerHTML = invHTML();
+    pg.classList.add('ios-pronto');
+  }
+
+  // ── METAS ────────────────────────────────────────────────────────────
+  function montarMetas() {
+    const pg = $('metas'), lista = $('goalsList');
+    if (!pg || !lista || !celular() || typeof metaInfo !== 'function' || !db) return;
+    let el = $('metasIOS');
+    if (!el) { el = document.createElement('div'); el.id = 'metasIOS'; lista.insertAdjacentElement('beforebegin', el); }
+    const ativas = (db.goals || []).filter(g => !g.realizada), infos = ativas.map(metaInfo);
+    const guardado = infos.reduce((a, i) => a + Math.min(i.guardado, i.total || i.guardado), 0), total = infos.reduce((a, i) => a + i.total, 0), falta = infos.reduce((a, i) => a + i.falta, 0);
+    const p = total > 0 ? guardado / total * 100 : 0;
+    el.innerHTML = ativas.length ? `<div class="ios-card ios-hero"><div class="ios-l">Guardado nas metas</div><div class="ios-v">${fmt(guardado)}</div>
+        <div class="ios-barra" style="background:var(--primary-soft);border-radius:999px"><span style="flex:none;width:${Math.min(100, p).toFixed(1)}%;background:var(--primary)"></span></div>
+        <div class="ios-s">${Math.round(p)}% de ${fmt(total)} · faltam ${fmt(falta)} em ${ativas.length} meta${ativas.length === 1 ? '' : 's'}</div>
+        <div class="ios-acoes2"><button type="button" class="ios-pill on" onclick="novaMetaModal()">+ Nova meta</button></div></div>
+        <div class="ios-sec">Suas metas</div>`
+      : `<div class="ios-card"><div class="ios-l" style="font-weight:700;font-size:1rem;color:var(--text)">Para que você está guardando?</div>
+        <p class="ios-s" style="margin:6px 0 0">Cada meta ganha uma caixinha: o que você guardar nela vira o progresso.</p>
+        <div class="ios-acoes2"><button type="button" class="ios-pill on" onclick="novaMetaModal()">Criar minha primeira meta</button></div></div>`;
+    pg.classList.add('ios-pronto');
+  }
+
+  // ── ANUAL ────────────────────────────────────────────────────────────
+  function montarAnual() {
+    const pg = $('anual'), topo = $('anualTopo'), cards = topo && topo.querySelector('.an-cards');
+    if (!pg || !cards || !celular()) return;
+    let el = $('anIOS');
+    const ano = topo.querySelector('.an-ano');
+    if (!el) { el = document.createElement('div'); el.id = 'anIOS'; }
+    if (ano && el.previousElementSibling !== ano) ano.insertAdjacentElement('afterend', el);
+    const vals = [...cards.querySelectorAll('.an-card')].map(c => ({ l: c.querySelector('.l').textContent, v: c.querySelector('.v').textContent, cls: c.querySelector('.v').className.replace(/\bv\b/, '').trim() }));
+    const sob = vals[3] || vals[vals.length - 1], num = s => { const n = parseMoneyBR(String(s).replace(/[^\d,.-]/g, '')); return Number.isFinite(n) ? n : null; };
+    const ent = num(vals[0] && vals[0].v), sai = num(vals[1] && vals[1].v), gua = num(vals[2] && vals[2].v);
+    let barra = '';
+    if (ent > 0 && sai != null && !window.__ocultarValores) {
+      const sobra = Math.max(0, ent - sai - Math.max(0, gua || 0)), seg = (v, c) => v > 0 ? `<span style="flex:${(v / ent).toFixed(4)};background:${c}"></span>` : '';
+      barra = `<div class="ios-barra">${seg(sai, 'var(--neg)')}${seg(Math.max(0, gua || 0), 'var(--invest)')}${seg(sobra, 'var(--pos)')}</div>`;
+    }
+    const resumo = topo.querySelector('.an-resumo');
+    el.innerHTML = `<div class="ios-card ios-hero"><div class="ios-l">${esc(sob.l)}</div><div class="ios-v ${sob.cls.includes('neg') ? 'neg' : ''}">${esc(sob.v)}</div>${barra}
+      <div class="ios-leg2">${vals.slice(0, 3).map((x, i) => `<div><i style="background:${['var(--pos)', 'var(--neg)', 'var(--invest)'][i]}"></i><span>${esc(x.l)}</span><b>${esc(x.v)}</b></div>`).join('')}</div>
+      ${resumo ? `<p class="ios-s" style="margin:12px 0 0;line-height:1.5">${resumo.innerHTML}</p>` : ''}</div>`;
+    pg.classList.add('ios-pronto');
+  }
+
+  // ── Seções (título fora, cartão branco) e ícones redondos ───────────
+  function seccionar(root) {
+    if (!root || !celular()) return;
+    root.querySelectorAll('.panel').forEach(p => {
+      if (p.querySelector(':scope > .ios-in') || p.closest('.mt-card')) return;
+      const kids = [...p.children];
+      if (!kids.length || kids[0].tagName !== 'H2') return;
+      let i = 1;
+      while (kids[i] && kids[i].tagName === 'P' && /(^|\s)(an-dica|iv-dica)(\s|$)/.test(kids[i].className)) i++;
+      const inner = document.createElement('div'); inner.className = 'ios-in';
+      kids.slice(i).forEach(k => inner.appendChild(k));
+      p.appendChild(inner); p.classList.add('ios-secao');
+    });
+    root.querySelectorAll('.iv-cl-top > .method-row-dot, .an-cat-top > .method-row-dot').forEach(d => {
+      const nome = (d.nextElementSibling && d.nextElementSibling.textContent || '').trim();
+      const a = document.createElement('span'); a.className = 'ios-av';
+      a.style.setProperty('--c', corAv(d.style.background && /^#/.test(d.style.background) ? d.style.background : rgbHex(d.style.background)));
+      a.textContent = (nome[0] || '•').toUpperCase(); d.replaceWith(a);
+    });
+    root.querySelectorAll('.an-mes:not(.an-ios)').forEach(m => {
+      const n = (m.querySelector('.an-mes-nome') || {}).firstChild;
+      const t = document.createElement('div'); t.className = 'an-ios-t';
+      [...m.childNodes].forEach(k => t.appendChild(k));
+      const a = document.createElement('span'); a.className = 'ios-av'; a.style.setProperty('--c', 'var(--text-muted)');
+      a.textContent = String(n && n.textContent || '').trim().slice(0, 3).toUpperCase();
+      m.appendChild(a); m.appendChild(t); m.classList.add('an-ios');
+    });
+  }
+  function rgbHex(c) { const m = /rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(String(c || '')); return m ? '#' + [m[1], m[2], m[3]].map(n => Number(n).toString(16).padStart(2, '0')).join('') : '#8E8E93'; }
+
+  // Observa as três abas: cada vez que redesenham, refaz o desenho iOS
+  let pend = false;
+  function tudo() {
+    pend = false;
+    if (!celular() || typeof currentUser === 'undefined' || !currentUser) return;
+    try {
+      const inv = $('investimentos'); if (inv && inv.classList.contains('active')) { if (!$('invIOS') || !$('invIOS').childElementCount) montarInv(); seccionar($('invNovo')); }
+      const mt = $('metas'); if (mt && mt.classList.contains('active')) { if (!$('metasIOS') || !$('metasIOS').childElementCount || !mt.querySelector('#metasIOS + #goalsList, #metasIOS')) montarMetas(); }
+      const an = $('anual'); if (an && an.classList.contains('active')) { montarAnualSe(); seccionar($('anualTopo')); seccionar($('anualFim')); }
+    } catch (e) { console.warn('[v93]', e); }
+  }
+  let anualAssinatura = '';
+  function montarAnualSe() {
+    const c = $('anualTopo') && $('anualTopo').querySelector('.an-cards');
+    const sig = c ? c.textContent : '';
+    if (sig !== anualAssinatura || !$('anIOS') || !$('anIOS').isConnected) { anualAssinatura = sig; montarAnual(); }
+  }
+  function agendar() { if (pend) return; pend = true; requestAnimationFrame(tudo); }
+  const obs = new MutationObserver(muts => { if (muts.some(m => !(m.target.closest && m.target.closest('#invIOS, #metasIOS, #anIOS')))) agendar(); });
+  function ligar() { ['investimentos', 'metas', 'anual'].forEach(id => { const el = $(id); if (el && !el.dataset.v93) { el.dataset.v93 = '1'; obs.observe(el, { childList: true, subtree: true }); } }); }
+  // Topos recalculam quando os dados mudam (renderizações das abas)
+  const ri = window.renderInvest;
+  if (typeof ri === 'function') { renderInvest = window.renderInvest = function () { const r = ri.apply(this, arguments); try { montarInv(); seccionar($('invNovo')); } catch (e) { console.warn('[v93 inv]', e); } return r; }; }
+  const rgl = window.renderGoals;
+  if (typeof rgl === 'function') { renderGoals = window.renderGoals = function () { const r = rgl.apply(this, arguments); try { montarMetas(); } catch (e) { console.warn('[v93 metas]', e); } return r; }; }
+  window.addEventListener('load', () => setTimeout(() => { ligar(); agendar(); }, 500));
+  document.addEventListener('click', e => { if (e.target.closest('.tabBtn, .bnav-btn')) setTimeout(agendar, 60); }, true);
 })();
 </script>
 </body>
