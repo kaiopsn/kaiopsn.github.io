@@ -6204,7 +6204,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v96';
+const APP_VERSION = 'v97';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -18319,7 +18319,7 @@ button.ios-mini { cursor: pointer; }
       return linha(av(c.label, c.color), esc(c.label), sub, fmt(v), null, "navTo('investimentos')");
     }).join('');
     const linhaDev = dev > 0 ? linha(av('↩', '#8E8E93'), 'Talvez tenha que devolver', typeof ondeDevolver === 'function' ? ondeDevolver(Y, M) : '', '−' + fmt(dev), null, 'abrirConferirSaldos()') : '';
-    const graf = linha(`<span class="ios-av" style="--c:var(--text-muted)"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M5 20V12"/><path d="M12 20V5"/><path d="M19 20v-9"/></svg></span>`, 'Ver gráficos', 'Patrimônio e mês a mês no ano', null, null, "navTo('anual')");
+    const graf = linha(`<span class="ios-av" style="--c:var(--text-muted)"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M5 20V12"/><path d="M12 20V5"/><path d="M19 20v-9"/></svg></span>`, 'Ver gráficos', 'Por conta e evolução do patrimônio', null, null, "iosGraficos()");
     let resto = `<div class="ios-sec">Contas</div><div class="ios-lista">${linhasConta}${linhasCl}${linhaDev}${graf}</div>`;
 
     // Gastos do mês em rosca
@@ -19200,6 +19200,119 @@ button.ios-mini { cursor: pointer; }
   document.addEventListener('click', () => setTimeout(agendar, 80), true);
 
   window.addEventListener('load', () => setTimeout(() => { try { prepararAssistente(); agendar(); } catch (e) { console.warn('[v96]', e); } }, 400));
+})();
+</script>
+<style id="v97-graficos">
+/* v97 · Tela "Gráficos" (aberta pelo "Ver gráficos" da Início) */
+#graficosIOS { position: fixed; inset: 0; z-index: 180; background: var(--bg); overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: 0 16px calc(28px + env(safe-area-inset-bottom)); transform: translateX(100%); transition: transform .26s cubic-bezier(.22,.61,.36,1); visibility: hidden; }
+#graficosIOS.aberto { transform: none; visibility: visible; }
+@media (prefers-reduced-motion: reduce) { #graficosIOS { transition: none; } }
+.gr-topo { position: sticky; top: 0; z-index: 2; margin: 0 -16px; padding: calc(10px + env(safe-area-inset-top)) 12px 10px; display: flex; align-items: center; gap: 6px;
+  background: var(--glass); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); border-bottom: .5px solid var(--sep); }
+.gr-voltar { border: 0; background: none; color: var(--text); font: 600 1rem/1 var(--font-body); display: inline-flex; align-items: center; gap: 2px; cursor: pointer; padding: 8px 6px; min-height: 44px; }
+.gr-voltar span { font-size: 1.6rem; line-height: 1; margin-top: -2px; }
+.gr-titulo { font: 700 2.05rem/1.12 var(--font-display); letter-spacing: -0.03em; margin: 14px 4px 4px; color: var(--text); }
+.gr-barras { display: flex; align-items: flex-end; gap: 8px; height: 170px; margin-top: 14px; }
+.gr-col { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 6px; }
+.gr-col i { display: block; width: 100%; max-width: 38px; border-radius: 10px; background: var(--primary-soft); min-height: 4px; }
+.gr-col.atual i { background: var(--primary); }
+.gr-col b { font-size: .64rem; font-weight: 700; color: var(--text-muted); white-space: nowrap; }
+.gr-col small { font-size: .7rem; color: var(--text-muted); }
+.gr-col.atual small, .gr-col.atual b { color: var(--text); }
+.gr-par { display: flex; align-items: flex-end; gap: 3px; width: 100%; justify-content: center; height: 100%; }
+.gr-par i { max-width: 15px; border-radius: 6px; }
+.gr-par i.e { background: var(--pos); }
+.gr-par i.g { background: var(--neg); }
+.gr-leg { display: flex; gap: 14px; justify-content: center; font-size: .78rem; color: var(--text-muted); margin-top: 10px; }
+.gr-leg i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: 0; }
+</style>
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// v97 · GRÁFICOS — tela cheia aberta pelo "Ver gráficos" da Início (como no
+// app de referência): rosca do patrimônio por conta e investimento, evolução
+// do patrimônio no fim de cada mês (6 meses ou 1 ano; o mês atual pela
+// mesma regra da Início) e entradas × gastos por mês. Botão voltar do
+// celular fecha a tela. Mesmas funções de cálculo das outras telas.
+// ══════════════════════════════════════════════════════════════════════
+(function () {
+  const $ = id => document.getElementById(id);
+  const esc = escapeHtml;
+  let meses = 6;
+  const curto = t => monthsFull[t % 12].slice(0, 3);
+  const mil = v => window.__ocultarValores ? '••' : (Math.abs(v) >= 1000 ? (v / 1000).toLocaleString('pt-BR', { maximumFractionDigits: Math.abs(v) >= 100000 ? 0 : 1 }) + ' mil' : Math.round(v).toLocaleString('pt-BR'));
+  const escura = c => { const m = /^#?([0-9a-f]{6})$/i.exec(String(c || '')); if (!m) return false; const n = parseInt(m[1], 16); return (0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255 < 0.22; };
+  const cor = c => escura(c) ? 'var(--text)' : safeColor(c || '#8E8E93');
+  const av = (t, c) => (window.marcaAv && marcaAv(t)) || `<span class="ios-av" style="--c:${cor(c)}">${esc((String(t || '').trim()[0] || '•').toUpperCase())}</span>`;
+
+  function hoje() {   // patrimônio de hoje: mesma regra da Início
+    const h = new Date(), Y = h.getFullYear(), M = h.getMonth();
+    const cm = getCarteiraMercado(), aMerc = !!(cm && cm.temMercado && !cm.legado), custo = getCarteira(Y, M);
+    const vCl = id => aMerc ? ((cm.porClasse[id] || {}).mercado || 0) : (custo.porClasse[id] || 0);
+    const contas = getContas().map(c => ({ nome: c.nome, cor: c.cor, v: getContaExibida(Y, M, c.id), tipo: 'conta' }));
+    const classes = getInvestClasses().map(c => ({ nome: c.label, cor: c.color, v: vCl(c.id), tipo: c.reserve ? 'reserva' : 'investimento' })).filter(x => x.v > 0.004);
+    const dev = aDevolverEm(Y, M);
+    const total = getContaExibida(Y, M) + (aMerc ? cm.mercado : custo.total) - dev;
+    return { partes: contas.concat(classes), total, dev, tH: Y * 12 + M };
+  }
+  function html() {
+    const H = hoje(), pos = H.partes.filter(x => x.v > 0), base = pos.reduce((a, x) => a + x.v, 0) || 1;
+    // rosca
+    const R = 42, C = 2 * Math.PI * R; let acc = 0;
+    const arcos = pos.map(x => { const len = x.v / base * C, gap = pos.length > 1 ? Math.min(2.2, len * 0.3) : 0;
+      const a = `<circle r="${R}" cx="60" cy="60" fill="none" stroke="${cor(x.cor)}" stroke-width="15" stroke-dasharray="${Math.max(0, len - gap).toFixed(2)} ${C.toFixed(2)}" stroke-dashoffset="${(-acc).toFixed(2)}" transform="rotate(-90 60 60)"/>`; acc += len; return a; }).join('');
+    const rosca = `<svg viewBox="0 0 120 120" role="img" aria-label="Patrimônio por conta">${arcos}<text x="60" y="56" text-anchor="middle" font-size="9" fill="var(--text-muted)" font-weight="600">Total</text>
+      <text x="60" y="71" text-anchor="middle" font-size="12.5" fill="var(--text)" font-weight="700">${esc(window.__ocultarValores ? '••••' : 'R$ ' + mil(H.total))}</text></svg>`;
+    const linhas = H.partes.slice().sort((a, b) => b.v - a.v).map(x => `<div class="ios-row">${av(x.nome, x.cor)}<div class="ios-row-t"><div class="ios-row-n">${esc(x.nome)}</div><div class="ios-row-s">${x.tipo}${x.v > 0 ? ` · ${(x.v / base * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%` : ''}</div></div><div class="ios-row-v${x.v < 0 ? ' neg' : ''}">${fmt(x.v)}</div></div>`).join('');
+    // evolução do patrimônio
+    const pts = [];
+    for (let t = H.tH - meses + 1; t <= H.tH; t++) pts.push({ t, v: t === H.tH ? H.total : getPatrimonio(Math.floor(t / 12), t % 12) });
+    const mx = Math.max(...pts.map(p => Math.abs(p.v)), 1), dif = pts[pts.length - 1].v - pts[0].v;
+    const barras = pts.map((p, i) => `<div class="gr-col${i === pts.length - 1 ? ' atual' : ''}"><b>${esc(mil(p.v))}</b><i style="height:${Math.max(3, Math.abs(p.v) / mx * 100).toFixed(1)}%"></i><small>${i === pts.length - 1 ? 'hoje' : curto(p.t)}</small></div>`).join('');
+    // entradas × gastos
+    const eg = [];
+    for (let t = H.tH - meses + 1; t <= H.tH; t++) { const d = getMonthData(Math.floor(t / 12), t % 12); eg.push({ t, e: d.entradas, g: d.gastos }); }
+    const mx2 = Math.max(...eg.map(x => Math.max(x.e, x.g)), 1);
+    const pares = eg.map((x, i) => `<div class="gr-col${i === eg.length - 1 ? ' atual' : ''}"><div class="gr-par"><i class="e" style="height:${Math.max(2, x.e / mx2 * 100).toFixed(1)}%" title="Entradas ${fmt(x.e)}"></i><i class="g" style="height:${Math.max(2, x.g / mx2 * 100).toFixed(1)}%" title="Gastos ${fmt(x.g)}"></i></div><small>${curto(x.t)}</small></div>`).join('');
+    const somaE = eg.reduce((a, x) => a + x.e, 0), somaG = eg.reduce((a, x) => a + x.g, 0);
+    const seg = `<div class="ios-seg" style="margin:0 0 4px">${[[6, '6 meses'], [12, '1 ano']].map(([n, t]) => `<button type="button" class="ios-pill${meses === n ? ' on' : ''}" onclick="iosGrafMeses(${n})">${t}</button>`).join('')}</div>`;
+    return `<div class="gr-topo"><button type="button" class="gr-voltar" onclick="iosGraficosFechar()" aria-label="Voltar"><span>‹</span> Início</button></div>
+      <div class="gr-titulo">Gráficos</div>
+      <div class="ios-sec">Por conta</div>
+      <div class="ios-card"><div class="ios-rosca">${rosca}<div class="ios-leg">${pos.slice().sort((a, b) => b.v - a.v).slice(0, 6).map(x => `<div class="ios-leg-i"><i style="background:${cor(x.cor)}"></i><span>${esc(x.nome)}</span><b>${(x.v / base * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</b></div>`).join('')}</div></div>
+        ${H.dev > 0 ? `<p class="ios-nota" style="margin:10px 0 0">O total já desconta ${fmt(H.dev)} que talvez você tenha que devolver.</p>` : ''}</div>
+      <div class="ios-lista" style="margin-top:12px">${linhas}</div>
+      <div class="ios-sec">Patrimônio</div>${seg}
+      <div class="ios-card"><div class="ios-graf-l">No fim de cada mês</div><div class="ios-graf-v">${fmt(H.total)}</div>
+        <div class="ios-graf-d ${dif >= 0 ? 'pos' : 'neg'}">${dif >= 0 ? '+' : '−'}${fmt(Math.abs(dif))} em ${meses === 12 ? '1 ano' : '6 meses'}</div>
+        <div class="gr-barras">${barras}</div>
+        <p class="ios-nota" style="margin:10px 0 0">Meses passados: conta + investimentos no fim do mês. Hoje: a mesma conta da Início.</p></div>
+      <div class="ios-sec">Entradas e gastos</div>
+      <div class="ios-card"><div class="gr-barras" style="height:140px;margin-top:4px">${pares}</div>
+        <div class="gr-leg"><span><i style="background:var(--pos)"></i>Entradas ${fmt(somaE)}</span><span><i style="background:var(--neg)"></i>Gastos ${fmt(somaG)}</span></div></div>
+      <div class="ios-lista" style="margin-top:18px"><div class="ios-row" role="button" tabindex="0" onclick="iosGraficosFechar(); setTimeout(() => navTo('anual'), 120)" onkeydown="if(event.key==='Enter'){iosGraficosFechar(); navTo('anual')}"><span class="ios-av" style="--c:var(--text-muted)">≡</span><div class="ios-row-t"><div class="ios-row-n">Ver o ano completo</div><div class="ios-row-s">Mês a mês, categorias e acertos</div></div><span class="ios-row-chev">›</span></div></div>`;
+  }
+  function render() { const el = $('graficosIOS'); if (el && el.classList.contains('aberto')) el.innerHTML = html(); }
+  window.iosGrafMeses = n => { meses = n; render(); };
+  window.iosGraficos = function () {
+    if (typeof currentUser === 'undefined' || !currentUser) return;
+    let el = $('graficosIOS');
+    if (!el) { el = document.createElement('div'); el.id = 'graficosIOS'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Gráficos'); document.body.appendChild(el); }
+    el.classList.add('aberto'); el.scrollTop = 0;
+    try { el.innerHTML = html(); } catch (e) { console.warn('[v97 gráficos]', e); el.classList.remove('aberto'); return; }
+    document.body.style.overflow = 'hidden';
+    try { history.pushState({ graficos: 1 }, ''); } catch (e) {}
+  };
+  function fechar(doHistorico) {
+    const el = $('graficosIOS');
+    if (!el || !el.classList.contains('aberto')) return;
+    el.classList.remove('aberto');
+    document.body.style.overflow = '';
+    if (!doHistorico) { try { if (history.state && history.state.graficos) history.back(); } catch (e) {} }
+  }
+  window.iosGraficosFechar = () => fechar(false);
+  window.addEventListener('popstate', () => fechar(true));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') fechar(false); });
 })();
 </script>
 </body>
