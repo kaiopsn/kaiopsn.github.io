@@ -6204,7 +6204,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v91';
+const APP_VERSION = 'v92';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -6580,7 +6580,7 @@ window.generateCategoryColor = generateCategoryColor;
 <script>
 // ============== CONSTANTES ==============
 // Moeda sempre com exatamente 2 casas (sem max, o toLocaleString ia até 3: "R$ 285,714").
-const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmt = v => (window.__ocultarValores ? 'R$ ••••••' : 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));   // v92: olho esconde valores
 const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 const monthsFull = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 // ── FORMAS DE PAGAMENTO (personalizáveis) ───────────────────────────────
@@ -17984,6 +17984,511 @@ window.fxDesfazer = fxDesfazer;
   removeRecurringExpense = window.removeRecurringExpense = id => { const r = acharRec('g', id); if (r) fxApagar('g', raiz(r)); };
   removeRecurringIncome = window.removeRecurringIncome = id => { const r = acharRec('r', id); if (r) fxApagar('r', raiz(r)); };
   window.addEventListener('load', () => setTimeout(() => { try { ligarGastos(); agendar(); } catch (e) { console.warn('[v91]', e); } }, 350));
+})();
+</script>
+<style id="v92-ios">
+/* ══════════════════════════════════════════════════════════════════════
+   v92 · VISUAL iOS (Apple HIG) — fundo agrupado cinza, cartões brancos sem
+   borda, tinta monocromática (cor só nos dados: verde entra, vermelho sai,
+   gráficos), fonte do sistema, barras de vidro, títulos grandes.
+   Fica por último na cascata: só aparência, nenhum cálculo muda.
+   ══════════════════════════════════════════════════════════════════════ */
+:root, :root[data-theme="light"] {
+  --bg: #F2F2F7 !important; --bg-soft: #E9E9EE !important;
+  --surface: #FFFFFF !important; --surface-warm: #F2F2F7 !important; --surface-elev: #FFFFFF !important;
+  --border: #E2E2E7 !important; --border-soft: #ECECF0 !important;
+  --text: #111114 !important; --text-muted: #6E6E73 !important; --text-soft: #A1A1A6 !important;
+  --primary: #1C1C1E !important; --primary-dark: #000000 !important;
+  --primary-soft: #E5E5EA !important; --primary-tint: #EFEFF4 !important;
+  --pos: #1E8E3E !important; --pos-soft: #E6F4EA !important;
+  --neg: #D93025 !important; --neg-soft: #FCE8E6 !important;
+  --shadow-xs: none !important; --shadow-sm: none !important;
+  --shadow: 0 1px 2px rgba(0,0,0,.04) !important;
+  --shadow-lg: 0 12px 40px rgba(0,0,0,.12) !important;
+  --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', system-ui, sans-serif !important;
+  --font-body: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, sans-serif !important;
+  --on-primary: #FFFFFF; --glass: rgba(249,249,251,.74); --sep: rgba(60,60,67,.16);
+}
+:root[data-theme="dark"] {
+  --bg: #000000 !important; --bg-soft: #1C1C1E !important;
+  --surface: #1C1C1E !important; --surface-warm: #2C2C2E !important; --surface-elev: #2C2C2E !important;
+  --border: #38383A !important; --border-soft: #2C2C2E !important;
+  --text: #F5F5F7 !important; --text-muted: #98989F !important; --text-soft: #636366 !important;
+  --primary: #F2F2F7 !important; --primary-dark: #FFFFFF !important;
+  --primary-soft: #3A3A3C !important; --primary-tint: #2C2C2E !important;
+  --pos: #30D158 !important; --pos-soft: #12301C !important;
+  --neg: #FF453A !important; --neg-soft: #3A1513 !important;
+  --shadow: none !important; --shadow-lg: 0 12px 40px rgba(0,0,0,.6) !important;
+  --on-primary: #000000; --glass: rgba(30,30,32,.74); --sep: rgba(84,84,88,.55);
+}
+html, body { background: var(--bg) !important; }
+body { font-family: var(--font-body) !important; -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums; letter-spacing: -0.005em; }
+h1, h2, h3, .brand-name, .context-month { font-family: var(--font-display) !important; }
+
+/* Superfícies: cartões brancos sem borda nem sombra, cantos grandes */
+.panel, .card, .money-panel, .home-hero, .spend-card, .income-panel, .method-panel, .card-invoice, .insight-card, .mt-card, .iv-topo {
+  border: 0 !important; box-shadow: none !important;
+}
+.panel, .card, .money-panel, .mt-card, .iv-topo { border-radius: 22px !important; }
+.card.featured { background: var(--surface) !important; color: var(--text) !important; box-shadow: none !important; }
+.card.featured .value, .card.featured .label, .card.featured .sub { color: var(--text) !important; }
+.card.featured .label, .card.featured .sub { color: var(--text-muted) !important; }
+
+/* Títulos grandes (estilo iOS) e títulos de seção */
+.content > h1, #dashboard > h1 { font-size: 2.05rem !important; font-weight: 700 !important; letter-spacing: -0.025em !important; color: var(--text) !important; line-height: 1.15 !important; }
+.content > h1 span, #dashboard > h1 span, #dashboard > h1 em { color: var(--text) !important; }
+.page-sub { color: var(--text-muted) !important; }
+.panel h2, .panel-head-row h2 { font-size: 1.12rem !important; font-weight: 700 !important; letter-spacing: -0.012em !important; color: var(--text) !important; }
+
+/* Barra do topo e botões redondos de vidro */
+.context-bar { background: var(--glass) !important; -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: .5px solid var(--sep) !important; box-shadow: none !important; }
+.context-month em, .context-month span { color: var(--text) !important; }
+.month-nav-btn { background: var(--surface-warm) !important; border: 0 !important; color: var(--text) !important; border-radius: 999px !important; }
+.hamburger, .header-search-btn, .v92-olho {
+  background: var(--glass) !important; -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
+  border: .5px solid var(--sep) !important; box-shadow: 0 2px 12px rgba(0,0,0,.06) !important; color: var(--text) !important; border-radius: 999px !important;
+}
+.header-search-btn:hover, .v92-olho:hover { background: var(--surface) !important; color: var(--text) !important; }
+.header-search-btn svg, .v92-olho svg { width: 19px; height: 19px; }
+.v92-olho { position: fixed; z-index: 95; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
+body.menu-open .v92-olho { opacity: 0; pointer-events: none; }
+
+/* Botões: principal preto (claro) / claro (escuro); secundário cinza */
+.btn { border-radius: 14px !important; font-weight: 600 !important; }
+.btn.primary, .qa-submit, .empty-cta, .we-btn, .chat-btn:not(.sec) { background: var(--primary) !important; border-color: transparent !important; color: var(--on-primary) !important; box-shadow: none !important; }
+.btn:not(.primary):not(.danger) { background: var(--surface-warm) !important; border-color: transparent !important; color: var(--text) !important; }
+.btn.danger { background: var(--neg-soft) !important; color: var(--neg) !important; border-color: transparent !important; }
+.link-btn { color: var(--text) !important; font-weight: 600; text-decoration: underline; text-decoration-color: var(--text-soft); text-underline-offset: 3px; }
+
+/* Pílulas selecionadas: pretas, como os filtros do iOS */
+.filterBtn.active, .qa78-chip.on, .iv-chip.on, .qa-tabs [data-qa].active {
+  background: var(--primary) !important; color: var(--on-primary) !important; border-color: transparent !important; box-shadow: none !important;
+}
+.filterBtn, .qa78-chip { border-radius: 999px !important; }
+.filterBtn:not(.active), .qa78-chip:not(.on) { background: var(--surface) !important; border-color: transparent !important; color: var(--text) !important; }
+
+/* Barra inferior: vidro, sem pílula no ativo; "+" redondo preto */
+@media (max-width: 768px) {
+  .bottom-nav { background: var(--glass) !important; border: .5px solid var(--sep) !important; box-shadow: 0 8px 30px rgba(0,0,0,.10) !important; }
+  .bnav-btn { color: var(--text-soft) !important; }
+  .bnav-btn .bnav-icon svg { stroke: currentColor !important; }
+  .bnav-btn.active { color: var(--text) !important; }
+  .bnav-btn.active .bnav-icon { background: transparent !important; padding: 0 !important; }
+  .bnav-btn.active .bnav-icon svg { stroke: var(--text) !important; stroke-width: 2.1; }
+  .bnav-add { background: var(--primary) !important; color: var(--on-primary) !important; box-shadow: 0 6px 18px rgba(0,0,0,.22) !important; }
+  .bnav-add svg { stroke: var(--on-primary) !important; }
+}
+#fab { background: var(--primary) !important; color: var(--on-primary) !important; box-shadow: 0 6px 18px rgba(0,0,0,.22) !important; }
+.tabBtn.active { background: var(--primary-tint) !important; color: var(--text) !important; }
+.tabBtn.active .icon { color: var(--text) !important; }
+
+/* Início: o número principal em preto (cor só para alerta), patrimônio à vista */
+#homeExtras .spend-card .value.pos, #homeExtras .spend-card .value:not(.neg) { color: var(--text) !important; }
+#homeExtras .spend-card .spend-suffix { color: var(--text-muted) !important; }
+#homeHero .hh-sub, #homeHero .hh-forecast, #homeHero a, #homeHero .hh-link { color: var(--text-muted) !important; }
+@media (max-width: 768px) {
+  #dashboard.v78:not(.mostrar-tudo) #homeExtras .money-panel { display: block !important; }
+  #dashboard.v78 #homeExtras { display: flex; flex-direction: column; gap: 14px; }
+}
+.money-panel .money-head { display: flex !important; flex-direction: column !important; align-items: flex-start !important; gap: 2px !important; }
+.money-panel .money-head h2 { display: none !important; }
+.money-panel .money-kicker { font-size: .86rem !important; color: var(--text-muted) !important; font-weight: 600 !important; margin: 0 !important; }
+.money-panel .money-total { font-size: 2.1rem !important; font-weight: 700 !important; letter-spacing: -0.03em !important; color: var(--text) !important; line-height: 1.1 !important; }
+.money-panel .money-bar { height: 8px !important; gap: 3px; background: transparent !important; }
+.money-panel .money-bar > * { border-radius: 999px; }
+
+/* Listas com avatar redondo (inicial colorida), como apps de banco */
+.recent-dot.v92-av { width: 38px !important; height: 38px !important; border-radius: 50% !important; flex: none; display: flex !important; align-items: center; justify-content: center;
+  font: 700 .95rem/1 var(--font-body); box-shadow: none !important; }
+.recent-item { gap: 12px !important; padding: 10px 0 !important; border-bottom: .5px solid var(--sep); }
+.recent-item:last-child { border-bottom: 0; }
+.recent-value.neg { color: var(--text) !important; }
+
+/* Etiquetas neutras (cor só onde significa algo) */
+.detail-badge, .detail-badge.recurring, .detail-badge.installment, .method-tag, .pay-status.unpaid, .pay-status.na {
+  background: var(--surface-warm) !important; color: var(--text-muted) !important; border: 0 !important; }
+.pay-status.paid { background: var(--pos-soft) !important; color: var(--pos) !important; border: 0 !important; }
+#mainTable .badge { border: 0 !important; }
+
+/* Separadores finos */
+.fx-item, .iv-cl, .iv-mes, .money-row, .conferir-dev, #topCats .cat-line { border-bottom-color: var(--sep) !important; }
+
+/* Valores escondidos: o que não passa pelo formatador também some */
+html.valores-ocultos .hh-amount, html.valores-ocultos #homeHero .hh-cents { filter: blur(9px); }
+
+/* Folhas (modais) com cantos grandes e alça */
+.modal, #modalBox, #quickAddCard { border-radius: 26px !important; }
+@media (prefers-reduced-motion: reduce) { .v92-olho { transition: none !important; } }
+</style>
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// v92 · olho (esconder valores) ao lado da busca, ícone de busca em linha
+// (sem emoji colorido) e avatares redondos na atividade recente.
+// ══════════════════════════════════════════════════════════════════════
+(function () {
+  const OLHO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+  const OLHO_X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.7 10.7 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1"/><path d="M6.6 6.6C3.7 8.4 2 12 2 12s3.6 7 10 7a9.8 9.8 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
+  const LUPA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>';
+  let ocultar = false;
+  try { ocultar = localStorage.getItem('financeapp_ocultar') === '1'; } catch (e) {}
+  window.__ocultarValores = ocultar;
+  function aplicar() {
+    document.documentElement.classList.toggle('valores-ocultos', ocultar);
+    const b = document.getElementById('v92Olho');
+    if (b) { b.innerHTML = ocultar ? OLHO_X : OLHO; b.setAttribute('aria-label', ocultar ? 'Mostrar valores' : 'Esconder valores'); b.title = b.getAttribute('aria-label'); b.setAttribute('aria-pressed', String(ocultar)); }
+  }
+  function posicionar() {
+    const s = document.getElementById('headerSearchBtn'), b = document.getElementById('v92Olho');
+    if (!s || !b) return;
+    const r = s.getBoundingClientRect();
+    if (!r.width) { b.style.display = 'none'; return; }
+    b.style.display = '';
+    b.style.top = r.top + 'px';
+    b.style.right = Math.max(8, window.innerWidth - r.left + 8) + 'px';
+    b.style.width = r.width + 'px'; b.style.height = r.height + 'px';
+  }
+  function montar() {
+    const s = document.getElementById('headerSearchBtn');
+    if (s && !s.dataset.v92) { s.dataset.v92 = '1'; s.innerHTML = LUPA; }
+    if (!document.getElementById('v92Olho')) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.id = 'v92Olho'; b.className = 'v92-olho';
+      b.onclick = () => {
+        ocultar = !ocultar; window.__ocultarValores = ocultar;
+        try { localStorage.setItem('financeapp_ocultar', ocultar ? '1' : '0'); } catch (e) {}
+        aplicar();
+        try { if (typeof renderAll === 'function') renderAll(); if (document.getElementById('dashboard')?.classList.contains('active') && typeof renderDashboard === 'function') renderDashboard(); } catch (e) { console.warn('[v92 olho]', e); }
+      };
+      document.body.appendChild(b);
+    }
+    aplicar(); posicionar();
+  }
+  function avatares() {
+    document.querySelectorAll('#recentActivity .recent-item').forEach(it => {
+      const dot = it.querySelector('.recent-dot'), nome = (it.querySelector('.recent-desc') || {}).textContent || '';
+      if (!dot || dot.classList.contains('v92-av')) return;
+      const cor = dot.style.background || 'var(--text-muted)';
+      dot.classList.add('v92-av');
+      dot.style.background = `color-mix(in srgb, ${cor} 16%, transparent)`;
+      dot.style.color = cor;
+      dot.textContent = (nome.trim()[0] || '•').toUpperCase();
+    });
+  }
+  const rd = window.renderDashboard;
+  if (typeof rd === 'function') window.renderDashboard = function () { const r = rd.apply(this, arguments); try { avatares(); } catch (e) {} return r; };
+  window.addEventListener('resize', posicionar);
+  window.addEventListener('load', () => setTimeout(() => { montar(); avatares(); }, 300));
+  document.addEventListener('click', () => setTimeout(posicionar, 50), true);
+})();
+</script>
+<style id="v92-ios-telas">
+/* v92 · Início e Gastos no celular com a estrutura de app de banco iOS */
+#homeIOS, #homeIOS2, #gastosIOS { display: none; }
+.ios-titulo { font: 700 2.1rem/1.12 var(--font-display); letter-spacing: -0.03em; margin: 6px 4px 14px; color: var(--text); }
+.ios-sec { font: 700 1.22rem/1.2 var(--font-display); letter-spacing: -0.02em; margin: 24px 4px 9px; color: var(--text); display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.ios-sec .ios-mais { font: 600 .86rem/1 var(--font-body); color: var(--text-muted); background: none; border: 0; cursor: pointer; padding: 6px 0; }
+.ios-card { background: var(--surface); border-radius: 22px; padding: 18px; }
+.ios-lista { background: var(--surface); border-radius: 22px; padding: 2px 0; overflow: hidden; }
+.ios-hero .ios-l { font-size: .88rem; font-weight: 600; color: var(--text-muted); }
+.ios-hero .ios-v { font: 700 2.35rem/1.1 var(--font-display); letter-spacing: -0.035em; margin: 4px 0 14px; color: var(--text); white-space: nowrap; }
+.ios-barra { display: flex; gap: 3px; height: 8px; margin-bottom: 10px; }
+.ios-barra span { border-radius: 999px; min-width: 4px; }
+.ios-hero .ios-s { font-size: .8rem; color: var(--text-muted); }
+.ios-livre { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 12px; }
+.ios-livre .ios-livre-v { font: 700 1.45rem/1.1 var(--font-display); letter-spacing: -0.02em; white-space: nowrap; color: var(--text); }
+.ios-livre .ios-livre-v small { font-size: .9rem; color: var(--text-muted); font-weight: 600; }
+.ios-livre .ios-livre-v.neg { color: var(--neg); }
+.ios-livre .ios-livre-l { font-weight: 700; font-size: .95rem; }
+.ios-livre .ios-livre-s { font-size: .78rem; color: var(--text-muted); margin-top: 2px; }
+.ios-row { display: flex; align-items: center; gap: 12px; padding: 11px 16px; position: relative; cursor: pointer; min-height: 56px; }
+.ios-row + .ios-row::before { content: ''; position: absolute; top: 0; left: 64px; right: 0; border-top: .5px solid var(--sep); }
+.ios-row:active { background: var(--surface-warm); }
+.ios-av { width: 38px; height: 38px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center;
+  font: 700 .95rem/1 var(--font-body); color: var(--c); background: color-mix(in srgb, var(--c) 16%, transparent); }
+.ios-av svg { width: 18px; height: 18px; stroke: var(--c); }
+.ios-row-t { flex: 1; min-width: 0; }
+.ios-row-n { font-weight: 600; font-size: .95rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ios-row-s { font-size: .78rem; color: var(--text-muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ios-row-v { text-align: right; font-weight: 600; font-size: .95rem; white-space: nowrap; color: var(--text); }
+.ios-row-v small { display: block; font-size: .74rem; font-weight: 500; color: var(--text-muted); margin-top: 2px; }
+.ios-row-v.neg { color: var(--neg); } .ios-row-v.pos { color: var(--pos); } .ios-row-v.inv { color: var(--invest); }
+.ios-row-chev { color: var(--text-soft); font-size: 1.2rem; margin-left: 2px; }
+.ios-rosca { display: flex; align-items: center; gap: 18px; }
+.ios-rosca svg { width: 124px; height: 124px; flex: none; }
+.ios-rosca .ios-leg { flex: 1; min-width: 0; display: grid; gap: 7px; }
+.ios-leg-i { display: flex; align-items: center; gap: 8px; font-size: .86rem; }
+.ios-leg-i i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.ios-leg-i span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.ios-leg-i b { font-weight: 600; color: var(--text-muted); }
+.ios-nota { font-size: .76rem; color: var(--text-muted); margin: 8px 6px 0; }
+.ios-total { display: flex; justify-content: space-between; padding: 13px 16px; font-weight: 700; border-top: .5px solid var(--sep); }
+.ios-mini3 { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin-bottom: 12px; }
+.ios-mini3::-webkit-scrollbar { display: none; }
+.ios-mini { flex: 1 0 auto; min-width: 104px; background: var(--surface); border-radius: 16px; padding: 10px 12px; cursor: default; border: 0; text-align: left; font: inherit; color: inherit; }
+.ios-mini span { display: block; font-size: .74rem; color: var(--text-muted); font-weight: 600; }
+.ios-mini b { display: block; font-size: 1rem; margin-top: 2px; white-space: nowrap; }
+button.ios-mini { cursor: pointer; }
+.ios-busca { display: flex; align-items: center; gap: 8px; background: var(--primary-soft); border-radius: 12px; padding: 0 12px; height: 40px; margin-bottom: 10px; }
+.ios-busca svg { width: 17px; height: 17px; stroke: var(--text-muted); flex: none; }
+.ios-busca input { flex: 1; border: 0 !important; background: transparent !important; box-shadow: none !important; outline: none; font: inherit; font-size: .95rem; color: var(--text); padding: 0 !important; height: 40px; min-width: 0; }
+.ios-filtros { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin-bottom: 6px; }
+.ios-filtros::-webkit-scrollbar { display: none; }
+.ios-pill { flex: none; border: 0; border-radius: 999px; padding: 8px 15px; font: 600 .86rem/1 var(--font-body); background: var(--surface); color: var(--text); cursor: pointer; }
+.ios-pill.on { background: var(--primary); color: var(--on-primary); }
+.ios-dia { font: 700 .86rem/1 var(--font-body); color: var(--text-muted); margin: 18px 6px 8px; text-transform: none; }
+.ios-vazio { padding: 26px 16px; text-align: center; color: var(--text-muted); font-size: .9rem; }
+.ios-sheet { display: grid; gap: 8px; }
+.ios-sheet-top { text-align: center; margin-bottom: 6px; }
+.ios-sheet-top b { display: block; font: 700 1.8rem/1.15 var(--font-display); letter-spacing: -0.02em; }
+.ios-sheet-top span { font-size: .84rem; color: var(--text-muted); }
+.ios-sheet button { width: 100%; border: 0; border-radius: 14px; padding: 15px; font: 600 1rem/1 var(--font-body); background: var(--surface-warm); color: var(--text); cursor: pointer; }
+.ios-sheet button.perigo { color: var(--neg); }
+@media (max-width: 768px) {
+  #dashboard.v78 > #homeIOS { display: block !important; order: 0 !important; }
+  #dashboard.v78 > #radarPanel { order: 1 !important; margin-top: 14px; }
+  #dashboard.v78.ios-pronto:not(.ver-radar) > #radarPanel { display: none !important; }
+  #dashboard.v78 > #homeIOS2 { display: block !important; order: 2 !important; }
+  #dashboard.v78 > .home-mais-btn { order: 3 !important; margin-top: 18px !important; }
+  #dashboard.v78.ios-pronto:not(.mostrar-tudo) > :not(#homeIOS):not(#homeIOS2):not(#radarPanel):not(.home-mais-btn) { display: none !important; }
+  #dashboard.v78.ios-pronto > .h78-topo, #dashboard.v78.ios-pronto > #homeExtras, #dashboard.v78.ios-pronto > #homeHero,
+  #dashboard.v78.ios-pronto > .h78-cat, #dashboard.v78.ios-pronto > #recentActivity { display: none !important; }
+  #gastos.ios-pronto > #gastosIOS { display: block; }
+  #gastos.ios-pronto > :not(h1):not(#gastosIOS):not(.bulk-bar) { display: none !important; }
+  #gastos.ios-pronto > h1 { margin-bottom: 12px !important; }
+}
+</style>
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// v92 · INÍCIO E GASTOS NO CELULAR — estrutura de app de banco iOS:
+// título grande, patrimônio no topo com barra por conta/classe, "Contas"
+// (cada conta e cada investimento numa linha com ícone redondo), gastos do
+// mês em rosca, contas fixas com total, últimos lançamentos; Gastos com
+// resumo, busca, filtros em pílula e lançamentos agrupados por dia (toque
+// abre as ações). Mesmos números das telas de sempre (mesmas funções).
+// ══════════════════════════════════════════════════════════════════════
+(function () {
+  const $ = id => document.getElementById(id);
+  const celular = () => window.matchMedia('(max-width: 768px)').matches;
+  const esc = escapeHtml;
+  // cor muito escura (ex.: preto) some no tema escuro: usa a cor do texto
+  const escura = c => { const m = /^#?([0-9a-f]{6})$/i.exec(String(c || '')); if (!m) return false; const n = parseInt(m[1], 16), l = (0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255; return l < 0.22; };
+  const av = (txt, c) => `<span class="ios-av" style="--c:${escura(c) ? 'var(--text)' : safeColor(c || '#8E8E93')}">${esc((String(txt || '').trim()[0] || '•').toUpperCase())}</span>`;
+  const linha = (avH, nome, sub, val, sub2, clique, cls) => `<div class="ios-row"${clique ? ` role="button" tabindex="0" onclick="${clique}" onkeydown="if(event.key==='Enter'){${clique}}"` : ''}>${avH}
+    <div class="ios-row-t"><div class="ios-row-n">${nome}</div>${sub ? `<div class="ios-row-s">${sub}</div>` : ''}</div>
+    ${val != null ? `<div class="ios-row-v${cls ? ' ' + cls : ''}">${val}${sub2 ? `<small>${sub2}</small>` : ''}</div>` : '<span class="ios-row-chev">›</span>'}</div>`;
+  const mil = v => window.__ocultarValores ? '••••' : (Math.abs(v) >= 1000 ? 'R$ ' + (v / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' mil' : fmt(v));
+  const nome = () => { const u = (typeof currentUser !== 'undefined' && currentUser) || ''; return u ? u.charAt(0).toUpperCase() + u.slice(1) : ''; };
+  const diaMes = iso => { const d = isoDay(iso); return d ? Number(d.slice(8, 10)) : null; };
+
+  // ── INÍCIO ─────────────────────────────────────────────────────────
+  function homeHTML() {
+    const Y = currentYear, M = currentMonth, mes = monthsFull[M].toLowerCase(), cur = getMonthData(Y, M);
+    const agoraT = new Date().getFullYear() * 12 + new Date().getMonth();
+    const cm = Y * 12 + M >= agoraT ? getCarteiraMercado() : null, aMerc = !!(cm && cm.temMercado && !cm.legado), custo = getCarteira(Y, M);
+    const vCl = id => aMerc ? ((cm.porClasse[id] || {}).mercado || 0) : (custo.porClasse[id] || 0);
+    const cartTotal = aMerc ? cm.mercado : custo.total;
+    const conta = getContaExibida(Y, M), dev = aDevolverEm(Y, M), patr = conta + cartTotal - dev;
+    const contas = getContas().map(c => ({ c, v: getContaExibida(Y, M, c.id) }));
+    const classes = getInvestClasses().map(c => ({ c, v: vCl(c.id) })).filter(x => x.v > 0.004 || x.c.reserve).sort((a, b) => b.v - a.v);
+    const partes = contas.map(x => ({ v: x.v, cor: x.c.cor })).concat(classes.map(x => ({ v: x.v, cor: x.c.color })));
+    const base = partes.reduce((a, x) => a + Math.max(0, x.v), 0) || 1;
+    const barra = partes.filter(x => x.v > 0).map(x => `<span style="flex:${(x.v / base).toFixed(4)};background:${escura(x.cor) ? 'var(--text)' : safeColor(x.cor)}"></span>`).join('');
+    // "Livre para gastar": o mesmo cartão da Início de sempre (renderHomeExtras)
+    const sc = document.querySelector('#homeExtras .spend-card');
+    const livreV = sc ? sc.querySelector('.value') : null, livreS = sc ? sc.querySelector('.sub') : null;
+    const livre = livreV ? `<div class="ios-livre"><div><div class="ios-livre-l">Livre para gastar</div><div class="ios-livre-s">${esc(livreS ? livreS.textContent : '')}</div></div>
+      <div class="ios-livre-v${livreV.classList.contains('neg') ? ' neg' : ''}">${livreV.innerHTML}</div></div>` : '';
+    const topo = `<div class="ios-titulo">Olá${nome() ? ', ' + esc(nome()) : ''}</div>
+      <div class="ios-card ios-hero" role="button" tabindex="0" onclick="navTo('investimentos')">
+        <div class="ios-l">Patrimônio total</div><div class="ios-v">${fmt(patr)}</div>
+        ${barra ? `<div class="ios-barra">${barra}</div>` : ''}
+        <div class="ios-s">${dev > 0 ? `Sem os ${fmt(dev)} que talvez você devolva · ` : ''}${Y * 12 + M === agoraT ? 'hoje' : `fim de ${mes}`}${aMerc ? ' · investimentos a mercado' : ''}</div>
+      </div>${livre ? `<div class="ios-card" style="margin-top:12px;padding:14px 18px">${livre}</div>` : ''}${avisos()}`;
+
+    // Contas: cada conta e cada caixinha/investimento
+    const hojeD = new Date().getDate(), atual = Y * 12 + M === agoraT;
+    const fats = atual ? faturasPagasEm(Y, M).filter(f => f.dia > hojeD) : [];
+    const linhasConta = contas.map(({ c, v }) => {
+      const fc = fats.filter(f => f.conta === c.id);
+      return linha(av(c.nome, c.cor), esc(c.nome), atual ? 'saldo de hoje' : `fim de ${mes}`, fmt(v), fc.length ? `fatura ${fmt(fc.reduce((a, f) => a + f.valor, 0))} · dia ${Math.min(...fc.map(f => f.dia))}` : null, "navTo('config')", v < 0 ? 'neg' : '');
+    }).join('');
+    const linhasCl = classes.map(({ c, v }) => {
+      const cob = c.reserve ? coberturaReserva(v, Y, M) : null;
+      const sub = c.reserve ? (cob.meses ? `reserva · cobre ${cob.meses.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} meses` : 'reserva de emergência') : (aMerc && cm.porClasse[c.id] && cm.porClasse[c.id].informado ? 'a mercado' : 'investimento');
+      return linha(av(c.label, c.color), esc(c.label), sub, fmt(v), null, "navTo('investimentos')");
+    }).join('');
+    const linhaDev = dev > 0 ? linha(av('↩', '#8E8E93'), 'Talvez tenha que devolver', typeof ondeDevolver === 'function' ? ondeDevolver(Y, M) : '', '−' + fmt(dev), null, 'abrirConferirSaldos()') : '';
+    const graf = linha(`<span class="ios-av" style="--c:var(--text-muted)"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M5 20V12"/><path d="M12 20V5"/><path d="M19 20v-9"/></svg></span>`, 'Ver gráficos', 'Patrimônio e mês a mês no ano', null, null, "navTo('anual')");
+    let resto = `<div class="ios-sec">Contas</div><div class="ios-lista">${linhasConta}${linhasCl}${linhaDev}${graf}</div>`;
+
+    // Gastos do mês em rosca
+    const porCat = Object.entries(groupByCat(cur.items)).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+    if (porCat.length) {
+      const tot = cur.gastos || porCat.reduce((a, [, v]) => a + v, 0);
+      const top = porCat.slice(0, 5), outros = porCat.slice(5).reduce((a, [, v]) => a + v, 0);
+      const fatias = top.map(([c, v]) => ({ nome: c, v, cor: getCategoryColor(c) })).concat(outros > 0 ? [{ nome: 'Outros', v: outros, cor: '#AEAEB2' }] : []);
+      const R = 42, C = 2 * Math.PI * R; let acc = 0;
+      const arcos = fatias.map(f => { const len = f.v / tot * C, gap = fatias.length > 1 ? Math.min(2.2, len * 0.3) : 0;
+        const a = `<circle r="${R}" cx="60" cy="60" fill="none" stroke="${f.cor}" stroke-width="15" stroke-dasharray="${Math.max(0, len - gap).toFixed(2)} ${C.toFixed(2)}" stroke-dashoffset="${(-acc).toFixed(2)}" transform="rotate(-90 60 60)"/>`; acc += len; return a; }).join('');
+      const leg = fatias.map(f => `<div class="ios-leg-i"><i style="background:${f.cor}"></i><span>${esc(f.nome)}</span><b>${(f.v / tot * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</b></div>`).join('');
+      resto += `<div class="ios-sec">Gastos de ${mes}<button type="button" class="ios-mais" onclick="navTo('gastos')">ver tudo ›</button></div>
+        <div class="ios-card"><div class="ios-rosca"><svg viewBox="0 0 120 120" role="img" aria-label="Gastos por categoria">${arcos}
+          <text x="60" y="56" text-anchor="middle" font-size="9" fill="var(--text-muted)" font-weight="600">Total</text>
+          <text x="60" y="71" text-anchor="middle" font-size="12.5" fill="var(--text)" font-weight="700">${esc(mil(tot))}</text></svg>
+          <div class="ios-leg">${leg}</div></div></div>
+        <p class="ios-nota">${fmt(tot)} em ${mes}. Guardar dinheiro não conta como gasto.</p>`;
+    }
+
+    // Contas fixas do mês (como "assinaturas mensais")
+    if (typeof compromissosDoMes === 'function') {
+      const c = compromissosDoMes(Y, M), fixos = c.fixosItens.slice().sort((a, b) => (diaMes(a.date) || 99) - (diaMes(b.date) || 99));
+      if (fixos.length || c.parcItens.length) {
+        const ls = fixos.map(i => { const pago = methodKind(i.method) !== 'credit' && getPaidStatus(i.id, Y, M);
+          return linha(av(i.desc, getCategoryColor(i.cat)), esc(i.desc), `dia ${diaMes(i.date) || '—'} · ${esc(methodLabel(i.method))}`, fmt(i.value), pago ? '✓ pago' : null, "navTo('registro')"); }).join('');
+        resto += `<div class="ios-sec">Contas fixas<button type="button" class="ios-mais" onclick="navTo('registro')">ver tudo ›</button></div>
+          <div class="ios-lista">${ls}<div class="ios-total"><span>Total por mês</span><span>${fmt(c.fixos + c.parcelas)}</span></div></div>
+          ${c.parcelas > 0 ? `<p class="ios-nota">Inclui ${fmt(c.parcelas)} de parcelas.${c.temRecorrente ? ` Levam ${Math.round(c.pct)}% do que entra todo mês.` : ''}</p>` : (c.temRecorrente && c.pct != null ? `<p class="ios-nota">Levam ${Math.round(c.pct)}% do que entra todo mês.</p>` : '')}`;
+      }
+    }
+
+    // Últimos lançamentos
+    const fimHoje = new Date(); fimHoje.setHours(23, 59, 59, 999);
+    const ult = [...cur.items, ...(cur.aportes || [])].filter(i => i.date && parseLocalDate(i.date) <= fimHoje)
+      .sort((a, b) => parseLocalDate(b.date) - parseLocalDate(a.date)).slice(0, 5);
+    if (ult.length) {
+      resto += `<div class="ios-sec">Últimos lançamentos<button type="button" class="ios-mais" onclick="navTo('gastos')">ver todos ›</button></div>
+        <div class="ios-lista">${ult.map(i => i._aporte
+          ? linha(av(i.desc, (getInvestClass(i.investClass) || {}).color), esc(i.desc), `${esc(relativeDay(i.date))} · ${esc((getInvestClass(i.investClass) || { label: 'Investimento' }).label)}`, '→ ' + fmt(i.value), null, `iosAcoes(${jsArg(i.id)})`, 'inv')
+          : linha(av(i.desc, getCategoryColor(i.cat)), esc(i.desc), `${esc(relativeDay(i.date))} · ${esc(i.cat || '')}`, '−' + fmt(i.value), null, `iosAcoes(${jsArg(i.id)})`)).join('')}</div>`;
+    }
+    return { topo, resto };
+  }
+  // Radar vira uma linha: "3 avisos · Aluguel vence em 4 dias" (toque abre)
+  function avisos() {
+    let itens = [];
+    try { itens = typeof computeRadar === 'function' ? computeRadar() : []; } catch (e) {}
+    if (!itens.length) return '';
+    const tmp = document.createElement('div'); tmp.innerHTML = itens[0].titulo;
+    const urg = itens.filter(x => x.nivel !== 'info').length, aberto = $('dashboard').classList.contains('ver-radar');
+    return `<div class="ios-lista" style="margin-top:12px">${linha(`<span class="ios-av" style="--c:${urg ? 'var(--accent)' : 'var(--text-muted)'}">!</span>`, esc(tmp.textContent), `${itens.length} aviso${itens.length === 1 ? '' : 's'} do Radar · ${aberto ? 'toque para fechar' : 'toque para ver'}`, null, null, 'iosRadar()')}</div>`;
+  }
+  window.iosRadar = () => { const d = $('dashboard'); d.classList.toggle('ver-radar'); montarInicio(); if (d.classList.contains('ver-radar')) setTimeout(() => { const r = $('radarPanel'); if (r) r.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 60); };
+  function montarInicio() {
+    const dash = $('dashboard');
+    if (!dash || !celular() || typeof currentUser === 'undefined' || !currentUser || !db || !db.events) return;
+    let a = $('homeIOS'), b = $('homeIOS2');
+    if (!a) { a = document.createElement('div'); a.id = 'homeIOS'; dash.prepend(a); }
+    if (!b) { b = document.createElement('div'); b.id = 'homeIOS2'; dash.appendChild(b); }
+    const h = homeHTML();
+    a.innerHTML = h.topo; b.innerHTML = h.resto;
+    dash.classList.add('ios-pronto');
+  }
+
+  // ── GASTOS ─────────────────────────────────────────────────────────
+  const FILTROS = [['tudo', 'Tudo'], ['fixo', 'Fixos'], ['parc', 'Parcelas'], ['eventual', 'Avulsos']];
+  function itensFiltrados(d) {
+    let l = [...d.items, ...(d.aportes || [])];
+    if (activeFilter !== 'tudo') l = l.filter(i => i.type === activeFilter);
+    if (activeMethodFilter !== 'all') l = l.filter(i => i.method === activeMethodFilter);
+    if (activeSearch) { const q = activeSearch.toLowerCase(); l = l.filter(i => (i.desc || '').toLowerCase().includes(q) || (i.cat || '').toLowerCase().includes(q)); }
+    return l;
+  }
+  function listaHTML(d) {
+    const l = itensFiltrados(d).sort((a, b) => String(isoDay(b.date) || '').localeCompare(String(isoDay(a.date) || '')) || b.value - a.value);
+    if (!l.length) return `<div class="ios-lista"><div class="ios-vazio">${activeSearch || activeFilter !== 'tudo' ? 'Nada encontrado com esse filtro.' : `Nenhum lançamento em ${monthsFull[currentMonth].toLowerCase()}.`}</div></div>`;
+    const hoje = todayISO(), grupos = [];
+    const previstos = l.filter(i => (isoDay(i.date) || '') > hoje).sort((a, b) => String(isoDay(a.date)).localeCompare(String(isoDay(b.date))));
+    l.filter(i => !previstos.includes(i)).forEach(i => { const k = isoDay(i.date) || ''; const g = grupos[grupos.length - 1]; if (g && g.k === k) g.it.push(i); else grupos.push({ k, it: [i] }); });
+    // o que ainda vai acontecer no mês (fixos, parcelas, lançamentos com data futura) fica no fim, junto
+    if (previstos.length) grupos.push({ k: '__prev', it: previstos });
+    return grupos.map(g => {
+      if (g.k === '__prev') {
+        const totP = g.it.filter(i => !i._aporte).reduce((a, i) => a + i.value, 0);
+        return `<div class="ios-dia">Ainda este mês${totP ? ` · ${fmt(totP)}` : ''}</div><div class="ios-lista">${g.it.map(i => linhaItem(i, true)).join('')}</div>`;
+      }
+      let rot = 'Sem data';
+      if (g.k) { const r = relativeDay(g.k); rot = /^(Hoje|Ontem)$/.test(r) ? r : parseLocalDate(g.k).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' }); }
+      const tot = g.it.filter(i => !i._aporte).reduce((a, i) => a + i.value, 0);
+      return `<div class="ios-dia">${esc(rot)}${tot ? ` · ${fmt(tot)}` : ''}</div><div class="ios-lista">${g.it.map(i => linhaItem(i, false)).join('')}</div>`;
+    }).join('');
+  }
+  function linhaItem(i, comDia) {
+        const tags = comDia && isoDay(i.date) ? [`dia ${Number(isoDay(i.date).slice(8, 10))}`, esc(methodLabel(i.method))] : [esc(methodLabel(i.method))];
+        if (i._aporte) tags.push(esc((getInvestClass(i.investClass) || { label: 'Investimento' }).label));
+        else if (i.cat) tags.push(esc(i.cat));
+        if (i.type === 'fixo') tags.push(methodKind(i.method) !== 'credit' && getPaidStatus(i.id, currentYear, currentMonth) ? 'fixo ✓ pago' : 'fixo');
+        if (i.type === 'parc') tags.push(esc(i.detail || 'parcela'));
+        if (i.faturaMais === 1) tags.push('próx. fatura');
+        const cor = i._aporte ? (getInvestClass(i.investClass) || {}).color : getCategoryColor(i.cat);
+        return linha(av(i.desc, cor), esc(i.desc), tags.join(' · '), (i._aporte ? (i.value < 0 ? '← ' : '→ ') : '−') + fmt(Math.abs(i.value)), null, `iosAcoes(${jsArg(i.id)})`, i._aporte ? 'inv' : 'neg');
+  }
+  function montarGastos() {
+    const pg = $('gastos');
+    if (!pg || !celular() || typeof currentUser === 'undefined' || !currentUser || !db || !db.events) return;
+    let el = $('gastosIOS');
+    if (!el) { el = document.createElement('div'); el.id = 'gastosIOS'; pg.querySelector('h1').insertAdjacentElement('afterend', el); }
+    const d = getMonthData(currentYear, currentMonth);
+    const busca = document.activeElement && document.activeElement.id === 'iosBusca';
+    el.innerHTML = `<div class="ios-mini3">
+        <div class="ios-mini"><span>Gastos</span><b class="neg">${fmt(d.gastos)}</b></div>
+        <button type="button" class="ios-mini" onclick="fxEntradas()"><span>Entradas ›</span><b class="pos">${fmt(d.entradas)}</b></button>
+        <div class="ios-mini"><span>Sobra</span><b class="${d.sobra >= 0 ? '' : 'neg'}">${fmt(d.sobra)}</b></div>
+        ${Math.abs(d.investido) >= 0.005 ? `<div class="ios-mini"><span>Guardado</span><b style="color:var(--invest)">${fmt(d.investido)}</b></div>` : ''}
+      </div>
+      <label class="ios-busca"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>
+        <input id="iosBusca" type="search" placeholder="Buscar" value="${esc(activeSearch)}" autocomplete="off" aria-label="Buscar lançamentos"></label>
+      <div class="ios-filtros">${FILTROS.map(([k, t]) => `<button type="button" class="ios-pill${activeFilter === k ? ' on' : ''}" onclick="iosFiltro('${k}')">${t}</button>`).join('')}
+        ${getMethods().map(m => `<button type="button" class="ios-pill${activeMethodFilter === m.id ? ' on' : ''}" onclick="iosMetodo(${jsArg(m.id)})">${esc(m.label)}</button>`).join('')}</div>
+      <div id="iosLista">${listaHTML(d)}</div>`;
+    const inp = $('iosBusca');
+    inp.oninput = () => { activeSearch = inp.value.trim(); const sb = $('searchBox'); if (sb) sb.value = inp.value; $('iosLista').innerHTML = listaHTML(getMonthData(currentYear, currentMonth)); };
+    if (busca) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+    pg.classList.add('ios-pronto');
+  }
+  window.iosFiltro = k => { const b = document.querySelector(`.filterBtn[data-filter="${k}"]`); if (b && typeof setFilter === 'function') setFilter(k, b); else { activeFilter = k; renderGastos(); } };
+  window.iosMetodo = id => { activeMethodFilter = activeMethodFilter === id ? 'all' : id; const s = $('methodFilter'); if (s) s.value = activeMethodFilter; renderGastos(); };
+
+  // Ações de um lançamento (folha de baixo)
+  function acharRegistro(id) {
+    const n = Number(id);
+    return (db.recurringExpenses || []).find(x => x.id === n) || (db.installments || []).find(x => x.id === n)
+      || Object.values(db.events || {}).flat().find(x => x && x.id === n) || null;
+  }
+  window.iosEditar = id => { const r = acharRegistro(id); modal.close(); if (r) setTimeout(() => editTransactionModal(r), 220); };
+  window.iosExcluir = id => {
+    modal.close();
+    setTimeout(() => {
+      if ((db.recurringExpenses || []).some(x => x.id === Number(id)) && typeof fxExcluirDoMes === 'function') return fxExcluirDoMes(id);
+      const b = document.createElement('button'); b.dataset.action = 'del'; b.dataset.id = String(id);
+      handleTableAction({ target: b });
+    }, 220);
+  };
+  window.iosAcoes = function (id) {
+    const r = acharRegistro(id);
+    if (!r) return;
+    const d = getMonthData(currentYear, currentMonth), it = [...d.items, ...(d.aportes || [])].find(x => x.id === Number(id)) || r;
+    const fixo = (db.recurringExpenses || []).includes(r), credito = methodKind(normalizeMethod(r.method)) === 'credit', pid = jsArg(r.id);
+    const pago = fixo && getPaidStatus(r.id, currentYear, currentMonth);
+    const sub = [it.date ? fmtDate(it.date) : '', methodLabel(it.method || r.method), it.cat || '', fixo ? 'gasto fixo' : r.total ? `parcela ${it.detail || ''}` : ''].filter(Boolean).map(esc).join(' · ');
+    modal.show(r.desc, `<div class="ios-sheet">
+      <div class="ios-sheet-top"><b>${fmt(Math.abs(it.value))}</b><span>${sub}</span></div>
+      <button type="button" onclick="iosEditar(${pid})">Editar</button>
+      ${fixo && !credito ? `<button type="button" onclick="togglePaid(${pid}, ${currentYear}, ${currentMonth}); modal.close(); renderGastos(); if (typeof renderDashboard === 'function' && document.getElementById('dashboard').classList.contains('active')) renderDashboard();">${pago ? 'Desmarcar pago' : 'Marcar como pago'}</button>` : ''}
+      ${credito && typeof alternarProximaFatura === 'function' ? `<button type="button" onclick="modal.close(); alternarProximaFatura(${pid})">${r.faturaMais === 1 ? 'Voltar à fatura original' : 'Foi para a próxima fatura'}</button>` : ''}
+      <button type="button" onclick="modal.close(); duplicateTx(${pid})">Duplicar</button>
+      <button type="button" class="perigo" onclick="iosExcluir(${pid})">Excluir</button>
+    </div>`, { showFooter: false });
+  };
+
+  // Ganchos
+  const rd = window.renderDashboard;
+  if (typeof rd === 'function') window.renderDashboard = function () { const x = rd.apply(this, arguments); try { montarInicio(); } catch (e) { console.warn('[v92 início]', e); } return x; };
+  const rg = window.renderGastos;
+  if (typeof rg === 'function') renderGastos = window.renderGastos = function () { const x = rg.apply(this, arguments); try { montarGastos(); } catch (e) { console.warn('[v92 gastos]', e); } return x; };
+  window.addEventListener('load', () => setTimeout(() => { try { montarInicio(); montarGastos(); } catch (e) { console.warn('[v92]', e); } }, 450));
+  let larg = celular();
+  window.addEventListener('resize', () => { if (celular() !== larg) { larg = celular(); try { montarInicio(); montarGastos(); } catch (e) {} } });
 })();
 </script>
 </body>
