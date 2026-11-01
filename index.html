@@ -6204,7 +6204,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v93';
+const APP_VERSION = 'v94';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -18733,6 +18733,174 @@ button.ios-mini { cursor: pointer; }
   if (typeof rgl === 'function') { renderGoals = window.renderGoals = function () { const r = rgl.apply(this, arguments); try { montarMetas(); } catch (e) { console.warn('[v93 metas]', e); } return r; }; }
   window.addEventListener('load', () => setTimeout(() => { ligar(); agendar(); }, 500));
   document.addEventListener('click', e => { if (e.target.closest('.tabBtn, .bnav-btn')) setTimeout(agendar, 60); }, true);
+})();
+</script>
+<style id="v94-ios-telas">
+/* v94 · Configurações como os Ajustes do iPhone e Fixos com seções iOS */
+#configIOS, .cfg-voltar { display: none; }
+.cfg-perfil { display: flex; align-items: center; gap: 14px; background: var(--surface); border-radius: 22px; padding: 16px; margin-bottom: 8px; }
+.cfg-perfil .ios-av { width: 56px; height: 56px; font-size: 1.4rem; }
+.cfg-perfil b { display: block; font-size: 1.15rem; }
+.cfg-perfil span { font-size: .82rem; color: var(--text-muted); }
+.cfg-grupo { margin: 22px 4px 7px; font-size: .78rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
+.cfg-ico { width: 32px; height: 32px; border-radius: 9px; flex: none; display: flex; align-items: center; justify-content: center; background: var(--c); }
+.cfg-ico svg { width: 18px; height: 18px; stroke: #fff; }
+#configIOS .ios-row { min-height: 52px; padding: 9px 16px; }
+#configIOS .ios-row + .ios-row::before { left: 60px; }
+#configIOS .ios-row.perigo .ios-row-n { color: var(--neg); }
+.cfg-voltar { align-items: center; gap: 4px; border: 0; background: none; color: var(--text); font: 600 1rem/1 var(--font-body); padding: 8px 2px; margin: 0 0 4px; cursor: pointer; }
+@media (max-width: 768px) {
+  #config.ios-pronto > #configIOS { display: block; }
+  #config.ios-pronto:not(.cfg-aberto) > .panel, #config.ios-pronto:not(.cfg-aberto) > .version-label { display: none !important; }
+  #config.ios-pronto.cfg-aberto > #configIOS, #config.ios-pronto.cfg-aberto > .page-sub { display: none !important; }
+  #config.ios-pronto.cfg-aberto > .panel:not(.cfg-atual), #config.ios-pronto.cfg-aberto > .version-label { display: none !important; }
+  #config.ios-pronto.cfg-aberto > .cfg-voltar { display: inline-flex; }
+  #config.ios-pronto.cfg-aberto > .panel.cfg-atual { margin-top: 6px; }
+  #config.ios-pronto.cfg-aberto > h1 { display: none !important; }
+  #config.ios-pronto > .page-sub { display: none !important; }
+  #config.ios-pronto.cfg-aberto > .panel.cfg-atual h2 { font-size: 1.6rem !important; letter-spacing: -0.025em !important; }
+  .method-row { display: grid !important; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px 12px; align-items: center; }
+  .method-row > .method-row-actions { grid-column: 2 / -1; justify-content: flex-start; display: flex; gap: 8px; flex-wrap: wrap; }
+  .method-row-name { white-space: normal !important; overflow: visible !important; }
+  .method-row-meta { white-space: normal !important; }
+  /* Fixos: seção com título fora e cartão branco */
+  #fxNovo .fx-sec.ios-secao { background: transparent !important; padding: 0 !important; box-shadow: none !important; margin: 0 0 4px !important; }
+  #fxNovo .fx-sec.ios-secao > .fx-h { margin: 22px 4px 8px; }
+  #fxNovo .fx-sec.ios-secao > .fx-h h2 { font: 700 1.22rem/1.2 var(--font-display) !important; letter-spacing: -0.02em !important; }
+  #fxNovo .fx-sec.ios-secao > .ios-in { background: var(--surface); border-radius: 22px; padding: 2px 14px; }
+  #fxNovo .fx-sec.ios-secao > .ios-in > .fx-item:last-of-type { border-bottom: 0; }
+  #fxNovo .fx-sec .fx-mais { background: var(--surface-warm); border: 0; }
+  #fxNovo .fx-topo { border-radius: 22px !important; }
+  #fxNovo .fx-topo .fx-es > div { background: var(--surface-warm); }
+  #fxNovo .fx-topo .fx-v { font-size: 1.45rem; }
+  #fxNovo .fx-topo .fx-acoes .btn:not(.primary) { background: var(--surface-warm) !important; }
+  #fxNovo .fx-dia { border: 0 !important; background: var(--surface-warm) !important; border-radius: 12px; }
+  #fxNovo .fx-dia.hoje { background: var(--primary) !important; }
+  #fxNovo .fx-dia.hoje b, #fxNovo .fx-dia.hoje small { color: var(--on-primary) !important; }
+  #registro > .page-sub { display: none; }
+}
+</style>
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// v94 · CONFIGURAÇÕES COMO OS AJUSTES DO iPHONE — no celular, um índice com
+// o seu perfil e listas agrupadas (ícone colorido + nome + resumo). Tocar
+// abre só aquele painel, com "‹ Configurações" para voltar. Os painéis são
+// os de sempre (mesmos botões e campos). Fixos e recorrentes: seções com o
+// título fora do cartão, como nas outras abas.
+// ══════════════════════════════════════════════════════════════════════
+(function () {
+  const $ = id => document.getElementById(id);
+  const celular = () => window.matchMedia('(max-width: 768px)').matches;
+  const esc = escapeHtml;
+  const I = {
+    backup: '<path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/>',
+    nuvem: '<path d="M7 18a4 4 0 0 1-.5-8A6 6 0 0 1 18 9a4 4 0 0 1 0 9z"/>',
+    cal: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16"/><path d="M9 3v4"/><path d="M15 3v4"/>',
+    sino: '<path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 20a2 2 0 0 0 4 0"/>',
+    raio: '<path d="M13 3L5 14h6l-1 7 8-11h-6z"/>',
+    banco: '<path d="M3 10l9-6 9 6"/><path d="M5 10v8"/><path d="M10 10v8"/><path d="M14 10v8"/><path d="M19 10v8"/><path d="M3 20h18"/>',
+    teclado: '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M7 14h10"/>',
+    pessoas: '<circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><path d="M16 5a3 3 0 0 1 0 6"/><path d="M21 20a6 6 0 0 0-4-5.6"/>',
+    lua: '<path d="M20 14A8 8 0 1 1 10 4a6 6 0 0 0 10 10z"/>',
+    jeito: '<path d="M4 12h16"/><path d="M4 6h16"/><path d="M4 18h10"/>',
+    celular: '<rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/>',
+    alerta: '<path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/>',
+    info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/>',
+    mais: '<circle cx="6" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="18" cy="12" r="1"/>'
+  };
+  // título do painel → [grupo, ícone, cor, resumo]
+  const MAPA = [
+    [/suas contas/i, 'Seu dinheiro', 'banco', '#0A84FF', 'Saldos e pontos de partida'],
+    [/alertas/i, 'Seu dinheiro', 'sino', '#FF9F0A', 'Avisos do Radar que você criou'],
+    [/lançar mais rápido/i, 'Seu dinheiro', 'raio', '#BF5AF2', 'Atalhos do +'],
+    [/backup dos dados/i, 'Dados', 'backup', '#30D158', 'Exportar, importar, extrato do banco'],
+    [/backups automáticos/i, 'Dados', 'nuvem', '#64D2FF', 'Cópias guardadas neste aparelho'],
+    [/adicionar ano/i, 'Dados', 'cal', '#FF453A', 'Começar um ano novo'],
+    [/aparência/i, 'App', 'lua', '#5E5CE6', 'Tema claro ou escuro'],
+    [/jeito do app/i, 'App', 'jeito', '#8E8E93', 'Tom das mensagens'],
+    [/instalar/i, 'App', 'celular', '#32D74B', 'Ícone na tela de início'],
+    [/atalhos de teclado/i, 'App', 'teclado', '#8E8E93', 'Para usar no computador'],
+    [/usuários/i, 'App', 'pessoas', '#0A84FF', 'Quem usa este aparelho'],
+    [/zona de perigo/i, 'Cuidado', 'alerta', '#FF453A', 'Apagar dados'],
+    [/sobre/i, 'Cuidado', 'info', '#8E8E93', 'Versão e créditos']
+  ];
+  const ORDEM = ['Seu dinheiro', 'Dados', 'App', 'Cuidado', 'Mais'];
+  const ico = (k, c) => `<span class="cfg-ico" style="--c:${c}"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${I[k] || I.mais}</svg></span>`;
+
+  function montarConfig() {
+    const pg = $('config');
+    if (!pg || !celular() || typeof currentUser === 'undefined' || !currentUser) return;
+    const paineis = [...pg.querySelectorAll(':scope > .panel')];
+    paineis.forEach((p, i) => { p.dataset.cfg = i; });
+    let el = $('configIOS');
+    if (!el) { el = document.createElement('div'); el.id = 'configIOS'; (pg.querySelector(':scope > .page-sub') || pg.querySelector('h1')).insertAdjacentElement('afterend', el); }
+    let volta = pg.querySelector(':scope > .cfg-voltar');
+    if (!volta) {
+      volta = document.createElement('button'); volta.type = 'button'; volta.className = 'cfg-voltar';
+      volta.innerHTML = '<span style="font-size:1.4rem;line-height:1">‹</span> Configurações';
+      volta.onclick = () => cfgFechar();
+      pg.querySelector('h1').insertAdjacentElement('afterend', volta);
+    }
+    const grupos = {};
+    paineis.forEach(p => {
+      const t = ((p.querySelector('h2, h3') || {}).textContent || '').trim();
+      if (!t) return;
+      const m = MAPA.find(x => x[0].test(t)) || [null, 'Mais', 'mais', '#8E8E93', ''];
+      (grupos[m[1]] = grupos[m[1]] || []).push({ i: p.dataset.cfg, t, ic: m[2], cor: m[3], sub: m[4], perigo: m[1] === 'Cuidado' && /perigo/i.test(t) });
+    });
+    const u = String(currentUser);
+    const temaEscuro = document.documentElement.dataset.theme === 'dark';
+    el.innerHTML = `<div class="cfg-perfil"><span class="ios-av" style="--c:var(--text)">${esc(u[0].toUpperCase())}</span>
+        <div><b>${esc(u.charAt(0).toUpperCase() + u.slice(1))}</b><span>Dados salvos só neste aparelho · ${APP_VERSION}</span></div></div>`
+      + ORDEM.filter(g => grupos[g]).map(g => `<div class="cfg-grupo">${esc(g)}</div><div class="ios-lista">${grupos[g].map(x =>
+        `<div class="ios-row${x.perigo ? ' perigo' : ''}" role="button" tabindex="0" onclick="cfgAbrir(${jsArg(x.i)})" onkeydown="if(event.key==='Enter') cfgAbrir(${jsArg(x.i)})">${ico(x.ic, x.cor)}
+          <div class="ios-row-t"><div class="ios-row-n">${esc(x.t)}</div>${x.sub ? `<div class="ios-row-s">${x.ic === 'lua' ? (temaEscuro ? 'Escuro' : 'Claro') : esc(x.sub)}</div>` : ''}</div><span class="ios-row-chev">›</span></div>`).join('')}</div>`).join('');
+    pg.classList.add('ios-pronto');
+  }
+  window.cfgAbrir = i => {
+    const pg = $('config');
+    pg.querySelectorAll(':scope > .panel').forEach(p => p.classList.toggle('cfg-atual', p.dataset.cfg === String(i)));
+    pg.classList.add('cfg-aberto');
+    window.scrollTo(0, 0);
+  };
+  function cfgFechar() {
+    const pg = $('config');
+    if (!pg) return;
+    pg.classList.remove('cfg-aberto');
+    pg.querySelectorAll(':scope > .panel.cfg-atual').forEach(p => p.classList.remove('cfg-atual'));
+    montarConfig();
+    window.scrollTo(0, 0);
+  }
+  window.cfgFechar = cfgFechar;
+
+  // ── Fixos: título fora, cartão branco ───────────────────────────────
+  function seccionarFixos() {
+    const r = $('fxNovo');
+    if (!r || !celular()) return;
+    r.querySelectorAll('.fx-sec').forEach(p => {
+      if (p.querySelector(':scope > .ios-in')) return;
+      const kids = [...p.children];
+      if (!kids.length || !kids[0].classList.contains('fx-h')) return;
+      const inner = document.createElement('div'); inner.className = 'ios-in';
+      kids.slice(1).forEach(k => inner.appendChild(k));
+      p.appendChild(inner); p.classList.add('ios-secao');
+    });
+  }
+  const obs = new MutationObserver(() => requestAnimationFrame(seccionarFixos));
+  const rf = window.renderFixos;
+  if (typeof rf === 'function') window.renderFixos = function () { const x = rf.apply(this, arguments); try { seccionarFixos(); } catch (e) {} return x; };
+
+  window.addEventListener('load', () => setTimeout(() => {
+    const fx = $('fxNovo'); if (fx) obs.observe(fx, { childList: true });
+    try { montarConfig(); seccionarFixos(); } catch (e) { console.warn('[v94]', e); }
+  }, 500));
+  // Entrar na aba Configurações volta sempre ao índice
+  document.addEventListener('click', e => {
+    const b = e.target.closest('.tabBtn[data-tab="config"], .bnav-btn[data-tab="config"]');
+    if (b) setTimeout(() => { try { const pg = $('config'); if (pg) { pg.classList.remove('cfg-aberto'); } montarConfig(); } catch (er) {} }, 60);
+  }, true);
+  let larg = celular();
+  window.addEventListener('resize', () => { if (celular() !== larg) { larg = celular(); try { montarConfig(); seccionarFixos(); } catch (e) {} } });
 })();
 </script>
 </body>
