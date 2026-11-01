@@ -1,7 +1,7 @@
 // FinanceApp — Service Worker (offline-first, caminhos relativos)
 // IMPORTANTE: a cada atualização, troque o número de VERSION abaixo.
 // Isso faz o app detectar a nova versão e mostrar "Atualização disponível".
-const VERSION = 'v95';
+const VERSION = 'v96';
 const CACHE = 'financeapp-' + VERSION;
 const PRECACHE = [
   './',
@@ -14,7 +14,8 @@ const PRECACHE = [
   'fonts/fraunces-italic.woff2',
   'icon-192.png',
   'icon-512.png',
-  'icon-512-maskable.png'
+  'icon-512-maskable.png',
+  'marcas.js'
 ];
 
 self.addEventListener('install', e => {

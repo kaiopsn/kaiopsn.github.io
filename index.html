@@ -6204,7 +6204,7 @@ if (document.readyState === 'loading') {
 
 <script>
 // ── [17] Versão visível ─────────────────────────────────────────────────
-const APP_VERSION = 'v95';
+const APP_VERSION = 'v96';
 // Data fixa do release (antes era new Date() — mostrava sempre "hoje",
 // o que não informa nada). Atualize junto com APP_VERSION a cada release.
 const APP_BUILD_DATE = '2026-09-24';
@@ -18273,7 +18273,7 @@ button.ios-mini { cursor: pointer; }
   const esc = escapeHtml;
   // cor muito escura (ex.: preto) some no tema escuro: usa a cor do texto
   const escura = c => { const m = /^#?([0-9a-f]{6})$/i.exec(String(c || '')); if (!m) return false; const n = parseInt(m[1], 16), l = (0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255; return l < 0.22; };
-  const av = (txt, c) => `<span class="ios-av" style="--c:${escura(c) ? 'var(--text)' : safeColor(c || '#8E8E93')}">${esc((String(txt || '').trim()[0] || '•').toUpperCase())}</span>`;
+  const av = (txt, c, alt) => (window.marcaAv && (marcaAv(txt) || (alt ? marcaAv(alt) : ''))) || `<span class="ios-av" style="--c:${escura(c) ? 'var(--text)' : safeColor(c || '#8E8E93')}">${esc((String(txt || '').trim()[0] || '•').toUpperCase())}</span>`;   // v96: logo da marca
   const linha = (avH, nome, sub, val, sub2, clique, cls) => `<div class="ios-row"${clique ? ` role="button" tabindex="0" onclick="${clique}" onkeydown="if(event.key==='Enter'){${clique}}"` : ''}>${avH}
     <div class="ios-row-t"><div class="ios-row-n">${nome}</div>${sub ? `<div class="ios-row-s">${sub}</div>` : ''}</div>
     ${val != null ? `<div class="ios-row-v${cls ? ' ' + cls : ''}">${val}${sub2 ? `<small>${sub2}</small>` : ''}</div>` : '<span class="ios-row-chev">›</span>'}</div>`;
@@ -18345,13 +18345,26 @@ button.ios-mini { cursor: pointer; }
       const c = compromissosDoMes(Y, M), fixos = c.fixosItens.slice().sort((a, b) => (diaMes(a.date) || 99) - (diaMes(b.date) || 99));
       if (fixos.length || c.parcItens.length) {
         const ls = fixos.map(i => { const pago = methodKind(i.method) !== 'credit' && getPaidStatus(i.id, Y, M);
-          return linha(av(i.desc, getCategoryColor(i.cat)), esc(i.desc), `dia ${diaMes(i.date) || '—'} · ${esc(methodLabel(i.method))}`, fmt(i.value), pago ? '✓ pago' : null, "navTo('registro')"); }).join('');
+          return linha(av(i.desc, getCategoryColor(i.cat), methodLabel(i.method)), esc(i.desc), `dia ${diaMes(i.date) || '—'} · ${esc(methodLabel(i.method))}`, fmt(i.value), pago ? '✓ pago' : null, "navTo('registro')"); }).join('');
         resto += `<div class="ios-sec">Contas fixas<button type="button" class="ios-mais" onclick="navTo('registro')">ver tudo ›</button></div>
           <div class="ios-lista">${ls}<div class="ios-total"><span>Total por mês</span><span>${fmt(c.fixos + c.parcelas)}</span></div></div>
           ${c.parcelas > 0 ? `<p class="ios-nota">Inclui ${fmt(c.parcelas)} de parcelas.${c.temRecorrente ? ` Levam ${Math.round(c.pct)}% do que entra todo mês.` : ''}</p>` : (c.temRecorrente && c.pct != null ? `<p class="ios-nota">Levam ${Math.round(c.pct)}% do que entra todo mês.</p>` : '')}`;
       }
     }
 
+    // v96 · Assinaturas: as cadastradas (fixo de Assinaturas) e as que o Radar reconheceu
+    if (Y * 12 + M === agoraT && typeof radarAssinaturas === 'function') {
+      const as = radarAssinaturas(new Date());
+      const cad = as.cadastradas.filter(r => isInRange(Y, M, r.startYear, r.startMonth, r.endYear, r.endMonth));
+      if (cad.length || as.detectadas.length) {
+        const totA = cad.reduce((a, r) => a + r.value, 0) + as.detectadas.reduce((a, x) => a + x.valor, 0);
+        resto += `<div class="ios-sec">Assinaturas<button type="button" class="ios-mais" onclick="navTo('registro')">ver fixos ›</button></div>
+          <div class="ios-lista">${cad.map(r => linha(av(r.desc, getCategoryColor(r.cat), methodLabel(r.method)), esc(r.desc), `todo mês · ${esc(methodLabel(r.method))}`, fmt(r.value), null, "navTo('registro')")).join('')}
+          ${as.detectadas.map(x => linha(av(x.desc, '#8E8E93'), esc(x.desc), 'reconhecida nos seus gastos · toque para virar fixo', fmt(x.valor), null, `iosViraFixo(${jsArg(x.chave)})`)).join('')}
+          <div class="ios-total"><span>Total por mês</span><span>${fmt(totA)}</span></div></div>
+          <p class="ios-nota">São ${fmt(totA * 12)} por ano. As reconhecidas vêm de cobranças com o mesmo valor nos últimos meses.</p>`;
+      }
+    }
     // Últimos lançamentos
     const fimHoje = new Date(); fimHoje.setHours(23, 59, 59, 999);
     const ult = [...cur.items, ...(cur.aportes || [])].filter(i => i.date && parseLocalDate(i.date) <= fimHoje)
@@ -18360,7 +18373,7 @@ button.ios-mini { cursor: pointer; }
       resto += `<div class="ios-sec">Últimos lançamentos<button type="button" class="ios-mais" onclick="navTo('gastos')">ver todos ›</button></div>
         <div class="ios-lista">${ult.map(i => i._aporte
           ? linha(av(i.desc, (getInvestClass(i.investClass) || {}).color), esc(i.desc), `${esc(relativeDay(i.date))} · ${esc((getInvestClass(i.investClass) || { label: 'Investimento' }).label)}`, '→ ' + fmt(i.value), null, `iosAcoes(${jsArg(i.id)})`, 'inv')
-          : linha(av(i.desc, getCategoryColor(i.cat)), esc(i.desc), `${esc(relativeDay(i.date))} · ${esc(i.cat || '')}`, '−' + fmt(i.value), null, `iosAcoes(${jsArg(i.id)})`)).join('')}</div>`;
+          : linha(av(i.desc, getCategoryColor(i.cat), methodLabel(i.method)), esc(i.desc), `${esc(relativeDay(i.date))} · ${esc(i.cat || '')}`, '−' + fmt(i.value), null, `iosAcoes(${jsArg(i.id)})`)).join('')}</div>`;
     }
     return { topo, resto };
   }
@@ -18387,8 +18400,11 @@ button.ios-mini { cursor: pointer; }
 
   // ── GASTOS ─────────────────────────────────────────────────────────
   const FILTROS = [['tudo', 'Tudo'], ['fixo', 'Fixos'], ['parc', 'Parcelas'], ['eventual', 'Avulsos']];
+  let contaSel = null;   // v96: filtro por conta
+  window.iosConta = id => { contaSel = contaSel === id ? null : id; renderGastos(); };
   function itensFiltrados(d) {
     let l = [...d.items, ...(d.aportes || [])];
+    if (contaSel && getContas().some(c => c.id === contaSel)) l = l.filter(i => (i._aporte && i.conta ? contaValida(i.conta) : contaDoMetodo(i.method)) === contaSel);
     if (activeFilter !== 'tudo') l = l.filter(i => i.type === activeFilter);
     if (activeMethodFilter !== 'all') l = l.filter(i => i.method === activeMethodFilter);
     if (activeSearch) { const q = activeSearch.toLowerCase(); l = l.filter(i => (i.desc || '').toLowerCase().includes(q) || (i.cat || '').toLowerCase().includes(q)); }
@@ -18421,7 +18437,7 @@ button.ios-mini { cursor: pointer; }
         if (i.type === 'parc') tags.push(esc(i.detail || 'parcela'));
         if (i.faturaMais === 1) tags.push('próx. fatura');
         const cor = i._aporte ? (getInvestClass(i.investClass) || {}).color : getCategoryColor(i.cat);
-        return linha(av(i.desc, cor), esc(i.desc), tags.join(' · '), (i._aporte ? (i.value < 0 ? '← ' : '→ ') : '−') + fmt(Math.abs(i.value)), null, `iosAcoes(${jsArg(i.id)})`, i._aporte ? 'inv' : 'neg');
+        return linha(av(i.desc, cor, methodLabel(i.method)), esc(i.desc), tags.join(' · '), (i._aporte ? (i.value < 0 ? '← ' : '→ ') : '−') + fmt(Math.abs(i.value)), null, `iosAcoes(${jsArg(i.id)})`, i._aporte ? 'inv' : 'neg');
   }
   function montarGastos() {
     const pg = $('gastos');
@@ -18440,6 +18456,7 @@ button.ios-mini { cursor: pointer; }
         <input id="iosBusca" type="search" placeholder="Buscar" value="${esc(activeSearch)}" autocomplete="off" aria-label="Buscar lançamentos"></label>
       <div class="ios-filtros">${FILTROS.map(([k, t]) => `<button type="button" class="ios-pill${activeFilter === k ? ' on' : ''}" onclick="iosFiltro('${k}')">${t}</button>`).join('')}
         ${getMethods().map(m => `<button type="button" class="ios-pill${activeMethodFilter === m.id ? ' on' : ''}" onclick="iosMetodo(${jsArg(m.id)})">${esc(m.label)}</button>`).join('')}</div>
+      ${getContas().length > 1 ? `<div class="ios-filtros"><button type="button" class="ios-pill${contaSel ? '' : ' on'}" onclick="iosConta(null)">Todas as contas</button>${getContas().map(c => `<button type="button" class="ios-pill${contaSel === c.id ? ' on' : ''}" onclick="iosConta(${jsArg(c.id)})">${esc(c.nome)}</button>`).join('')}</div>` : ''}
       <div id="iosLista">${listaHTML(d)}</div>`;
     const inp = $('iosBusca');
     inp.oninput = () => { activeSearch = inp.value.trim(); const sb = $('searchBox'); if (sb) sb.value = inp.value; $('iosLista').innerHTML = listaHTML(getMonthData(currentYear, currentMonth)); };
@@ -18693,7 +18710,9 @@ button.ios-mini { cursor: pointer; }
       const nome = (d.nextElementSibling && d.nextElementSibling.textContent || '').trim();
       const a = document.createElement('span'); a.className = 'ios-av';
       a.style.setProperty('--c', corAv(d.style.background && /^#/.test(d.style.background) ? d.style.background : rgbHex(d.style.background)));
-      a.textContent = (nome[0] || '•').toUpperCase(); d.replaceWith(a);
+      a.textContent = (nome[0] || '•').toUpperCase();
+      const mk = d.closest('.iv-cl-top') && window.marcaAv ? marcaAv(nome) : '';   // v96: logo (Binance, Wise…)
+      if (mk) { d.insertAdjacentHTML('afterend', mk); d.remove(); } else d.replaceWith(a);
     });
     root.querySelectorAll('.an-mes:not(.an-ios)').forEach(m => {
       const n = (m.querySelector('.an-mes-nome') || {}).firstChild;
@@ -18973,7 +18992,9 @@ button.ios-mini { cursor: pointer; }
     if (mp) mp.querySelectorAll('.method-row > .method-row-dot').forEach(dot => {
       const nome = ((dot.parentElement.querySelector('.method-row-name') || {}).textContent || '').trim();
       const a = document.createElement('span'); a.className = 'ios-av'; a.style.setProperty('--c', corAv(rgbHex(dot.style.background)));
-      a.textContent = (nome[0] || '•').toUpperCase(); dot.replaceWith(a);
+      a.textContent = (nome[0] || '•').toUpperCase();
+      const mk = window.marcaAv ? marcaAv(nome) : '';   // v96: logo (Inter, Nubank…)
+      if (mk) { dot.insertAdjacentHTML('afterend', mk); dot.remove(); } else dot.replaceWith(a);
     });
     pg.classList.add('ios-pronto');
   }
@@ -19043,6 +19064,142 @@ button.ios-mini { cursor: pointer; }
   const rcomp = window.renderComparison;
   if (typeof rcomp === 'function') { renderComparison = window.renderComparison = function () { const x = rcomp.apply(this, arguments); try { montarRef(); } catch (e) { console.warn('[v95 comparar]', e); } return x; }; }
   window.addEventListener('load', () => setTimeout(() => { try { montarCat(); montarRef(); } catch (e) { console.warn('[v95]', e); } }, 500));
+})();
+</script>
+<script src="marcas.js"></script>
+<style id="v96-pacote">
+/* v96 · logos das marcas, assistente em tela cheia, cabeçalho que encolhe */
+.ios-av.marca { background: var(--m) !important; color: var(--f) !important; font-weight: 800; letter-spacing: -0.02em; }
+.ios-av.marca svg { width: 52%; height: 52%; fill: var(--f); stroke: none; }
+.ios-av.marca.borda { box-shadow: inset 0 0 0 1px var(--sep); }
+.ios-av.marca.mono { font-size: .8rem; }
+.v96-barra { display: none; }
+.v96-tit { text-align: center; max-width: 52vw; line-height: 1.15; }
+.v96-tit b { display: block; font: 700 .95rem/1.2 var(--font-display); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.v96-tit small { display: block; font-size: .7rem; color: var(--text-muted); white-space: nowrap; }
+.assistant-aviso { font-size: .74rem; color: var(--text-muted); text-align: center; padding: 6px 16px 0; }
+@media (max-width: 768px) {
+  .v96-barra { display: flex; position: fixed; top: 0; left: 0; right: 0; z-index: 90; height: calc(58px + env(safe-area-inset-top)); padding-top: env(safe-area-inset-top);
+    align-items: center; justify-content: center; background: var(--glass); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
+    border-bottom: .5px solid var(--sep); opacity: 0; transform: translateY(-8px); pointer-events: none; transition: opacity .18s ease, transform .18s ease; }
+  html.v96-compacto .v96-barra { opacity: 1; transform: none; }
+  body.menu-open .v96-barra { opacity: 0 !important; }
+  @media (prefers-reduced-motion: reduce) { .v96-barra { transition: none; } }
+  /* Assistente: tela cheia, conversa estilo iMessage */
+  .assistant-panel.open { position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100dvh !important; max-height: none !important; border-radius: 0 !important; background: var(--bg) !important; z-index: 200 !important; display: flex !important; flex-direction: column !important; padding-bottom: env(safe-area-inset-bottom) !important; }
+  .assistant-panel .assistant-header { background: var(--glass) !important; -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); border-bottom: .5px solid var(--sep) !important; padding: calc(10px + env(safe-area-inset-top)) 14px 10px !important; }
+  .assistant-panel .assistant-title { font: 700 1rem/1.2 var(--font-display) !important; color: var(--text) !important; }
+  .assistant-panel .assistant-title em { font-style: normal; color: var(--text) !important; }
+  .assistant-panel .assistant-avatar { background: var(--primary) !important; color: var(--on-primary) !important; border-radius: 50% !important; }
+  .assistant-panel .assistant-messages { flex: 1 1 auto !important; background: transparent !important; padding: 14px !important; }
+  .assistant-panel .msg { border-radius: 20px !important; padding: 10px 14px !important; max-width: 84% !important; box-shadow: none !important; border: 0 !important; font-size: .94rem !important; line-height: 1.45 !important; }
+  .assistant-panel .msg.bot { background: var(--surface) !important; color: var(--text) !important; border-bottom-left-radius: 6px !important; }
+  .assistant-panel .msg.user { background: var(--primary) !important; color: var(--on-primary) !important; border-bottom-right-radius: 6px !important; margin-left: auto !important; }
+  .assistant-panel .msg.bot strong, .assistant-panel .msg.bot .num { color: var(--text) !important; font-weight: 700 !important; }
+  .assistant-panel .assistant-suggestions { display: flex !important; flex-wrap: nowrap !important; overflow-x: auto !important; gap: 8px !important; padding: 8px 14px !important; scrollbar-width: none; background: transparent !important; border: 0 !important; }
+  .assistant-panel .assistant-suggestions::-webkit-scrollbar { display: none; }
+  .assistant-panel .suggestion { flex: none !important; white-space: nowrap !important; background: var(--surface) !important; color: var(--text) !important; border: 0 !important; border-radius: 999px !important; padding: 9px 14px !important; font-weight: 600 !important; font-size: .84rem !important; }
+  .assistant-panel .assistant-input-wrap { background: transparent !important; border: 0 !important; padding: 8px 12px 12px !important; gap: 8px !important; }
+  .assistant-panel .assistant-input { border-radius: 999px !important; background: var(--surface) !important; border: 0 !important; padding: 12px 16px !important; font-size: 16px !important; color: var(--text) !important; }
+  .assistant-panel .assistant-send { width: 44px !important; height: 44px !important; min-width: 44px !important; border-radius: 50% !important; padding: 0 !important; background: var(--primary) !important; color: transparent !important; font-size: 0 !important; position: relative; }
+  .assistant-panel .assistant-send::after { content: '↑'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--on-primary); font: 700 1.25rem/1 var(--font-body); }
+}
+.assistant-fab { background: var(--primary) !important; color: var(--on-primary) !important; box-shadow: 0 6px 18px rgba(0,0,0,.22) !important; border: 0 !important; }
+.assistant-fab svg { width: 24px; height: 24px; stroke: currentColor; }
+</style>
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// v96 · PRIMEIRO PACOTE DO APP DE REFERÊNCIA
+// • Logos: marcas.js (Simple Icons, CC0) reconhecidas pela descrição ou pela
+//   forma de pagamento/conta; bancos sem ícone livre viram círculo na cor
+//   da marca com as iniciais. Nada é buscado na internet.
+// • Assinaturas na Início, filtro por conta em Gastos (no módulo da v92).
+// • Assistente em tela cheia com perguntas prontas e aviso de que não é
+//   recomendação de investimento (respostas continuam locais).
+// • Cabeçalho que encolhe: ao rolar, o título grande vira título pequeno
+//   na barra de vidro.
+// ══════════════════════════════════════════════════════════════════════
+(function () {
+  const lista = (window.FINANCEAPP_MARCAS || []).map(m => { try { return { ...m, rx: new RegExp(m.r) }; } catch (e) { return null; } }).filter(Boolean);
+  const norm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const cache = new Map();
+  function marcaDe(txt) {
+    const k = norm(txt);
+    if (!k) return null;
+    if (cache.has(k)) return cache.get(k);
+    const m = lista.find(x => x.rx.test(k)) || null;
+    cache.set(k, m);
+    return m;
+  }
+  function clara(hex) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ''));
+    if (!m) return false;
+    const n = parseInt(m[1], 16);
+    return (0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255 > 0.62;
+  }
+  function marcaAv(txt) {
+    const m = marcaDe(txt);
+    if (!m) return '';
+    const cor = safeColor(m.c), f = clara(m.c) ? '#111111' : '#FFFFFF';
+    const escuro = document.documentElement.dataset.theme === 'dark' && !clara(m.c) && /^#(0|1|2)[0-9a-f](0|1|2)[0-9a-f](0|1|2)[0-9a-f]$/i.test(m.c);
+    const dentro = m.p ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${escapeHtml(m.p)}"/></svg>` : escapeHtml(m.t || m.n[0]);
+    return `<span class="ios-av marca${m.p ? '' : ' mono'}${escuro || clara(m.c) ? ' borda' : ''}" style="--m:${cor};--f:${f}" title="${escapeHtml(m.n)}" aria-hidden="true">${dentro}</span>`;
+  }
+  window.marcaDe = marcaDe;
+  window.marcaAv = marcaAv;
+
+  // Assinatura reconhecida → gasto fixo (mesma função do Radar)
+  window.iosViraFixo = async chave => {
+    const ok = await confirmDialog('Cadastrar como gasto fixo a partir do mês que vem? Ele passa a contar todo mês até você encerrar.');
+    if (ok && typeof radarViraFixo === 'function') radarViraFixo(chave);
+  };
+
+  // ── Assistente: aviso + botão redondo com ícone ─────────────────────
+  function prepararAssistente() {
+    const p = document.getElementById('assistantPanel');
+    if (p && !p.querySelector('.assistant-aviso')) {
+      const h = p.querySelector('.assistant-header');
+      if (h) h.insertAdjacentHTML('afterend', '<div class="assistant-aviso">Análise automática dos seus dados, feita no seu aparelho. Não é recomendação de investimento.</div>');
+    }
+    const fab = document.getElementById('assistantFab');
+    if (fab && !fab.dataset.v96) {
+      fab.dataset.v96 = '1';
+      fab.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/><path d="M9 10h.01M12 10h.01M15 10h.01"/></svg>';
+      fab.setAttribute('aria-label', 'Abrir assistente');
+    }
+  }
+
+  // ── Cabeçalho que encolhe ─────────────────────────────────────────────
+  const celular = () => window.matchMedia('(max-width: 768px)').matches;
+  function tituloGrande() {
+    const a = document.querySelector('.content.active');
+    if (!a) return null;
+    if (a.id === 'dashboard') return document.querySelector('#homeIOS .ios-titulo') || a.querySelector(':scope > h1');
+    const h = a.querySelector(':scope > h1');
+    if (h && h.offsetParent) return h;
+    return a.querySelector('.cfg-atual h2') || h;
+  }
+  let pendente = false;
+  function atualizarBarra() {
+    pendente = false;
+    let bar = document.querySelector('.v96-barra');
+    if (!bar) { bar = document.createElement('div'); bar.className = 'v96-barra'; bar.setAttribute('aria-hidden', 'true'); bar.innerHTML = '<div class="v96-tit"></div>'; document.body.appendChild(bar); }
+    const t = bar.querySelector('.v96-tit');
+    const h = celular() ? tituloGrande() : null;
+    const compacto = !!(h && h.offsetParent && h.getBoundingClientRect().bottom < 58);
+    if (compacto) {
+      const mes = `${monthsFull[currentMonth]} de ${currentYear}`;
+      const txt = h.textContent.trim();
+      if (t.dataset.k !== txt + mes) { t.dataset.k = txt + mes; t.innerHTML = `<b>${escapeHtml(txt)}</b><small>${escapeHtml(mes.trim())}</small>`; }
+    }
+    document.documentElement.classList.toggle('v96-compacto', compacto);
+  }
+  const agendar = () => { if (!pendente) { pendente = true; requestAnimationFrame(atualizarBarra); } };
+  window.addEventListener('scroll', agendar, { passive: true });
+  window.addEventListener('resize', agendar);
+  document.addEventListener('click', () => setTimeout(agendar, 80), true);
+
+  window.addEventListener('load', () => setTimeout(() => { try { prepararAssistente(); agendar(); } catch (e) { console.warn('[v96]', e); } }, 400));
 })();
 </script>
 </body>
